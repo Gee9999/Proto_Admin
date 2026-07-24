@@ -61,6 +61,8 @@ import {
   invalidateAdminCache,
   invalidateProductCache,
   setLiveTaxonomyTree,
+  setNewArrival,
+  setToOrder,
   updateProduct,
   uploadDormantImage,
 } from '../lib/products';
@@ -329,6 +331,8 @@ const emptyForm = {
   imageFour: '',
   price: '0',
   stockOnHand: '1',
+  isNewArrival: false,
+  toOrder: false,
   categoryId: categories[0]?.id || '',
   childIds: categories[0]?.children?.[0]?.id ? [categories[0].children[0].id] : [],
 };
@@ -487,6 +491,8 @@ function productToForm(product, tree = categories) {
     imageFour: product.imageFour || product.images?.[3] || '',
     price: String(product.price ?? 0),
     stockOnHand: product.stockOnHand != null ? String(product.stockOnHand) : '',
+    isNewArrival: !!product.isNew,
+    toOrder: !!product.toOrder,
     ...categoryFormFromPath(product.categoryPath, tree),
   };
 }
@@ -1491,6 +1497,17 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         : await createProduct(payload);
       if (result?.relink?.matched) {
         showToast('Matched to Positill — refresh Archive to see live stock', 'success');
+      }
+      // Live-only flags live in website_stock (separate from the product update):
+      // apply the New-Stock ribbon / To-order toggles when they changed. These
+      // used to be per-row buttons; they now live in this modal.
+      if (editingProduct && !editingProduct.archivedBy) {
+        if (!!productForm.isNewArrival !== !!editingProduct.isNew) {
+          await setNewArrival(editingProduct.id, productForm.isNewArrival);
+        }
+        if (!!productForm.toOrder !== !!editingProduct.toOrder) {
+          await setToOrder(editingProduct.id, productForm.toOrder);
+        }
       }
       closeEditor();
       queryClient.invalidateQueries({ queryKey: ['catalog'] });
@@ -3454,6 +3471,22 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
               <AdminField label="Price"><input type="text" inputMode="decimal" value={productForm.price} onChange={(e) => setProductForm((p) => ({ ...p, price: e.target.value }))} className="adm-field-input" /></AdminField>
               {/* SOH comes from the ERP sync — an editable field here silently discarded input. */}
               <AdminField label="Stock on hand (synced from ERP)"><input type="text" value={productForm.stockOnHand} readOnly disabled className="adm-field-input" title="Stock on hand is synced from the ERP and cannot be edited here" /></AdminField>
+              {/* Live-catalogue flags (moved here from the row buttons). Applied on
+                  Save; only shown for live products. */}
+              {editingProduct && !editingProduct.archivedBy && (
+                <AdminField label="Homepage & ordering" full>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                      <input type="checkbox" checked={!!productForm.isNewArrival} onChange={(e) => setProductForm((p) => ({ ...p, isNewArrival: e.target.checked }))} />
+                      <span>Show in the <strong>New Stock</strong> ribbon on the homepage</span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                      <input type="checkbox" checked={!!productForm.toOrder} onChange={(e) => setProductForm((p) => ({ ...p, toOrder: e.target.checked }))} />
+                      <span><strong>To order</strong> — customers can order this even at zero stock</span>
+                    </label>
+                  </div>
+                </AdminField>
+              )}
               {/*
                 Cascading category pickers — Main, then Child 1..N as deep as the
                 taxonomy tree goes (no fixed depth cap). Each level renders only
