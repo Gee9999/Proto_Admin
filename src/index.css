@@ -11913,6 +11913,13 @@ html, body { background: #f5f5f5; color: #111827; }
   border: 1px solid #e2e8f0;
   border-left: 3px solid #8B1A1A;
 }
+/* Per-row "To order" toggle — amber when the product is marked to-order. */
+.pm-toorder-btn--on,
+.pm-toorder-btn--on:hover {
+  background: #b45309;
+  border-color: #b45309;
+  color: #fff;
+}
 .pm-bulk-bar__count { white-space: nowrap; color: #0f172a; font-size: 14px; font-weight: 800; }
 .pm-bulk-bar__count-sub { color: #64748b; font-weight: 500; }
 .pm-bulk-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

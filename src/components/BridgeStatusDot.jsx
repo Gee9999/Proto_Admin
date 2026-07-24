@@ -21,12 +21,12 @@ export default function BridgeStatusDot() {
 
     const check = async () => {
       try {
-        const res = await fetch('/api/product-loader-diag', { headers: { Accept: 'application/json' } });
+        const res = await fetch('/api/bridge-status', { headers: { Accept: 'application/json' } });
         if (!res.ok) { if (!cancelled) setState('unknown'); return; }
         const json = await res.json().catch(() => null);
         if (cancelled) return;
-        if (json?.sqlConnectionTest) setState('online');
-        else if (json?.bridgeConfigured || json?.sqlConfigured) setState('offline');
+        if (json?.online) setState('online');
+        else if (json?.configured) setState('offline');
         else setState('unknown');
       } catch {
         if (!cancelled) setState('unknown');
