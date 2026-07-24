@@ -1825,6 +1825,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         assignedTo: '',
         total,
         hasPrices,
+        checkboxes: true,
       });
       const blob = base64ToBlob(pdfBase64, 'application/pdf');
       const url = URL.createObjectURL(blob);
