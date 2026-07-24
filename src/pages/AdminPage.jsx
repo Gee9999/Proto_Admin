@@ -256,62 +256,6 @@ function renderNoteSections(noteSections) {
   );
 }
 
-function generateOrderChecklistHtml(order) {
-  const items = order.original_items || order.items || [];
-  const rows = items.map((item, i) => `
-    <tr>
-      <td style="padding:8px 6px;border:1px solid #ccc;text-align:center">
-        <span style="display:inline-block;width:14px;height:14px;border:1.5px solid #555;vertical-align:middle">&nbsp;</span>
-      </td>
-      <td style="padding:8px 6px;border:1px solid #ccc;color:#666;font-size:12px">${i + 1}</td>
-      <td style="padding:8px 6px;border:1px solid #ccc;font-weight:700;font-size:12px">${item.code || ''}</td>
-      <td style="padding:8px 6px;border:1px solid #ccc;font-size:13px">${item.name || ''}</td>
-      <td style="padding:8px 6px;border:1px solid #ccc;text-align:center;font-weight:700">${item.qty}</td>
-      <td style="padding:8px 6px;border:1px solid #ccc;font-size:12px">
-        In Stock: <span style="display:inline-block;border-bottom:1px solid #000;width:60px;">&nbsp;</span>
-        &nbsp;&nbsp;Qty: <span style="display:inline-block;border-bottom:1px solid #000;width:50px;">&nbsp;</span>
-      </td>
-    </tr>`).join('');
-
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8">
-<title>Order ${order.order_number || order.id}</title>
-<style>
-  body{font-family:Arial,sans-serif;padding:24px;color:#111;max-width:900px;margin:0 auto}
-  h1{font-size:20px;margin-bottom:4px}
-  .meta{color:#555;font-size:13px;margin-bottom:20px}
-  table{width:100%;border-collapse:collapse;font-family:Arial,sans-serif}
-  th{background:#f0f0f0;padding:8px 6px;border:1px solid #ccc;font-size:12px;text-align:left}
-  @media print{.no-print{display:none!important}}
-</style></head><body>
-<h1>Proto Trading — Order Checklist</h1>
-<div class="meta">
-  <strong>Order:</strong> ${order.order_number || order.id} &nbsp;|&nbsp;
-  <strong>Customer:</strong> ${order.customers?.name || 'Unknown'} (${order.customers?.email || ''}) &nbsp;|&nbsp;
-  <strong>Date:</strong> ${new Date(order.created_at || Date.now()).toLocaleDateString('en-ZA', { day: 'numeric', month: 'long', year: 'numeric' })}
-</div>
-<table>
-  <thead><tr>
-    <th style="width:32px">✓</th>
-    <th style="width:28px">#</th>
-    <th style="width:120px">Code</th>
-    <th>Product</th>
-    <th style="width:48px">Qty</th>
-    <th style="width:220px">Stock Status</th>
-  </tr></thead>
-  <tbody>${rows}</tbody>
-</table>
-<div style="margin-top:24px;font-size:13px">
-  <strong>Notes:</strong><br>
-  <span style="display:inline-block;border-bottom:1px solid #aaa;width:100%;margin-top:6px">&nbsp;</span>
-  <span style="display:inline-block;border-bottom:1px solid #aaa;width:100%;margin-top:14px">&nbsp;</span>
-</div>
-<div class="no-print" style="margin-top:20px">
-  <div style="padding:9px 20px;background:#f8fafc;color:#334155;border:1px solid #cbd5e1;border-radius:6px;font-size:14px;font-family:Arial;display:inline-block">
-    Downloaded order file for reference
-  </div>
-</div>
-</body></html>`;
-}
 const PRODUCT_IMAGE_SLOTS = [
   { key: 'image', label: 'Image 1 (primary)' },
   { key: 'secondaryImage', label: 'Image 2' },
@@ -1220,7 +1164,13 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     fetchConfirmationSent(ids)
       .then((rows) => setConfirmationSent((prev) => ({ ...prev, ...rows })))
       .catch((err) => showToast(err.message || 'Failed to load confirmation status', 'error'));
-  }, [activeSection, orderTab, orders, confirmationSentIds]);
+    // NOTE: confirmationSentIds is intentionally NOT a dependency. It is a
+    // useMemo that returns a new Set whenever confirmationSent changes, and this
+    // effect calls setConfirmationSent — so including it created an infinite
+    // fetch/re-render loop (orders flickering every couple of seconds on the
+    // Payment tab). Re-running on orders/tab change is sufficient.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection, orderTab, orders]);
 
   useEffect(() => {
     if (activeSection !== 'orders') return undefined;
@@ -1861,17 +1811,35 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     } finally { setSaving(''); }
   };
 
-  const downloadOrderHtml = (order) => {
-    const html = generateOrderChecklistHtml(order);
-    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `order-${order.order_number || order.id}.html`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  const downloadOrderFile = async (order) => {
+    setSaving(`download-${order.id}`);
+    try {
+      const emailItems = buildEmailItemsFromOrder(order);
+      const autoNotes = deriveAutoNotesFromItems(emailItems).join('\n');
+      const { hasPrices, total, items: pdfItems } = resolveCustomerOrderPricing(emailItems);
+      const pdfBase64 = await generateOrderPdfBase64({
+        order,
+        items: pdfItems,
+        autoNotes,
+        userNotes: order.order_change_notes || '',
+        assignedTo: '',
+        total,
+        hasPrices,
+      });
+      const blob = base64ToBlob(pdfBase64, 'application/pdf');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `order-${order.order_number || order.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      showToast(err.message || 'Could not generate order PDF', 'error');
+    } finally {
+      setSaving('');
+    }
   };
 
   const deleteOrder = async (order) => {
@@ -2632,7 +2600,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                           </div>
                           <div style={{ display: 'flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
                             <button onClick={() => window.open(`/fulfillment?id=${order.id}`, '_blank', 'noopener,noreferrer')} className="adm-icon-btn" title="Fulfil order (opens in new tab)" style={{ color: '#15803d' }}><ClipboardList size={14} /></button>
-                            <button onClick={() => downloadOrderHtml(order)} className="adm-icon-btn" title="Download order file"><FileDown size={14} /></button>
+                            <button onClick={() => void downloadOrderFile(order)} disabled={saving === `download-${order.id}`} className="adm-icon-btn" title="Download order PDF">{saving === `download-${order.id}` ? <Loader2 size={14} className="spin" /> : <FileDown size={14} />}</button>
                             <button onClick={() => void deleteOrder(order)} className="adm-icon-btn" style={{ color: '#c40000' }} disabled={saving === `del-order-${order.id}`} title="Delete order">
                               {saving === `del-order-${order.id}` ? '…' : <Trash2 size={14} />}
                             </button>

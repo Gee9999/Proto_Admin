@@ -4,7 +4,7 @@ import { fetchAdminProductsPage } from '../lib/products';
 import {
   fetchFulfillmentProgress,
   lookupProductCategories,
-  saveFulfillmentSection,
+  toggleFulfillmentItem,
 } from '../lib/fulfillmentProgress';
 import {
   fetchFulfillmentUsers,
@@ -88,17 +88,6 @@ function applyProgress(items, sections = {}) {
   });
 }
 
-function serializeSectionItems(sectionItems) {
-  return sectionItems.map(({
-    productId, code, name, qty, finalQty, removed, swapped,
-    originalCode, originalName, image, unitPrice, price,
-  }) => ({
-    productId, code, name, qty, finalQty, removed: Boolean(removed),
-    swapped: Boolean(swapped), originalCode, originalName, image,
-    unitPrice: unitPrice || price || 0,
-  }));
-}
-
 export default function FulfillmentPage() {
   const { orderId } = getOrderAccessFromUrl();
 
@@ -112,7 +101,7 @@ export default function FulfillmentPage() {
   const [userNotes, setUserNotes] = useState('');
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
-  const [sectionSaving, setSectionSaving] = useState('');
+  const [itemSavingKeys, setItemSavingKeys] = useState(() => new Set());
   const [statusMsg, setStatusMsg] = useState(null);
 
   const [editingItemIdx, setEditingItemIdx] = useState(null);
@@ -244,29 +233,47 @@ export default function FulfillmentPage() {
     return categoryId === 'uncategorized' && assignedCategorySet.has('uncategorized');
   };
 
-  const saveCategorySection = async (categoryId, sectionItems) => {
-    if (!activeUser || !orderId) return;
-    if (!victorCanSave) {
-      setStatusMsg({ type: 'err', text: CUSTOMER_SEND_FORBIDDEN });
-      return;
-    }
-    setSectionSaving(categoryId);
-    setStatusMsg(null);
+  const itemKeyOf = (item) => String(item.idx);
+  const isItemPacked = (item) => Boolean(progress.items?.[itemKeyOf(item)]);
+  const itemPackedBy = (item) => progress.items?.[itemKeyOf(item)]?.userName || '';
+
+  // Per-item packed toggle — the fulfilment checklist. Optimistic, reconciled
+  // with the server response, reverted on failure. Any assigned picker for the
+  // item's category can tick it.
+  const toggleItemPacked = async (item, categoryId) => {
+    if (!activeUser || !orderId || !canEditCategory(categoryId)) return;
+    const key = itemKeyOf(item);
+    if (itemSavingKeys.has(key)) return;
+    const next = !isItemPacked(item);
+
+    setItemSavingKeys((prev) => new Set(prev).add(key));
+    setProgress((prev) => {
+      const map = { ...(prev.items || {}) };
+      if (next) map[key] = { userId: activeUser.id, userName: activeUser.name, checkedAt: new Date().toISOString() };
+      else delete map[key];
+      return { ...prev, items: map };
+    });
+
     try {
-      const data = await saveFulfillmentSection({
+      const data = await toggleFulfillmentItem({
         orderId,
         userId: activeUser.id,
         userName: activeUser.name,
-        categoryId,
-        items: serializeSectionItems(sectionItems),
-        complete: true,
+        itemKey: key,
+        checked: next,
       });
       setProgress(data);
-      setStatusMsg({ type: 'ok', text: `${categoryLabels[categoryId] || 'Section'} saved` });
-      setTimeout(() => setStatusMsg(null), 2500);
     } catch (e) {
+      setProgress((prev) => {
+        const map = { ...(prev.items || {}) };
+        if (next) delete map[key];
+        else map[key] = { userId: activeUser.id, userName: activeUser.name };
+        return { ...prev, items: map };
+      });
       setStatusMsg({ type: 'err', text: e.message });
-    } finally { setSectionSaving(''); }
+    } finally {
+      setItemSavingKeys((prev) => { const n = new Set(prev); n.delete(key); return n; });
+    }
   };
 
   const autoNotes = useMemo(() => {
@@ -374,9 +381,25 @@ export default function FulfillmentPage() {
 
   const renderItemRow = (item, editable) => {
     const idx = item.idx;
+    const packed = isItemPacked(item);
+    const packedBy = itemPackedBy(item);
+    const itemBusy = itemSavingKeys.has(itemKeyOf(item));
     return (
       <div key={`${item.productId || item.code}-${idx}`}>
-        <div className={`ff-item-row${item.removed ? ' ff-item-row--removed' : ''}${!editable ? ' ff-item-row--readonly' : ''}`}>
+        <div className={`ff-item-row${item.removed ? ' ff-item-row--removed' : ''}${!editable ? ' ff-item-row--readonly' : ''}${packed ? ' ff-item-row--packed' : ''}`}>
+          <button
+            type="button"
+            className={`ff-item-check${packed ? ' ff-item-check--on' : ''}`}
+            disabled={!editable || item.removed || itemBusy}
+            onClick={() => void toggleItemPacked(item, item.mainCategoryId)}
+            aria-pressed={packed}
+            aria-label={packed ? 'Packed — tap to undo' : 'Mark as packed'}
+            title={packed
+              ? `Packed${packedBy ? ` by ${packedBy}` : ''}${editable ? ' — tap to undo' : ''}`
+              : (item.removed ? 'Out of stock' : 'Mark as packed')}
+          >
+            {itemBusy ? <Loader2 size={15} className="star-spinning" /> : packed ? <Check size={15} strokeWidth={3} /> : null}
+          </button>
           <div className="ff-item-img">
             {item.image ? (
               <button type="button" className="ff-item-img-btn" onClick={() => setLightboxImage(item.image)} aria-label="View product image">
@@ -437,7 +460,14 @@ export default function FulfillmentPage() {
   if (loading) return <div className="ff-center"><Loader2 size={36} className="star-spinning" style={{ color: '#c40000' }} /></div>;
   if (error) return <div className="ff-center"><p style={{ color: '#c40000', fontWeight: 700 }}>{error}</p></div>;
 
-  const completedCount = categoryGroups.filter((g) => progress.sections?.[g.id]?.complete).length;
+  // A section is "packed" when every in-stock (non-removed) line in it is ticked.
+  const groupPackable = (g) => g.items.filter((i) => !i.removed);
+  const groupPackedCount = (g) => groupPackable(g).filter(isItemPacked).length;
+  const isGroupComplete = (g) => {
+    const packable = groupPackable(g);
+    return packable.length > 0 && packable.every(isItemPacked);
+  };
+  const completedCount = categoryGroups.filter(isGroupComplete).length;
   const totalSections = categoryGroups.length;
   const completionPct = totalSections ? Math.round((completedCount / totalSections) * 100) : 0;
   const orderRef = displayOrderNumber(order);
@@ -513,42 +543,30 @@ export default function FulfillmentPage() {
 
         {!victorCanSave && (
           <div className="ff-victor-notice" role="note">
-            View and edit quantities freely. Only <strong>Victor</strong> can save sections and send the order.
+            Tick items as you pack them and edit quantities freely. Only <strong>Victor</strong> can send the order.
           </div>
         )}
 
         {categoryGroups.map((group) => {
-          const section = progress.sections?.[group.id];
-          const isComplete = Boolean(section?.complete);
-          const savedByOther = section && section.userId !== activeUserId;
-          const editable = canEditCategory(group.id) && !savedByOther;
-          const canSave = canEditCategory(group.id) && activeUser && victorCanSave;
+          const editable = canEditCategory(group.id);
+          const isComplete = isGroupComplete(group);
+          const packable = groupPackable(group).length;
+          const packedCount = groupPackedCount(group);
 
           return (
             <section key={group.id} className={`ff-section${isComplete ? ' ff-section--complete' : ''}${!editable ? ' ff-section--locked' : ''}`}>
               <div className="ff-section-head">
                 <div className="ff-section-titles">
                   <h3>{group.label}</h3>
-                  {section && (
-                    <span className="ff-section-meta">
-                      {isComplete
-                        ? <><Check size={11} strokeWidth={3} /> Saved by {section.userName}</>
-                        : 'In progress'}
-                      {section.savedAt ? ` · ${new Date(section.savedAt).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })}` : ''}
-                    </span>
-                  )}
+                  <span className="ff-section-meta">
+                    {isComplete
+                      ? <><Check size={11} strokeWidth={3} /> All packed</>
+                      : `${packedCount}/${packable || group.items.length} packed`}
+                  </span>
                 </div>
-                {canSave && (
-                  <button
-                    type="button"
-                    className={`ff-section-save${isComplete && section?.userId === activeUserId ? ' ff-section-save--done' : ''}`}
-                    disabled={sectionSaving === group.id}
-                    onClick={() => void saveCategorySection(group.id, group.items)}
-                    aria-label="Save this section"
-                  >
-                    {sectionSaving === group.id ? <Loader2 size={20} className="star-spinning" /> : <Check size={20} strokeWidth={3} />}
-                  </button>
-                )}
+                <div className={`ff-section-count${isComplete ? ' ff-section-count--done' : ''}`} aria-hidden>
+                  {isComplete ? <Check size={18} strokeWidth={3} /> : `${packedCount}/${packable || group.items.length}`}
+                </div>
               </div>
               <div className="ff-section-items">
                 {group.items.map((item) => renderItemRow(item, editable))}

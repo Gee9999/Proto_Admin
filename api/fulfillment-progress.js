@@ -8,7 +8,7 @@ function progressFile(orderId) {
 }
 
 function emptyProgress(orderId) {
-  return { orderId, sections: {}, updatedAt: new Date().toISOString() };
+  return { orderId, sections: {}, items: {}, updatedAt: new Date().toISOString() };
 }
 
 export default async function handler(req, res) {
@@ -32,7 +32,51 @@ export default async function handler(req, res) {
   }
 
   if (req.method === 'POST') {
-    const { userId, userName, categoryId, items, complete = true } = req.body || {};
+    const body = req.body || {};
+    const { userId, userName } = body;
+
+    // Per-item packed toggle — the item-level fulfilment checklist. Each ticked
+    // line is stored under store.items[itemKey]; presence means "packed".
+    if (body.itemKey != null) {
+      if (!userId) return res.status(400).json({ error: 'userId is required' });
+      const itemKey = String(body.itemKey);
+      const checked = Boolean(body.checked);
+      try {
+        const file = progressFile(orderId);
+        const result = await mutateSiteConfigJson(file, emptyProgress(orderId), (current) => {
+          const store = current?.orderId === orderId ? current : emptyProgress(orderId);
+          store.items = store.items || {};
+          if (checked) {
+            store.items[itemKey] = {
+              userId,
+              userName: userName || userId,
+              checkedAt: new Date().toISOString(),
+            };
+          } else {
+            delete store.items[itemKey];
+          }
+          store.updatedAt = new Date().toISOString();
+          return { store };
+        });
+        const base = result?.store ?? result;
+
+        // Ticking any item means picking has started — nudge the order forward.
+        if (checked) {
+          try {
+            const supabase = getPortalAdminClient();
+            await advanceOrderStatusToTarget(supabase, orderId, 'order in progress');
+          } catch (err) {
+            console.error('fulfillment-progress: status advance failed:', err.message);
+          }
+        }
+
+        return res.status(200).json(base);
+      } catch (err) {
+        return res.status(400).json({ error: err.message || 'Failed to update item' });
+      }
+    }
+
+    const { categoryId, items, complete = true } = body;
     if (!userId || !categoryId || !Array.isArray(items)) {
       return res.status(400).json({ error: 'userId, categoryId, and items are required' });
     }
