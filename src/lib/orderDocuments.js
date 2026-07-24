@@ -199,6 +199,9 @@ export async function generateOrderPdfBase64({
   hasPrices = false,
   includeInternalLink = false,
   fulfillmentUrl = '',
+  // Admin/picking variant draws an empty tick box on each line. The customer
+  // copy leaves this false so their confirmation has no checkboxes.
+  checkboxes = false,
 }) {
   const jsPDF = await loadJsPDF();
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
@@ -320,7 +323,13 @@ export async function generateOrderPdfBase64({
     doc.setFont('helvetica', 'bold');
     doc.setFontSize(7.5);
     doc.setTextColor(255, 255, 255);
-    doc.text('#', COL.num.x + 3, y + 15);
+    if (checkboxes) {
+      doc.setDrawColor(255, 255, 255);
+      doc.setLineWidth(1);
+      doc.roundedRect(COL.num.x, y + 4, 11, 11, 1.5, 1.5, 'S');
+    } else {
+      doc.text('#', COL.num.x + 3, y + 15);
+    }
     doc.text('IMAGE', COL.img.x, y + 15);
     doc.text('BARCODE', COL.code.x, y + 15);
     doc.text('PRODUCT', COL.name.x, y + 15);
@@ -363,11 +372,20 @@ export async function generateOrderPdfBase64({
     doc.setDrawColor(226, 232, 240);
     doc.line(margin, y + rowH - 2, margin + contentWidth, y + rowH - 2);
 
-    // # index
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(9);
-    doc.setTextColor(100, 116, 139);
-    doc.text(String(rowIndex), COL.num.x + 3, y + rowH / 2 + 3);
+    // Leftmost cell — empty tick box (admin/picking copy) or the line number.
+    if (checkboxes) {
+      const box = 13;
+      const bx = COL.num.x + (COL.num.w - box) / 2;
+      const by = y + rowH / 2 - box / 2;
+      doc.setDrawColor(90, 90, 90);
+      doc.setLineWidth(1.1);
+      doc.roundedRect(bx, by, box, box, 2, 2, 'S');
+    } else {
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      doc.text(String(rowIndex), COL.num.x + 3, y + rowH / 2 + 3);
+    }
 
     // image
     const imgData = await loadImageDataUrl(item.image);
