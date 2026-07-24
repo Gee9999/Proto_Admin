@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import CategorySidebar, { resolvePathLabels } from './CategorySidebar';
 import ActionMenu from './ActionMenu';
+import FilterMenu from './FilterMenu';
 import BulkProductEditModal from './BulkProductEditModal';
 import BulkMoveModal from './BulkMoveModal';
 import MergeIntoGroupModal from './MergeIntoGroupModal';
@@ -1566,26 +1567,27 @@ export default function ProductManagerEngine({
               )}
               <PmSearchField onDebouncedChange={setDebouncedSearch} />
               {status === 'live' && (
-                <label className="adm-filter-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={onlyInStock}
-                    onChange={(e) => handleOnlyInStockChange(e.target.checked)}
-                    style={{ accentColor: '#8B1A1A' }}
-                  />
-                  Show only in stock
-                </label>
-              )}
-              {status === 'live' && (
-                <label className="adm-filter-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }} title="Show only products marked “To order” (orderable at 0 stock)">
-                  <input
-                    type="checkbox"
-                    checked={toOrderOnly}
-                    onChange={(e) => { setToOrderOnly(e.target.checked); setPage(1); }}
-                    style={{ accentColor: '#b45309' }}
-                  />
-                  To order only
-                </label>
+                <FilterMenu
+                  label="Filter"
+                  options={[
+                    {
+                      key: 'in-stock',
+                      label: 'In stock only',
+                      hint: 'Hide products with zero available stock',
+                      checked: onlyInStock,
+                      accentColor: '#8B1A1A',
+                      onChange: (v) => handleOnlyInStockChange(v),
+                    },
+                    {
+                      key: 'to-order',
+                      label: 'To order only',
+                      hint: 'Only products marked “To order” (orderable at 0 stock)',
+                      checked: toOrderOnly,
+                      accentColor: '#b45309',
+                      onChange: (v) => { setToOrderOnly(v); setPage(1); },
+                    },
+                  ]}
+                />
               )}
               {!reorderMode && (
                 <ActionMenu

@@ -8,8 +8,10 @@ import {
   Building2,
   Check,
   CheckCircle,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
   ClipboardList,
   DollarSign,
   Download,
@@ -144,6 +146,7 @@ const CommsPanel = lazyRetry(() => import('../components/CommsPanel'));
 // whole page (reads as "the button just refreshes").
 import AddCustomerModal from '../components/AddCustomerModal';
 import ActionMenu from '../components/ActionMenu';
+import BridgeStatusDot from '../components/BridgeStatusDot';
 const CrmContactsModal = lazyRetry(() => import('../components/CrmContactsModal'));
 const FulfillmentSettingsModal = lazyRetry(() => import('../components/FulfillmentSettingsModal'));
 import categories from '../data/categories.json';
@@ -584,6 +587,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   const [pendingCount, setPendingCount] = useState(0);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
+  // Order Workspace now lives below the order list, revealed on demand. Auto-open
+  // when a workspace was deep-linked so the URL still lands on it.
+  const [orderWorkspaceOpen, setOrderWorkspaceOpen] = useState(Boolean(initialOrderWorkspaceId));
 
   const [fulfillmentOrder, setFulfillmentOrder] = useState(null);
   const [fulfillmentItems, setFulfillmentItems] = useState([]);
@@ -2034,6 +2040,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
             </div>
           </div>
           <div className="adm-header-actions">
+            <BridgeStatusDot />
             <button type="button" onClick={goHome} className="adm-btn-ghost"><Home size={15} /><span className="adm-btn-text">Home</span></button>
             <button onClick={() => void refreshCurrentSection()} className="adm-btn-ghost"><RefreshCw size={15} /><span className="adm-btn-text">Refresh</span></button>
             <button onClick={onViewPortal} className="adm-btn-ghost"><ArrowLeftRight size={15} /><span className="adm-btn-text">Portal</span></button>
@@ -2486,12 +2493,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
             {/* ORDERS */}
             {activeSection === 'orders' && (
               <SectionErrorBoundary name="orders" title="Order Requests crashed" resetKey={activeSection}>
-              <Suspense fallback={<LazySectionFallback label="Loading Orders Workspace…" />}>
-                <OrdersWorkspacePanel
-                  initialWorkspaceId={initialOrderWorkspaceId}
-                  onShowToast={showToast}
-                />
-              </Suspense>
               <div className="adm-panel">
                 <div className="adm-section-head">
                   <div>
@@ -2502,6 +2503,17 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                   </div>
                   <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
                     <label className="adm-search"><Search size={15} /><input value={orderSearch} onChange={(e) => setOrderSearch(e.target.value)} placeholder="Search orders" className="adm-search-input" /></label>
+                    <button
+                      type="button"
+                      className={`adm-btn-ghost${orderWorkspaceOpen ? ' adm-tab--active' : ''}`}
+                      aria-expanded={orderWorkspaceOpen}
+                      onClick={() => setOrderWorkspaceOpen((v) => !v)}
+                      title="Open the order-building workspace (drafts, customer context, reminders)"
+                    >
+                      <ClipboardList size={15} />
+                      <span className="adm-btn-text">Order Workspace</span>
+                      {orderWorkspaceOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
                     <ActionMenu
                       items={[
                         {
@@ -2693,6 +2705,14 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 </>
                 )}
               </div>
+              {orderWorkspaceOpen && (
+                <Suspense fallback={<LazySectionFallback label="Loading Order Workspace…" />}>
+                  <OrdersWorkspacePanel
+                    initialWorkspaceId={initialOrderWorkspaceId}
+                    onShowToast={showToast}
+                  />
+                </Suspense>
+              )}
               </SectionErrorBoundary>
             )}
 
