@@ -97,6 +97,7 @@ import { fetchSpecials, saveSpecials } from '../lib/specials';
 import TaxonomyModals from '../components/TaxonomyModals';
 import SectionErrorBoundary from '../components/SectionErrorBoundary';
 import PlacementsEditor from '../components/PlacementsEditor';
+import AdminSelect from '../components/AdminSelect';
 import ComingSoonPanel from '../components/ComingSoonPanel';
 import OrderWhatsappNotify from '../components/OrderWhatsappNotify';
 import ProductManagerEngine from '../components/ProductManagerEngine';
@@ -2294,18 +2295,16 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                   <button onClick={() => setCustomerTab('regular')} className={`adm-tab${customerTab === 'regular' ? ' adm-tab--active' : ''}`}>Approved</button>
                   <label className="adm-search adm-search--inline"><Search size={14} /><input value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} placeholder="Search…" className="adm-search-input" /></label>
                   {customerTab !== 'proto-active' && (
-                    <select
-                      className="adm-select"
+                    <AdminSelect
+                      ariaLabel="Filter by business type"
                       value={customerBusinessType}
-                      onChange={(e) => setCustomerBusinessType(e.target.value)}
-                      aria-label="Filter by business type"
-                    >
-                      <option value="">All business types</option>
-                      <option value="__unspecified__">Unspecified</option>
-                      {BUSINESS_TYPES.map((type) => (
-                        <option key={type} value={type}>{type}</option>
-                      ))}
-                    </select>
+                      onChange={setCustomerBusinessType}
+                      options={[
+                        { value: '', label: 'All business types' },
+                        { value: '__unspecified__', label: 'Unspecified' },
+                        ...BUSINESS_TYPES.map((type) => ({ value: type, label: type })),
+                      ]}
+                    />
                   )}
                 </div>
 
