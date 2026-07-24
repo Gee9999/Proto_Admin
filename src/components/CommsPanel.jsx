@@ -3,6 +3,7 @@ import { BarChart2, ChevronLeft, ChevronRight, Loader2, Mail, RefreshCw, Search,
 import { ADMIN_REFRESH_EVENT } from '../lib/adminRefresh';
 import { lazyRetry } from '../lib/lazyRetry';
 import { BUSINESS_TYPES } from '../lib/businessTypes';
+import AdminSelect from './AdminSelect';
 
 const EmailAnalyticsPanel = lazyRetry(() => import('./EmailAnalyticsPanel'));
 
@@ -166,19 +167,16 @@ export default function CommsPanel({ onCompose, onShowToast }) {
         </button>
         {tab === 'contacts' && (
           <>
-            <select
-              className="adm-select"
+            <AdminSelect
+              ariaLabel="Filter by business type"
               value={businessType}
-              onChange={(e) => setBusinessType(e.target.value)}
-              aria-label="Filter by business type"
-              style={{ marginLeft: 4 }}
-            >
-              <option value="">All business types</option>
-              <option value="__unspecified__">Unspecified</option>
-              {BUSINESS_TYPES.map((type) => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
+              onChange={setBusinessType}
+              options={[
+                { value: '', label: 'All business types' },
+                { value: '__unspecified__', label: 'Unspecified' },
+                ...BUSINESS_TYPES.map((type) => ({ value: type, label: type })),
+              ]}
+            />
             <label className="adm-search adm-search--inline">
               <Search size={14} />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search name, email, business…" className="adm-search-input" />
