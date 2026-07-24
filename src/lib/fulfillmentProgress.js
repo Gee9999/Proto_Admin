@@ -16,6 +16,17 @@ export async function saveFulfillmentSection({ orderId, userId, userName, catego
   return json;
 }
 
+export async function toggleFulfillmentItem({ orderId, userId, userName, itemKey, checked }) {
+  const res = await fetch('/api/fulfillment-progress', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orderId, userId, userName, itemKey, checked }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to update item');
+  return json;
+}
+
 export async function lookupProductCategories(ids) {
   if (!ids.length) return {};
   const res = await fetch('/api/product-lookup', {

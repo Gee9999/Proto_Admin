@@ -5765,6 +5765,23 @@ html, body { background: #f5f5f5; color: #111827; }
 .ff-section-save:disabled { opacity: 0.7; cursor: wait; }
 .ff-section-items { padding: 2px 0; }
 
+/* Per-section packed counter (replaces the single section tick). */
+.ff-section-count {
+  min-width: 46px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 15px;
+  border: 1.5px solid rgba(255, 255, 255, 0.4);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.ff-section-count--done { background: #16a34a; border-color: #16a34a; }
+
 /* Item rows ------------------------------------------------------------ */
 .ff-item-row {
   display: flex;
@@ -5777,6 +5794,30 @@ html, body { background: #f5f5f5; color: #111827; }
 .ff-item-row:last-child { border-bottom: none; }
 .ff-item-row--removed { background: #fff5f5; }
 .ff-item-row--readonly { background: #fafafa; }
+.ff-item-row--packed { background: #f0fdf4; }
+.ff-item-row--packed.ff-item-row--removed { background: #fff5f5; }
+
+/* Per-item packed checkbox — the fulfilment checklist tick. */
+.ff-item-check {
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  border-radius: 50%;
+  border: 2px solid #cbd5e1;
+  background: #ffffff;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+.ff-item-check:hover:not(:disabled) { border-color: #16a34a; }
+.ff-item-check:active:not(:disabled) { transform: scale(0.92); }
+.ff-item-check--on { background: #16a34a; border-color: #16a34a; }
+.ff-item-check:disabled { cursor: default; opacity: 0.5; }
 .ff-item-img {
   width: 62px;
   height: 62px;
