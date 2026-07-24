@@ -15,20 +15,14 @@ import categories from '../data/categories.json';
 import { isImageFile } from '../lib/parseIntakeFilename.js';
 import { readApiJson } from '../lib/apiError.js';
 import ProductLoaderNutstore from './productLoader/ProductLoaderNutstore';
-import ProductLoaderNewProduct from './productLoader/ProductLoaderNewProduct';
-import ProductLoaderSingleImage from './productLoader/ProductLoaderSingleImage';
-import ProductLoaderFolder from './productLoader/ProductLoaderFolder';
-import ProductLoaderPublishHistory from './productLoader/ProductLoaderPublishHistory';
+import ProductLoaderUpload from './productLoader/ProductLoaderUpload';
 import ProductLoaderPublishSuccess from './productLoader/ProductLoaderPublishSuccess';
 import { ADMIN_REFRESH_EVENT } from '../lib/adminRefresh';
 import { catalogueDisplayTitle, catalogueDescription } from '../lib/productLoaderDisplay.js';
 
 const LOADER_TABS = [
   { id: 'nutstore', label: 'Nutstore' },
-  { id: 'new', label: 'New Product' },
-  { id: 'single', label: 'Single Image' },
-  { id: 'folder', label: 'Local Folder' },
-  { id: 'history', label: 'Publish History' },
+  { id: 'upload', label: 'Upload' },
 ];
 
 // Maps Gemini's category labels to taxonomy IDs
@@ -694,9 +688,9 @@ export default function ProductLoaderPanel({
   useEffect(() => {
     const c = String(initialCode || '').trim();
     if (!c) return;
-    // 'advanced' is not a rendered tab — route to the Single tab, which owns
-    // the code-lookup UI, so an Apollo hand-off doesn't land on a blank panel.
-    setActiveTab('single');
+    // A hand-off with a code routes to the Upload tab (the only image workflow
+    // now that Single/Folder are merged); the lookup still runs in the background.
+    setActiveTab('upload');
     void handleLookup(c).finally(() => onInitialCodeConsumed?.());
   }, [initialCode]);
 
@@ -898,7 +892,7 @@ export default function ProductLoaderPanel({
   };
 
   const openAdvanced = (code) => {
-    setActiveTab('single');
+    setActiveTab('upload');
     onShowToast?.(`Open Single Image tab and upload an image for ${code}`, 'success');
   };
 
@@ -955,43 +949,14 @@ export default function ProductLoaderPanel({
         />
       )}
 
-      {activeTab === 'new' && (
-        <ProductLoaderNewProduct
-          taxonomyTree={taxonomyTree}
-          publishedBy={publishedBy}
-          onShowToast={onShowToast}
-          onPublished={(result) => setPublishSuccess(result)}
-        />
-      )}
-
-      {activeTab === 'single' && (
-        <ProductLoaderSingleImage
+      {activeTab === 'upload' && (
+        <ProductLoaderUpload
           taxonomyTree={taxonomyTree}
           batchDefaultPathIds={batchDefaultPathIds}
           setBatchDefaultPathIds={setBatchDefaultPathIds}
           batchOverwrite={batchOverwrite}
           setBatchOverwrite={setBatchOverwrite}
           onShowToast={onShowToast}
-          onPublished={(result) => setPublishSuccess(result)}
-          mainSiteUrl={mainSiteUrl}
-        />
-      )}
-
-      {activeTab === 'folder' && (
-        <ProductLoaderFolder
-          taxonomyTree={taxonomyTree}
-          batchDefaultPathIds={batchDefaultPathIds}
-          setBatchDefaultPathIds={setBatchDefaultPathIds}
-          batchOverwrite={batchOverwrite}
-          setBatchOverwrite={setBatchOverwrite}
-          onShowToast={onShowToast}
-        />
-      )}
-
-      {activeTab === 'history' && (
-        <ProductLoaderPublishHistory
-          onShowToast={onShowToast}
-          onRerun={(sku) => openAdvanced(sku)}
         />
       )}
 
@@ -1000,7 +965,7 @@ export default function ProductLoaderPanel({
         <ProductLoaderPublishSuccess
           result={publishSuccess}
           mainSiteUrl={mainSiteUrl}
-          onUploadNext={() => { setPublishSuccess(null); setActiveTab("single"); }}
+          onUploadNext={() => { setPublishSuccess(null); setActiveTab("upload"); }}
           onDone={() => setPublishSuccess(null)}
         />
       )}
