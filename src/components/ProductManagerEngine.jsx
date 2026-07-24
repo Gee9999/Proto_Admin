@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import CategorySidebar, { resolvePathLabels } from './CategorySidebar';
 import ActionMenu from './ActionMenu';
+import FilterMenu from './FilterMenu';
 import BulkProductEditModal from './BulkProductEditModal';
 import BulkMoveModal from './BulkMoveModal';
 import MergeIntoGroupModal from './MergeIntoGroupModal';
@@ -475,6 +476,8 @@ export default function ProductManagerEngine({
   const [pageSize] = useState(50);
   const [onlyInStock, setOnlyInStock] = useState(() => readOnlyInStockPref());
   const [toOrderOnly, setToOrderOnly] = useState(false);
+  // SKU whose per-row "To order" toggle is mid-flight (for spinner + disable).
+  const [toOrderPendingSku, setToOrderPendingSku] = useState(null);
   // Only the debounced term lives here; the raw input value is owned by
   // PmSearchField so keystrokes don't re-render this component + its rows.
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -1092,6 +1095,20 @@ export default function ProductManagerEngine({
     handleProductSelect(id, item, index, { shiftKey: true });
   }, [handleProductSelect]);
 
+  const toggleToOrder = useCallback((item) => {
+    if (!item?.sku || toOrderPendingSku) return;
+    const next = !item.toOrder;
+    setToOrderPendingSku(item.sku);
+    mutations.setToOrder.mutate(
+      { sku: item.sku, toOrder: next },
+      {
+        onSuccess: () => onShowToast?.(next ? 'Marked “To order”' : 'Removed “To order”', 'success'),
+        onError: (err) => onShowToast?.(err.message || 'Could not update To-order', 'error'),
+        onSettled: () => setToOrderPendingSku(null),
+      },
+    );
+  }, [mutations, onShowToast, toOrderPendingSku]);
+
   const toggleSelect = (id, item, opts = {}) => {
     handleProductSelect(id, item, opts.index ?? null, {
       shiftKey: opts.shiftKey ?? false,
@@ -1566,26 +1583,27 @@ export default function ProductManagerEngine({
               )}
               <PmSearchField onDebouncedChange={setDebouncedSearch} />
               {status === 'live' && (
-                <label className="adm-filter-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={onlyInStock}
-                    onChange={(e) => handleOnlyInStockChange(e.target.checked)}
-                    style={{ accentColor: '#8B1A1A' }}
-                  />
-                  Show only in stock
-                </label>
-              )}
-              {status === 'live' && (
-                <label className="adm-filter-chip" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }} title="Show only products marked “To order” (orderable at 0 stock)">
-                  <input
-                    type="checkbox"
-                    checked={toOrderOnly}
-                    onChange={(e) => { setToOrderOnly(e.target.checked); setPage(1); }}
-                    style={{ accentColor: '#b45309' }}
-                  />
-                  To order only
-                </label>
+                <FilterMenu
+                  label="Filter"
+                  options={[
+                    {
+                      key: 'in-stock',
+                      label: 'In stock only',
+                      hint: 'Hide products with zero available stock',
+                      checked: onlyInStock,
+                      accentColor: '#8B1A1A',
+                      onChange: (v) => handleOnlyInStockChange(v),
+                    },
+                    {
+                      key: 'to-order',
+                      label: 'To order only',
+                      hint: 'Only products marked “To order” (orderable at 0 stock)',
+                      checked: toOrderOnly,
+                      accentColor: '#b45309',
+                      onChange: (v) => { setToOrderOnly(v); setPage(1); },
+                    },
+                  ]}
+                />
               )}
               {!reorderMode && (
                 <ActionMenu
@@ -1893,6 +1911,17 @@ export default function ProductManagerEngine({
                         )}
                         {status === 'live' && (
                           <>
+                            <button
+                              type="button"
+                              className={`adm-btn-ghost adm-btn--sm${item.toOrder ? ' pm-toorder-btn--on' : ''}`}
+                              aria-pressed={!!item.toOrder}
+                              disabled={toOrderPendingSku === item.sku}
+                              title={item.toOrder ? 'Marked “To order” — click to turn off' : 'Mark “To order” (orderable at 0 stock)'}
+                              onClick={() => toggleToOrder(item)}
+                            >
+                              {toOrderPendingSku === item.sku ? <Loader2 size={14} className="spin" /> : <PackagePlus size={14} />}
+                              To order
+                            </button>
                             <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={() => mutations.archive.mutate(item.sku, { onSuccess: () => onRefreshStats?.(), onError: (err) => onShowToast?.(err.message || 'Archive failed', 'error') })}>Archive</button>
                             <button type="button" className="adm-btn-red adm-btn--sm" title="Move to recycle bin" aria-label="Move to recycle bin" onClick={() => recycleSku(item.sku, false)}><Trash2 size={14} /></button>
                           </>

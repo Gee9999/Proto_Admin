@@ -3119,6 +3119,32 @@ input, select, textarea { font-family: inherit; outline: none; }
   align-items: center;
 }
 
+/* Bridge (Positill SQL tunnel) live-status indicator in the header. */
+.adm-bridge-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #6b7280;
+  white-space: nowrap;
+}
+.adm-bridge-dot__led {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.adm-bridge-dot__led--pulse { animation: adm-bridge-pulse 1.2s ease-in-out infinite; }
+@keyframes adm-bridge-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (max-width: 640px) {
+  .adm-bridge-dot__label { display: none; }
+  .adm-bridge-dot { padding: 5px 7px; }
+}
+
 /* ── Reorder grid ── */
 .adm-reorder-group { display: contents; }
 
@@ -11870,26 +11896,43 @@ html, body { background: #f5f5f5; color: #111827; }
 .pm-engine-head-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 .pm-panel-body { padding: 0 16px 16px; }
 .pm-toolbar { margin-bottom: 12px; }
+/* Bulk action bar — stacked layout: a count header, then each action cluster
+   on its own full-width row, so the actions read top-to-bottom with clear
+   spacing instead of crammed across one wrapping line. */
 .pm-bulk-bar {
   display: flex;
-  align-items: center;
-  gap: 8px 10px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
   font-size: 13px;
   font-weight: 600;
-  flex-wrap: wrap;
-  padding: 8px 12px;
+  padding: 14px 16px;
   border-radius: 12px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
+  border-left: 3px solid #8B1A1A;
 }
-.pm-bulk-bar__count { white-space: nowrap; color: #0f172a; padding-right: 2px; }
+/* Per-row "To order" toggle — amber when the product is marked to-order. */
+.pm-toorder-btn--on,
+.pm-toorder-btn--on:hover {
+  background: #b45309;
+  border-color: #b45309;
+  color: #fff;
+}
+.pm-bulk-bar__count { white-space: nowrap; color: #0f172a; font-size: 14px; font-weight: 800; }
 .pm-bulk-bar__count-sub { color: #64748b; font-weight: 500; }
-.pm-bulk-group { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-/* Push state-change + destructive actions to the trailing edge, away from
-   the data/category actions, so the bar reads as two clear clusters. */
-.pm-bulk-group--end { margin-left: auto; }
-@media (max-width: 900px) {
-  .pm-bulk-group--end { margin-left: 0; }
+.pm-bulk-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+/* Separate the state-change + destructive cluster onto its own row with a
+   divider, away from the data/category actions above it. */
+.pm-bulk-group--end { padding-top: 12px; border-top: 1px solid #e2e8f0; }
+/* "All N on this page selected / Select all in view" banner — sit flush in the
+   toolbar stack (the shared .adm-bulk-bar adds side margins we don't want here). */
+.pm-select-all-banner.adm-bulk-bar {
+  margin: 0;
+  border-radius: 12px;
+  padding: 12px 16px;
+  gap: 8px 12px;
 }
 .pm-bulk-edit-modal { width: min(920px, 96vw); max-height: 92vh; display: flex; flex-direction: column; }
 .pm-code-ellipsis {
