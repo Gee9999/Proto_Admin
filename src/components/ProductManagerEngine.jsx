@@ -17,7 +17,6 @@ import {
   RefreshCw,
   RotateCcw,
   Search,
-  Sparkles,
   Trash2,
   X,
 } from 'lucide-react';
@@ -327,44 +326,8 @@ function PmMobileProductCard({
         )}
         {status === 'live' && (
           <>
-            <button
-              type="button"
-              className="adm-btn-ghost adm-btn--sm"
-              title={item.isNew ? 'Remove from Specials' : 'Add to Specials'}
-              style={{ color: item.isNew ? '#0f766e' : undefined }}
-              onClick={() => mutations.setNewArrival.mutate(
-                { sku: item.sku, isNewArrival: !item.isNew },
-                {
-                  onSuccess: () => {
-                    onRefreshStats?.();
-                    onShowToast?.(item.isNew ? 'Removed from Specials' : 'Added to Specials');
-                  },
-                  onError: (err) => onShowToast?.(err.message, 'error'),
-                },
-              )}
-            >
-              <Sparkles size={14} />
-            </button>
-            <button
-              type="button"
-              className="adm-btn-ghost adm-btn--sm"
-              title={item.toOrder ? 'Remove “To order” — customers can’t order at 0 stock' : 'Mark “To order” — customers can order even at 0 stock'}
-              style={{ color: item.toOrder ? '#b45309' : undefined }}
-              onClick={() => mutations.setToOrder.mutate(
-                { sku: item.sku, toOrder: !item.toOrder },
-                {
-                  onSuccess: () => {
-                    onRefreshStats?.();
-                    onShowToast?.(item.toOrder ? 'Removed from To order' : 'Marked as To order');
-                  },
-                  onError: (err) => onShowToast?.(err.message, 'error'),
-                },
-              )}
-            >
-              <PackagePlus size={14} />
-            </button>
             <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={() => mutations.archive.mutate(item.sku, { onSuccess: () => onRefreshStats?.(), onError: (err) => onShowToast?.(err.message || 'Archive failed', 'error') })}>Archive</button>
-            <button type="button" className="adm-btn-red adm-btn--sm" onClick={() => recycleSku(item.sku, false)}>Recycle</button>
+            <button type="button" className="adm-btn-red adm-btn--sm" title="Move to recycle bin" aria-label="Move to recycle bin" onClick={() => recycleSku(item.sku, false)}><Trash2 size={14} /></button>
           </>
         )}
         {status === 'archived' && (
@@ -372,7 +335,7 @@ function PmMobileProductCard({
             <button type="button" className="adm-btn-red adm-btn--sm" onClick={() => onMakeLive?.(item)}>
               <ArchiveRestore size={14} /> Make live
             </button>
-            <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={() => recycleSku(item.sku, true)}>To recycle</button>
+            <button type="button" className="adm-btn-ghost adm-btn--sm" title="Move to recycle bin" aria-label="Move to recycle bin" onClick={() => recycleSku(item.sku, true)}><Trash2 size={14} /></button>
           </>
         )}
         {status === 'recycle' && (
@@ -494,7 +457,7 @@ export default function ProductManagerEngine({
   statuses = CATALOG_STATUSES,
   showCategorySidebar = true,
   title = 'Product Manager',
-  note = 'In-stock products are live on the site. Use ✨ to add products to Specials on the trade homepage.',
+  note = 'In-stock products are live on the site. Open a product to set its New Stock ribbon and To-order options.',
 }) {
   const clampStatus = useCallback(
     (s) => (statuses.includes(s) ? s : statuses[0]),
@@ -1697,25 +1660,6 @@ export default function ProductManagerEngine({
                   </span>
 
                   <div className="pm-bulk-group">
-                    <button
-                      type="button"
-                      className="adm-btn-ghost adm-btn--sm"
-                      disabled={exportingSelected || exportingXlsx}
-                      onClick={() => void handleExportSelected()}
-                    >
-                      {exportingSelected
-                        ? <><Loader2 size={14} className="spin" /> Exporting…</>
-                        : <><FileSpreadsheet size={14} /> Export selected</>}
-                    </button>
-                    {(status === 'live' || (status === 'archived' && !archiveNegativeLive)) && (
-                      <button
-                        type="button"
-                        className="adm-btn-ghost adm-btn--sm"
-                        onClick={() => setMoveModalOpen(true)}
-                      >
-                        Move
-                      </button>
-                    )}
                     {canRemoveFromCategory && (
                       <button
                         type="button"
@@ -1949,50 +1893,14 @@ export default function ProductManagerEngine({
                         )}
                         {status === 'live' && (
                           <>
-                            <button
-                              type="button"
-                              className="adm-btn-ghost adm-btn--sm"
-                              title={item.isNew ? 'Remove from Specials' : 'Add to Specials'}
-                              style={{ color: item.isNew ? '#0f766e' : undefined }}
-                              onClick={() => mutations.setNewArrival.mutate(
-                                { sku: item.sku, isNewArrival: !item.isNew },
-                                {
-                                  onSuccess: () => {
-                                    onRefreshStats?.();
-                                    onShowToast?.(item.isNew ? 'Removed from Specials' : 'Added to Specials');
-                                  },
-                                  onError: (err) => onShowToast?.(err.message, 'error'),
-                                },
-                              )}
-                            >
-                              <Sparkles size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              className="adm-btn-ghost adm-btn--sm"
-                              title={item.toOrder ? 'Remove “To order” — customers can’t order at 0 stock' : 'Mark “To order” — customers can order even at 0 stock'}
-                              style={{ color: item.toOrder ? '#b45309' : undefined }}
-                              onClick={() => mutations.setToOrder.mutate(
-                                { sku: item.sku, toOrder: !item.toOrder },
-                                {
-                                  onSuccess: () => {
-                                    onRefreshStats?.();
-                                    onShowToast?.(item.toOrder ? 'Removed from To order' : 'Marked as To order');
-                                  },
-                                  onError: (err) => onShowToast?.(err.message, 'error'),
-                                },
-                              )}
-                            >
-                              <PackagePlus size={14} />
-                            </button>
                             <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={() => mutations.archive.mutate(item.sku, { onSuccess: () => onRefreshStats?.(), onError: (err) => onShowToast?.(err.message || 'Archive failed', 'error') })}>Archive</button>
-                            <button type="button" className="adm-btn-red adm-btn--sm" onClick={() => recycleSku(item.sku, false)}>To recycle</button>
+                            <button type="button" className="adm-btn-red adm-btn--sm" title="Move to recycle bin" aria-label="Move to recycle bin" onClick={() => recycleSku(item.sku, false)}><Trash2 size={14} /></button>
                           </>
                         )}
                         {status === 'archived' && archiveNegativeLive && (
                           <>
                             <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={() => mutations.archive.mutate(item.sku, { onSuccess: () => onRefreshStats?.(), onError: (err) => onShowToast?.(err.message || 'Archive failed', 'error') })}>Archive</button>
-                            <button type="button" className="adm-btn-red adm-btn--sm" onClick={() => recycleSku(item.sku, false)}>To recycle</button>
+                            <button type="button" className="adm-btn-red adm-btn--sm" title="Move to recycle bin" aria-label="Move to recycle bin" onClick={() => recycleSku(item.sku, false)}><Trash2 size={14} /></button>
                           </>
                         )}
                         {status === 'archived' && !archiveNegativeLive && (
@@ -2000,7 +1908,7 @@ export default function ProductManagerEngine({
                             <button type="button" className="adm-btn-red adm-btn--sm" onClick={() => makeLive(item)}>
                               <ArchiveRestore size={14} /> Make live
                             </button>
-                            <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={() => recycleSku(item.sku, true)}>To recycle</button>
+                            <button type="button" className="adm-btn-ghost adm-btn--sm" title="Move to recycle bin" aria-label="Move to recycle bin" onClick={() => recycleSku(item.sku, true)}><Trash2 size={14} /></button>
                           </>
                         )}
                         {status === 'recycle' && (
