@@ -1649,19 +1649,6 @@ export default function ProductManagerEngine({
                   )}
                 </div>
               )}
-              {allPageSelected && total > rows.length && !selectAllView && (
-                <div className="pm-select-all-banner adm-bulk-bar" style={{ width: '100%', marginBottom: 0 }}>
-                  <span>All {rows.length} on this page selected.</span>
-                  <button
-                    type="button"
-                    className="adm-bulk-bar__link"
-                    disabled={selectingAll}
-                    onClick={() => void selectAllInView()}
-                  >
-                    {selectingAll ? 'Loading…' : `Select all ${total} in this view`}
-                  </button>
-                </div>
-              )}
               {selectAllView && selected.size > 0 && (
                 <div className="pm-select-all-banner adm-bulk-bar" style={{ width: '100%', marginBottom: 0 }}>
                   <span>All {selected.size} products in this view are selected.</span>
