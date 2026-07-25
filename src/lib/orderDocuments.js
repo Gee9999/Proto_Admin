@@ -173,14 +173,29 @@ function detectImageFormat(dataUrl) {
 }
 
 // Packing-slip column layout: #  Image  Barcode  Product  Qty  Avail
-const COL = {
-  num: { x: 40, w: 20 },
-  img: { x: 62, w: 44 },
-  code: { x: 112, w: 80 },
-  name: { x: 196, w: 212 },
-  qty: { x: 410, w: 52 },
-  avail: { x: 464, w: 91 },
-};
+// Column layout. The admin/picking copy prepends a dedicated tick-box column
+// and keeps the line-number column; the customer copy omits the tick column.
+function columnsFor(checkboxes) {
+  if (checkboxes) {
+    return {
+      check: { x: 40, w: 20 },
+      num: { x: 62, w: 14 },
+      img: { x: 80, w: 42 },
+      code: { x: 128, w: 72 },
+      name: { x: 204, w: 200 },
+      qty: { x: 410, w: 52 },
+      avail: { x: 464, w: 91 },
+    };
+  }
+  return {
+    num: { x: 40, w: 20 },
+    img: { x: 62, w: 44 },
+    code: { x: 112, w: 80 },
+    name: { x: 196, w: 212 },
+    qty: { x: 410, w: 52 },
+    avail: { x: 464, w: 91 },
+  };
+}
 
 function colCenter(col) {
   return col.x + col.w / 2;
@@ -203,6 +218,7 @@ export async function generateOrderPdfBase64({
   // copy leaves this false so their confirmation has no checkboxes.
   checkboxes = false,
 }) {
+  const COL = columnsFor(checkboxes);
   const jsPDF = await loadJsPDF();
   const doc = new jsPDF({ unit: 'pt', format: 'a4' });
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -324,12 +340,11 @@ export async function generateOrderPdfBase64({
     doc.setFontSize(7.5);
     doc.setTextColor(255, 255, 255);
     if (checkboxes) {
-      doc.setDrawColor(255, 255, 255);
-      doc.setLineWidth(1);
-      doc.roundedRect(COL.num.x, y + 4, 11, 11, 1.5, 1.5, 'S');
-    } else {
-      doc.text('#', COL.num.x + 3, y + 15);
+      doc.setFontSize(6.5);
+      doc.text('PACK', COL.check.x, y + 15);
+      doc.setFontSize(7.5);
     }
+    doc.text('#', COL.num.x, y + 15);
     doc.text('IMAGE', COL.img.x, y + 15);
     doc.text('BARCODE', COL.code.x, y + 15);
     doc.text('PRODUCT', COL.name.x, y + 15);
@@ -372,20 +387,20 @@ export async function generateOrderPdfBase64({
     doc.setDrawColor(226, 232, 240);
     doc.line(margin, y + rowH - 2, margin + contentWidth, y + rowH - 2);
 
-    // Leftmost cell — empty tick box (admin/picking copy) or the line number.
+    // Dedicated tick-box column on the admin/picking copy.
     if (checkboxes) {
-      const box = 13;
-      const bx = COL.num.x + (COL.num.w - box) / 2;
+      const box = 14;
+      const bx = COL.check.x + (COL.check.w - box) / 2;
       const by = y + rowH / 2 - box / 2;
       doc.setDrawColor(90, 90, 90);
       doc.setLineWidth(1.1);
       doc.roundedRect(bx, by, box, box, 2, 2, 'S');
-    } else {
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(100, 116, 139);
-      doc.text(String(rowIndex), COL.num.x + 3, y + rowH / 2 + 3);
     }
+    // Line number (both copies).
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    doc.text(String(rowIndex), COL.num.x, y + rowH / 2 + 3);
 
     // image
     const imgData = await loadImageDataUrl(item.image);
