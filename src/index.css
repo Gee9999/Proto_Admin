@@ -14112,3 +14112,15 @@ html, body { background: #f5f5f5; color: #111827; }
 .buying-shipment-lines { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 6px; margin-top: 11px; }.buying-shipment-lines div { display: grid; grid-template-columns: auto 1fr auto; gap: 6px; align-items: center; padding: 7px 8px; border-radius: 6px; background: #fff; border: 1px solid #e6eaf0; }.buying-shipment-lines strong, .buying-shipment-lines b { font-size: 11px; }.buying-shipment-lines span { overflow: hidden; color: #798397; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.buying-shipment-lines b { color: #25653d; white-space: nowrap; }.buying-shipment-card p { margin: 10px 0 0; }
 @media (max-width: 920px) { .buying-layout { grid-template-columns: 1fr; }.buying-form--rule, .buying-form--shipment { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 600px) { .buying-head { align-items: flex-start; flex-direction: column; }.buying-form, .buying-form--rule, .buying-form--shipment { grid-template-columns: 1fr; }.buying-line-form { grid-template-columns: 1fr 1fr 70px 24px; }.buying-shipment-card-head { flex-direction: column; }.buying-status { align-self: stretch; }.buying-status select { flex: 1; } }
+
+/* Description Replace — preview table */
+.drp-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.drp-table th {
+  text-align: left; padding: 8px 10px; position: sticky; top: 0;
+  background: #f8fafc; border-bottom: 2px solid #e2e8f0;
+  font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #64748b;
+}
+.drp-table td { padding: 8px 10px; border-bottom: 1px solid #eef2f7; vertical-align: top; }
+.drp-desc { max-width: 260px; color: #334155; line-height: 1.4; }
+.drp-row--missing { background: #fef2f2; }
+.drp-row--same { opacity: 0.6; }
