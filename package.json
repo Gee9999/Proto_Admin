@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/apply-category-move-xlsx.mjs --apply-if-pending && node scripts/fix-writing-correction-categories.mjs --apply-if-pending && node scripts/fix-art-supplies-categories.mjs --apply-if-pending && vite build",
+    "build": "node scripts/verify-admin-project.mjs && node scripts/apply-category-move-xlsx.mjs --apply-if-pending && node scripts/fix-writing-correction-categories.mjs --apply-if-pending && node scripts/fix-art-supplies-categories.mjs --apply-if-pending && vite build",
     "preview": "vite preview",
     "resize-images": "node scripts/resize-product-images.mjs",
     "test:nutstore-filename": "node scripts/test-nutstore-filename.mjs",

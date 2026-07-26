@@ -30,6 +30,11 @@ if (result.status !== 0) {
   process.exit(result.status || 1);
 }
 
+if (/site\.proto\.co\.za/i.test(out)) {
+  console.error('\nERROR: Deploy output aliases site.proto.co.za (main portal). Aborting.');
+  process.exit(1);
+}
+
 if (/protoportal-main/i.test(out) && !/protoportal-admin/i.test(out)) {
   console.error('\nERROR: Deployment targeted protoportal-main. Aborting.');
   process.exit(1);
