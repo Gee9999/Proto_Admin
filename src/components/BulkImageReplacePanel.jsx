@@ -16,6 +16,7 @@ import {
   Upload,
 } from 'lucide-react';
 import SectionErrorBoundary from './SectionErrorBoundary';
+import DescriptionReplacePanel from './DescriptionReplacePanel';
 import { buildCatalogParams, useCatalogQuery } from '../hooks/useCatalog';
 import {
   BULK_IMAGE_REPLACE_MAX,
@@ -50,6 +51,7 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
   const folderRef = useRef(null);
   const abortRef = useRef(false);
 
+  const [mode, setMode] = useState('images'); // 'images' | 'descriptions'
   const [step, setStep] = useState('select');
   const [scope, setScope] = useState('live');
   const [searchInput, setSearchInput] = useState('');
@@ -231,14 +233,41 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
         <div>
           <h2 className="adm-section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <ImagePlus size={20} />
-            Image Replace
+            {mode === 'descriptions' ? 'Description Replace' : 'Image Replace'}
           </h2>
           <p className="adm-section-note">
-            Select up to {BULK_IMAGE_REPLACE_MAX} {scope === 'archived' ? 'archived' : 'live'} products, pick one image slot, then upload a folder of replacement images.
+            {mode === 'descriptions'
+              ? 'Bulk-replace product descriptions from a barcode spreadsheet.'
+              : `Select up to ${BULK_IMAGE_REPLACE_MAX} ${scope === 'archived' ? 'archived' : 'live'} products, pick one image slot, then upload a folder of replacement images.`}
           </p>
         </div>
       </div>
 
+      <div className="adm-tabbar" role="tablist" aria-label="Replace mode" style={{ display: 'inline-flex', gap: 4, marginBottom: 14 }}>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === 'images'}
+          className={mode === 'images' ? 'adm-btn-red adm-btn--sm' : 'adm-btn-ghost adm-btn--sm'}
+          onClick={() => setMode('images')}
+        >
+          Images
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={mode === 'descriptions'}
+          className={mode === 'descriptions' ? 'adm-btn-red adm-btn--sm' : 'adm-btn-ghost adm-btn--sm'}
+          onClick={() => setMode('descriptions')}
+        >
+          Descriptions
+        </button>
+      </div>
+
+      {mode === 'descriptions' && <DescriptionReplacePanel onShowToast={onShowToast} />}
+
+      {mode === 'images' && (
+      <>
       <StepTabs step={step} />
 
       {step === 'select' && (
@@ -529,6 +558,8 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
             </button>
           </div>
         </>
+      )}
+      </>
       )}
     </div>
   );
