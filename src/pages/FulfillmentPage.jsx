@@ -125,10 +125,15 @@ export default function FulfillmentPage() {
     [activeUser],
   );
 
+  // Number of item-tick saves currently in flight. The 30s poll must not
+  // overwrite an optimistic tick with pre-toggle server data mid-request.
+  const savingRef = useRef(0);
+
   const refreshProgress = useCallback(async () => {
     if (!orderId) return;
     try {
       const data = await fetchFulfillmentProgress(orderId);
+      if (savingRef.current > 0) return; // a tick is mid-flight; don't clobber it
       setProgress(data);
       setItems((prev) => applyProgress(prev, data.sections));
     } catch {}
@@ -246,6 +251,7 @@ export default function FulfillmentPage() {
     if (itemSavingKeys.has(key)) return;
     const next = !isItemPacked(item);
 
+    savingRef.current += 1;
     setItemSavingKeys((prev) => new Set(prev).add(key));
     setProgress((prev) => {
       const map = { ...(prev.items || {}) };
@@ -267,11 +273,12 @@ export default function FulfillmentPage() {
       setProgress((prev) => {
         const map = { ...(prev.items || {}) };
         if (next) delete map[key];
-        else map[key] = { userId: activeUser.id, userName: activeUser.name };
+        else map[key] = { userId: activeUser.id, userName: activeUser.name, checkedAt: new Date().toISOString() };
         return { ...prev, items: map };
       });
       setStatusMsg({ type: 'err', text: e.message });
     } finally {
+      savingRef.current = Math.max(0, savingRef.current - 1);
       setItemSavingKeys((prev) => { const n = new Set(prev); n.delete(key); return n; });
     }
   };
@@ -480,6 +487,9 @@ export default function FulfillmentPage() {
   const groupPackedCount = (g) => groupPackable(g).filter(isItemPacked).length;
   const isGroupComplete = (g) => {
     const packable = groupPackable(g);
+    // A section with nothing left to pack (every line out of stock) is done —
+    // otherwise the progress bar could never reach 100% for such an order.
+    if (g.items.length > 0 && packable.length === 0) return true;
     return packable.length > 0 && packable.every(isItemPacked);
   };
   const completedCount = categoryGroups.filter(isGroupComplete).length;
