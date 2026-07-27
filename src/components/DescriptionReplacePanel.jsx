@@ -46,10 +46,10 @@ export default function DescriptionReplacePanel({ onShowToast }) {
 
   const runApply = useCallback(async () => {
     if (!applicable.length) return;
-    if (!window.confirm(`Replace descriptions for ${applicable.length} product(s)?`)) return;
+    if (!window.confirm(`Replace titles for ${applicable.length} product(s)?`)) return;
     setApplying(true);
     try {
-      const res = await applyDescriptions(applicable.map((r) => ({ barcode: r.barcode, description: r.newDescription })));
+      const res = await applyDescriptions(applicable.map((r) => ({ barcode: r.barcode, title: r.newTitle })));
       setResults(res);
       onShowToast?.(
         `Updated ${res.updated}${res.notFound ? `, ${res.notFound} not found` : ''}${res.failed ? `, ${res.failed} failed` : ''}`,
@@ -69,9 +69,10 @@ export default function DescriptionReplacePanel({ onShowToast }) {
   return (
     <div>
       <p className="adm-section-note">
-        Upload a spreadsheet with <strong>BARCODE</strong> and <strong>DESCRIPTION</strong> columns.
-        Each row&rsquo;s barcode is matched to a live product and its description is replaced.
-        Changes sync to the storefront automatically.
+        Upload a spreadsheet with <strong>BARCODE</strong> and <strong>TITLE</strong> columns
+        (a NAME/PRODUCT/DESCRIPTION header also works). Each barcode is matched to a live
+        product and its <strong>title</strong> (product name) is replaced. Changes sync to the
+        storefront automatically.
       </p>
 
       <div className="adm-toolbar" style={{ gap: 10, marginBottom: 12 }}>
@@ -107,9 +108,9 @@ export default function DescriptionReplacePanel({ onShowToast }) {
               <thead>
                 <tr>
                   <th>Barcode</th>
-                  <th>Product</th>
-                  <th>Current description</th>
-                  <th>New description</th>
+                  <th>SKU</th>
+                  <th>Current title</th>
+                  <th>New title</th>
                   <th>Status</th>
                 </tr>
               </thead>
@@ -117,9 +118,9 @@ export default function DescriptionReplacePanel({ onShowToast }) {
                 {rows.slice(0, 500).map((r, i) => (
                   <tr key={`${r.barcode}-${i}`} className={!r.found ? 'drp-row--missing' : r.unchanged ? 'drp-row--same' : ''}>
                     <td><code style={{ fontSize: 11 }}>{r.barcode}</code></td>
-                    <td>{r.found ? (r.title || r.sku) : <span className="adm-muted">—</span>}</td>
-                    <td className="drp-desc">{r.found ? (r.currentDescription || <span className="adm-muted">(empty)</span>) : <span className="adm-muted">—</span>}</td>
-                    <td className="drp-desc">{r.newDescription}</td>
+                    <td>{r.found ? (r.sku || '—') : <span className="adm-muted">—</span>}</td>
+                    <td className="drp-desc">{r.found ? (r.currentTitle || <span className="adm-muted">(empty)</span>) : <span className="adm-muted">—</span>}</td>
+                    <td className="drp-desc">{r.newTitle}</td>
                     <td>
                       {!r.found
                         ? <span style={{ color: '#b91c1c', fontSize: 12, fontWeight: 700 }}><X size={12} /> Not found</span>
@@ -150,7 +151,7 @@ export default function DescriptionReplacePanel({ onShowToast }) {
               style={{ marginLeft: 'auto' }}
             >
               {applying ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}
-              Replace {applicable.length} description(s)
+              Replace {applicable.length} title(s)
             </button>
           </div>
         </>
