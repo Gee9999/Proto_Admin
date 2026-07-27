@@ -360,6 +360,20 @@ export default function FulfillmentPage() {
     finally { setSaving(false); }
   };
 
+  // Close this fulfilment tab safely. Only call window.close() when we actually
+  // have a live opener (i.e. this really is a script-opened child tab of the
+  // admin window). Blind-calling window.close() could take the admin tab down
+  // when the page was opened without an opener or in the same tab — instead we
+  // just navigate back to the dashboard in that case.
+  const closeFulfillment = () => {
+    if (window.opener && !window.opener.closed) {
+      try { window.opener.focus(); } catch { /* cross-window focus can throw */ }
+      window.close();
+      return;
+    }
+    window.location.assign('/?section=orders');
+  };
+
   const previewPdf = async () => {
     setPreviewing(true);
     try {
@@ -484,7 +498,7 @@ export default function FulfillmentPage() {
             <div className="ff-header__sub">{new Date(order.created_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short' })} · {order.customers?.name || 'Customer'}</div>
           </div>
         </div>
-        <button type="button" onClick={() => window.close()} className="ff-close-btn" aria-label="Close">
+        <button type="button" onClick={closeFulfillment} className="ff-close-btn" aria-label="Close">
           <X size={18} />
         </button>
       </header>
