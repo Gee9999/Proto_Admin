@@ -1685,6 +1685,17 @@ export default function ProductManagerEngine({
                         <Pencil size={14} /> Bulk edit
                       </button>
                     )}
+                    {(status === 'live' || status === 'archived') && (
+                      <button
+                        type="button"
+                        className="adm-btn-ghost adm-btn--sm"
+                        disabled={moveSaving || bulkActionPending}
+                        onClick={() => setMoveModalOpen(true)}
+                        title="Move the selected products to another category"
+                      >
+                        <FolderTree size={14} /> Move
+                      </button>
+                    )}
                     {status === 'live' && catalogGrouping && selected.size >= 2 && (
                       <button
                         type="button"
