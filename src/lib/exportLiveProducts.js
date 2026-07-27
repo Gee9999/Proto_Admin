@@ -213,12 +213,20 @@ export async function exportSelectedProductsXlsx(products, {
 }
 
 /** Export catalogue with full DB + taxonomy categories and all product fields. */
-export async function exportProductsCatalogXlsx({ status = 'live', taxonomyTree = [] } = {}) {
+export async function exportProductsCatalogXlsx({ status = 'live', taxonomyTree = [], categoryPath = [] } = {}) {
   const XLSX = await import('xlsx');
   const tree = Array.isArray(taxonomyTree) ? taxonomyTree : [];
   setLiveTaxonomyTree(tree);
 
-  const products = await fetchProductsForStatus(status);
+  let products = await fetchProductsForStatus(status);
+  // Scope to the currently-selected category (and its subcategories) when set.
+  const want = (Array.isArray(categoryPath) ? categoryPath : []).map(String).filter(Boolean);
+  if (want.length) {
+    products = products.filter((p) => {
+      const path = (Array.isArray(p.categoryPath) ? p.categoryPath : []).map(String);
+      return want.every((id, i) => path[i] === id);
+    });
+  }
   const sheetRows = sortCatalogRows(products.map((p) => productToCatalogRow(p, tree, status)));
 
   const wb = XLSX.utils.book_new();
