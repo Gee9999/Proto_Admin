@@ -1,10 +1,10 @@
 import { requireAdminKey } from './_admin-auth.js';
 import { createClient } from '@supabase/supabase-js';
 
-// Bulk description replace — matches products by barcode and overwrites
-// website_stock.original_description. Updating that column fires the existing
-// website_stock → website_products sync trigger, so the storefront copy updates
-// automatically. Two modes: 'preview' (look up current values) and 'apply'.
+// Bulk title replace — matches products by barcode and overwrites
+// website_stock.title (the product name shown on the storefront). Updating that
+// column fires the existing website_stock → website_products sync trigger, so
+// the storefront copy updates automatically. Two modes: 'preview' and 'apply'.
 
 export const config = { api: { bodyParser: { sizeLimit: '8mb' } } };
 
@@ -42,7 +42,7 @@ export default async function handler(req, res) {
         const chunk = barcodes.slice(i, i + CHUNK);
         const { data, error } = await supabase
           .from('website_stock')
-          .select('sku, barcode, title, original_description')
+          .select('sku, barcode, title')
           .in('barcode', chunk);
         if (error) return res.status(500).json({ error: error.message });
         for (const r of data || []) found.set(normBarcode(r.barcode), r);
@@ -51,7 +51,7 @@ export default async function handler(req, res) {
       const rows = barcodes.map((bc) => {
         const r = found.get(bc);
         return r
-          ? { barcode: bc, found: true, sku: r.sku, title: r.title || '', currentDescription: r.original_description || '' }
+          ? { barcode: bc, found: true, sku: r.sku, currentTitle: r.title || '' }
           : { barcode: bc, found: false };
       });
       return res.status(200).json({ rows });
@@ -66,12 +66,12 @@ export default async function handler(req, res) {
 
       for (const it of items) {
         const barcode = normBarcode(it?.barcode);
-        const description = String(it?.description ?? '').trim();
-        if (!barcode || !description) { results.push({ barcode, status: 'skipped' }); continue; }
+        const title = String(it?.title ?? it?.description ?? '').trim();
+        if (!barcode || !title) { results.push({ barcode, status: 'skipped' }); continue; }
 
         const { data, error } = await supabase
           .from('website_stock')
-          .update({ original_description: description, updated_at: new Date().toISOString() })
+          .update({ title, updated_at: new Date().toISOString() })
           .eq('barcode', barcode)
           .select('sku');
 

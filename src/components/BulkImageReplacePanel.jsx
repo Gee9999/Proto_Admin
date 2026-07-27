@@ -125,6 +125,41 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
     });
   }, [onShowToast]);
 
+  // Anchor for shift-click range selection within the current page of cards.
+  const lastPickIndexRef = useRef(null);
+
+  const handlePickClick = useCallback((e, index) => {
+    const anchor = lastPickIndexRef.current;
+    const row = pickerRows[index];
+    if (!row) return;
+    const sku = String(row.sku || '').trim().toUpperCase();
+    if (e.shiftKey && anchor != null && anchor !== index) {
+      e.preventDefault(); // suppress the browser's shift text-selection
+      const start = Math.min(anchor, index);
+      const end = Math.max(anchor, index);
+      setSelectedMap((prev) => {
+        const next = new Map(prev);
+        let hitCap = false;
+        for (let i = start; i <= end; i += 1) {
+          const r = pickerRows[i];
+          const s = String(r?.sku || '').trim().toUpperCase();
+          if (!s || next.has(s)) continue;
+          if (next.size >= BULK_IMAGE_REPLACE_MAX) { hitCap = true; break; }
+          next.set(s, catalogRowToSelection(r));
+        }
+        if (hitCap) onShowToast?.(`Maximum ${BULK_IMAGE_REPLACE_MAX} products per run`, 'error');
+        return next;
+      });
+      // Anchor stays put so further shift-clicks keep extending from it.
+    } else {
+      toggleProduct(row, !selectedSkuSet.has(sku));
+      lastPickIndexRef.current = index;
+    }
+  }, [pickerRows, selectedSkuSet, toggleProduct, onShowToast]);
+
+  // The anchor is a page-relative index; reset it whenever the visible set changes.
+  useEffect(() => { lastPickIndexRef.current = null; }, [page, debouncedSearch, categoryId, scope]);
+
   const clearSelection = useCallback(() => {
     setSelectedMap(new Map());
   }, []);
@@ -233,11 +268,11 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
         <div>
           <h2 className="adm-section-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <ImagePlus size={20} />
-            {mode === 'descriptions' ? 'Description Replace' : 'Image Replace'}
+            {mode === 'descriptions' ? 'Title Replace' : 'Image Replace'}
           </h2>
           <p className="adm-section-note">
             {mode === 'descriptions'
-              ? 'Bulk-replace product descriptions from a barcode spreadsheet.'
+              ? 'Bulk-replace product titles from a barcode spreadsheet.'
               : `Select up to ${BULK_IMAGE_REPLACE_MAX} ${scope === 'archived' ? 'archived' : 'live'} products, pick one image slot, then upload a folder of replacement images.`}
           </p>
         </div>
@@ -260,7 +295,7 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
           className={mode === 'descriptions' ? 'adm-btn-red adm-btn--sm' : 'adm-btn-ghost adm-btn--sm'}
           onClick={() => setMode('descriptions')}
         >
-          Descriptions
+          Titles
         </button>
       </div>
 
@@ -326,19 +361,29 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
             <p className="adm-section-note"><Loader2 size={14} className="spin" /> Loading products…</p>
           ) : (
             <>
+              <p className="adm-muted" style={{ fontSize: 12, margin: '0 0 8px' }}>
+                Click to select · <strong>Shift+click</strong> another card to select the range between them.
+              </p>
               <div className="bir-pick-grid">
-                {pickerRows.map((row) => {
+                {pickerRows.map((row, index) => {
                   const product = catalogRowToSelection(row);
                   const checked = selectedSkuSet.has(product.sku);
                   return (
-                    <label
+                    <div
                       key={product.sku}
+                      role="button"
+                      tabIndex={0}
                       className={`bir-pick-card${checked ? ' bir-pick-card--selected' : ''}`}
+                      style={{ cursor: 'pointer', userSelect: 'none' }}
+                      onClick={(e) => handlePickClick(e, index)}
+                      onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); handlePickClick(e, index); } }}
                     >
                       <input
                         type="checkbox"
                         checked={checked}
-                        onChange={(e) => toggleProduct(row, e.target.checked)}
+                        readOnly
+                        tabIndex={-1}
+                        style={{ pointerEvents: 'none' }}
                       />
                       <div className="adm-product-thumb bir-pick-thumb">
                         {product.images[0]
@@ -349,7 +394,7 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
                         <strong>{product.title}</strong>
                         <div className="adm-muted" style={{ fontSize: 11 }}>{product.sku}</div>
                       </div>
-                    </label>
+                    </div>
                   );
                 })}
               </div>
