@@ -1321,13 +1321,15 @@ export default function ProductManagerEngine({
     { onSuccess: () => onRefreshStats?.(), onError: (err) => onShowToast?.(err.message || 'Recycle failed', 'error') },
   );
 
-  const handleExportCatalog = async (allStatuses = false) => {
+  // mode: 'all' → every status/category; 'category' → the currently-clicked
+  // category only (its subcategories included).
+  const handleExportCatalog = async (mode = 'all') => {
     setExportingXlsx(true);
     try {
-      const count = allStatuses
+      const count = mode === 'all'
         ? await exportAllProductsCatalogXlsx({ taxonomyTree })
-        : await exportProductsCatalogXlsx({ status, taxonomyTree });
-      onShowToast?.(`Exported ${count} product${count === 1 ? '' : 's'} with full categories`, 'success');
+        : await exportProductsCatalogXlsx({ status, taxonomyTree, categoryPath });
+      onShowToast?.(`Exported ${count} product${count === 1 ? '' : 's'}`, 'success');
     } catch (err) {
       onShowToast?.(err.message || 'Export failed', 'error');
     } finally {
@@ -1401,17 +1403,23 @@ export default function ProductManagerEngine({
                 type="button"
                 className="adm-btn-ghost adm-btn--sm"
                 disabled={exportingXlsx}
-                onClick={() => void handleExportCatalog(false)}
-                title="Export current tab with all category levels and product fields"
+                onClick={() => void handleExportCatalog('category')}
+                title={categoryPath.length
+                  ? `Export only "${categoryFilterLabel}" (and its subcategories)`
+                  : `Export all ${status === 'archived' ? 'archived' : 'live'} products`}
               >
                 {exportingXlsx ? <Loader2 size={14} className="spin" /> : <FileSpreadsheet size={14} />}
-                {exportingXlsx ? 'Exporting…' : 'Export Excel'}
+                {exportingXlsx
+                  ? 'Exporting…'
+                  : (categoryPath.length
+                    ? `Export ${categoryLabels[categoryLabels.length - 1]}`
+                    : `Export ${status === 'archived' ? 'archived' : 'live'}`)}
               </button>
               <button
                 type="button"
                 className="adm-btn-ghost adm-btn--sm"
                 disabled={exportingXlsx}
-                onClick={() => void handleExportCatalog(true)}
+                onClick={() => void handleExportCatalog('all')}
                 title="Export live + archived + recycle in one file, plus category tree sheet"
               >
                 {exportingXlsx ? <Loader2 size={14} className="spin" /> : <FileSpreadsheet size={14} />}
@@ -1625,13 +1633,6 @@ export default function ProductManagerEngine({
               )}
               {rows.length > 0 && !reorderMode && (
                 <div className="pm-select-toolbar" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', width: '100%' }}>
-                  <button
-                    type="button"
-                    className="adm-btn-ghost adm-btn--sm"
-                    onClick={toggleSelectAllPage}
-                  >
-                    {allPageSelected ? `Deselect page (${rows.length})` : `Select page (${rows.length})`}
-                  </button>
                   {total > rows.length && (
                     <button
                       type="button"
