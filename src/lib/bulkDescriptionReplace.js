@@ -20,9 +20,15 @@ export async function parseDescriptionSheet(file) {
   let titleCol = -1;
   for (let i = 0; i < Math.min(table.length, 10); i += 1) {
     const rowCells = (table[i] || []).map((c) => String(c || '').trim().toUpperCase());
-    const bc = rowCells.findIndex((c) => c === 'BARCODE' || c.includes('BARCODE'));
-    const tc = rowCells.findIndex((c) => TITLE_HEADERS.some((h) => c === h || c.includes(h)));
-    if (bc !== -1 && tc !== -1) { headerIdx = i; barcodeCol = bc; titleCol = tc; break; }
+    // Prefer exact header matches over substring, and never let the barcode and
+    // title resolve to the SAME column (e.g. a "PRODUCT BARCODE" header matches
+    // both — without this guard, titles would be overwritten with barcodes).
+    const bc = rowCells.indexOf('BARCODE') !== -1
+      ? rowCells.indexOf('BARCODE')
+      : rowCells.findIndex((c) => c.includes('BARCODE'));
+    let tc = rowCells.findIndex((c, idx) => idx !== bc && TITLE_HEADERS.includes(c));
+    if (tc === -1) tc = rowCells.findIndex((c, idx) => idx !== bc && TITLE_HEADERS.some((h) => c.includes(h)));
+    if (bc !== -1 && tc !== -1 && bc !== tc) { headerIdx = i; barcodeCol = bc; titleCol = tc; break; }
   }
   if (headerIdx === -1) {
     throw new Error('Could not find BARCODE and TITLE columns. The first row must have a BARCODE header and a TITLE (or NAME/PRODUCT/DESCRIPTION) header.');

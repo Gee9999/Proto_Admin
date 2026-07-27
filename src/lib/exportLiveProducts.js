@@ -273,8 +273,3 @@ export async function exportAllProductsCatalogXlsx({ taxonomyTree = [] } = {}) {
   XLSX.writeFile(wb, `proto-products-all-${stamp}.xlsx`);
   return sheetRows.length;
 }
-
-/** @deprecated Use exportProductsCatalogXlsx */
-export async function exportLiveProductsXlsx(taxonomyTree = []) {
-  return exportProductsCatalogXlsx({ status: 'live', taxonomyTree });
-}

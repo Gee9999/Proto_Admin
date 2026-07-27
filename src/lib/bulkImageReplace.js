@@ -14,7 +14,10 @@ export function slotFilenameExample(sku, slot) {
 export function catalogRowToSelection(row) {
   const images = row.images || [];
   return {
-    sku: row.sku,
+    // Normalize to match how the selection Map is keyed (trim + uppercase), so
+    // selectedSkuSet lookups and the shift-range dedup can't silently desync
+    // (a lowercase SKU would otherwise never be found → couldn't be deselected).
+    sku: String(row.sku || '').trim().toUpperCase(),
     // Keep the product's barcode/code so an image labelled with the code still
     // matches even after the code was changed to differ from the SKU.
     barcode: row.barcode || row.code || '',
