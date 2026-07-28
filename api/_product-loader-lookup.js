@@ -1,4 +1,4 @@
-import { codeLookupCandidates } from '../lib/code-normalize.mjs';
+import { codeLookupCandidates, baseCodeToken } from '../lib/code-normalize.mjs';
 import { getProductByCode } from './_sql-provider.js';
 import { toSqlPreview } from './_sql-stmast.js';
 import { parseLoaderFilename } from './_product-loader-filename.js';
@@ -147,7 +147,12 @@ export async function resolveProductLoaderMatch(sb, {
     }
   }
 
-  const effectiveCode = websiteRow?.sku || sqlRow?.code || matchedCandidate || code;
+  // Second pass ("double reasoning"): if NOTHING resolved with the full code —
+  // including any variant suffix after a "-", a "." or brackets — fall back to
+  // the bare base/number code rather than keeping the whole SKU. A matched
+  // product always wins first, so this only affects the not-found case.
+  const unmatchedFallback = baseCodeToken(code) || code;
+  const effectiveCode = websiteRow?.sku || sqlRow?.code || matchedCandidate || unmatchedFallback;
   const hasCatalogMatch = Boolean(websiteRow || sqlRow);
   const rawTitle = hasCatalogMatch
     ? String(sqlRow?.title || websiteRow?.title || '').trim()
