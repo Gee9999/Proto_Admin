@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { PROTO_URLS } from './_proto-urls.js';
+import { resolveOrderAlertRecipients } from './_order-alert-recipients.js';
 import { sendBrevoTransactional } from './_brevo-email.js';
 import {
   getPortalAdminClient,
@@ -8,7 +9,16 @@ import {
   SITE_CONFIG_BUCKET,
 } from './_site-config.js';
 
-export const NEW_ORDER_ALERT_EMAIL = process.env.NEW_ORDER_ALERT_EMAIL || 'online@proto.co.za';
+// The whole team receives the new-order alert. Kept as a list so the cron
+// sweep and the manual resend can recover the notification for EVERY required
+// address, not just one. NEW_ORDER_ALERT_EMAIL may add recipients; it can no
+// longer replace them.
+export const NEW_ORDER_ALERT_EMAILS = resolveOrderAlertRecipients();
+
+// Brevo rejects a message over ~10MB and base64 inflates the file by ~33%.
+const MAX_ALERT_ATTACHMENT_BYTES = 6 * 1024 * 1024;
+/** @deprecated Kept for log/message compatibility — prefer NEW_ORDER_ALERT_EMAILS. */
+export const NEW_ORDER_ALERT_EMAIL = NEW_ORDER_ALERT_EMAILS.join(', ');
 
 function getPortalDbClient() {
   return createClient(
@@ -79,7 +89,22 @@ async function sendNewOrderAlertEmail(order, { resendCount = 0 } = {}) {
       <td style="padding:4px 8px;border-bottom:1px solid #e5e7eb;">${esc(item?.code || item?.sku || '')}</td>
       <td style="padding:4px 8px;border-bottom:1px solid #e5e7eb;text-align:right;">${esc(item?.qty ?? item?.quantity ?? '')}</td>
     </tr>`).join('');
-  const pdf = await loadStoredOrderPdf(order.id);
+  // The PDF is best-effort. It used to be awaited unguarded, so a missing or
+  // oversized file threw and the team got NO alert at all — the failure mode
+  // that cost PT_00099. The order details below are enough to act on; the PDF
+  // is a convenience, not a precondition.
+  let pdf = null;
+  let pdfProblem = '';
+  try {
+    pdf = await loadStoredOrderPdf(order.id);
+    if (pdf.length > MAX_ALERT_ATTACHMENT_BYTES) {
+      pdfProblem = 'This order is too large to attach as a PDF.';
+      pdf = null;
+    }
+  } catch (err) {
+    pdfProblem = 'The order PDF is not available yet.';
+    console.warn('order alert: stored PDF unavailable, sending without it', order.id, err?.message || err);
+  }
 
   const htmlContent = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;line-height:1.5;color:#111827;max-width:640px;margin:0 auto;padding:24px;">
   <h2 style="margin:0 0 8px;">${resendCount > 0 ? 'Resent order' : 'New order'} ${esc(orderNo)}</h2>
@@ -88,7 +113,8 @@ async function sendNewOrderAlertEmail(order, { resendCount = 0 } = {}) {
     ${customer.email ? ` · ${esc(customer.email)}` : ''}<br/>
     ${placedAt ? `Placed ${esc(placedAt)} · ` : ''}Total <strong>${esc(amount)}</strong> ex VAT
   </p>
-  <p style="font-size:13px;color:#374151;"><strong>${items.length}</strong> product line${items.length === 1 ? '' : 's'} · complete order PDF attached.</p>
+  <p style="font-size:13px;color:#374151;"><strong>${items.length}</strong> product line${items.length === 1 ? '' : 's'} · ${pdf ? 'complete order PDF attached.' : 'every line is listed below.'}</p>
+  ${pdfProblem ? `<p style="margin:0 0 16px;padding:12px 16px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;font-size:13px;"><strong>${esc(pdfProblem)}</strong> Open the order in the admin portal to download it.</p>` : ''}
   ${itemRows ? `<table style="border-collapse:collapse;width:100%;font-size:13px;"><tbody>${itemRows}</tbody></table>` : ''}
   <p style="margin:20px 0 0;">
     <a href="${PROTO_URLS.admin}" style="display:inline-block;background:#c40000;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:bold;">Open admin portal</a>
@@ -96,21 +122,23 @@ async function sendNewOrderAlertEmail(order, { resendCount = 0 } = {}) {
 </body></html>`;
 
   const response = await sendBrevoTransactional({
-    to: { email: NEW_ORDER_ALERT_EMAIL, name: 'Proto Trading Orders' },
+    to: NEW_ORDER_ALERT_EMAILS.map((email) => ({ email, name: 'Proto Trading Orders' })),
     subject: `New order ${orderNo} — ${customer.name || customer.business_name || 'Unknown'} — ${amount}`,
     htmlContent,
     textContent: `New order ${orderNo} from ${customer.name || 'Unknown'} — total ${amount} ex VAT.`,
-    attachment: [{
+    attachment: pdf ? [{
       name: `proto-order-${orderNo}.pdf`,
       content: pdf.toString('base64'),
-    }],
+    }] : undefined,
     headers: {
       'Idempotency-Key': `proto-admin-order-${order.id}-resend-${resendCount}`,
     },
   });
   return {
     messageId: response?.messageId || response?.message_id || null,
-    pdfBytes: pdf.length,
+    pdfBytes: pdf?.length ?? 0,
+    pdfAttached: Boolean(pdf),
+    pdfProblem: pdfProblem || null,
     lineCount: items.length,
   };
 }
@@ -140,14 +168,15 @@ export async function resendInternalOrderEmail(orderId, { actorEmail = null } = 
       ...previous,
       found: true,
       emailSent: true,
-      emailRecipients: [NEW_ORDER_ALERT_EMAIL],
+      emailRecipients: NEW_ORDER_ALERT_EMAILS,
       alertEmail: NEW_ORDER_ALERT_EMAIL,
       emailMessageId: result.messageId,
       emailFailReason: null,
       emailProviderStatus: 201,
-      emailPdfAttached: true,
-      emailPdfSource: 'stored-order-pdf',
-      pdfStored: true,
+      emailPdfAttached: result.pdfAttached,
+      emailPdfProblem: result.pdfProblem,
+      emailPdfSource: result.pdfAttached ? 'stored-order-pdf' : null,
+      pdfStored: result.pdfAttached,
       internalEmailResendCount: resendCount,
       internalEmailLastResentAt: attemptedAt,
       internalEmailLastResentBy: actorEmail,
@@ -156,7 +185,7 @@ export async function resendInternalOrderEmail(orderId, { actorEmail = null } = 
         ok: true,
         at: attemptedAt,
         by: actorEmail,
-        recipient: NEW_ORDER_ALERT_EMAIL,
+        recipients: NEW_ORDER_ALERT_EMAILS,
         messageId: result.messageId,
         lineCount: result.lineCount,
         pdfBytes: result.pdfBytes,
@@ -164,7 +193,7 @@ export async function resendInternalOrderEmail(orderId, { actorEmail = null } = 
       at: previous.at || attemptedAt,
     };
     await writeOrderNotifyLog(orderId, next);
-    return { ok: true, orderId, resendCount, ...result, recipient: NEW_ORDER_ALERT_EMAIL };
+    return { ok: true, orderId, resendCount, ...result, recipients: NEW_ORDER_ALERT_EMAILS };
   } catch (err) {
     await writeOrderNotifyLog(orderId, {
       ...previous,
@@ -178,7 +207,7 @@ export async function resendInternalOrderEmail(orderId, { actorEmail = null } = 
         ok: false,
         at: attemptedAt,
         by: actorEmail,
-        recipient: NEW_ORDER_ALERT_EMAIL,
+        recipients: NEW_ORDER_ALERT_EMAILS,
         error: err.message || 'Internal email resend failed',
       }),
       at: previous.at || attemptedAt,
