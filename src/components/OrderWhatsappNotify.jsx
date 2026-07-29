@@ -112,8 +112,16 @@ export default function OrderWhatsappNotify({ orderId, orderStatus = '' }) {
   const customerKnown = log?.customerEmailSent != null;
   const customerOk = log?.customerEmailSent === true;
   const whatsappSkipped = Boolean(log?.whatsappNotConfigured || log?.skippedNoToken || log?.skippedNoTeam);
-  const whatsappOk = Boolean(log?.statusAdvanced || (Number(log?.sent) > 0 && Number(log?.failed || 0) === 0));
-  const whatsappError = Number(log?.failed || 0) > 0;
+  const accepted = Number(log?.accepted ?? log?.sent ?? 0);
+  const delivered = Number(log?.delivered || 0);
+  const read = Number(log?.read || 0);
+  const sendFailed = Number(log?.failed || 0);
+  const deliveryFailed = Number(log?.deliveryFailed || 0);
+  const totalFailed = sendFailed + deliveryFailed;
+  const hasDeliveryTracking = log?.deliveryConfirmed != null || (log?.sentDetails || []).some((entry) => entry.messageId);
+  const whatsappOk = accepted > 0 && delivered === accepted;
+  const whatsappPending = accepted > delivered && totalFailed === 0;
+  const whatsappError = totalFailed > 0;
   const lastAt = log?.updatedAt || log?.at;
 
   return (
@@ -164,11 +172,17 @@ export default function OrderWhatsappNotify({ orderId, orderStatus = '' }) {
         <DeliveryStep
           icon={MessageCircle}
           label="Team WhatsApp"
-          state={whatsappSkipped ? 'skipped' : whatsappOk ? 'ok' : whatsappError ? 'error' : 'unknown'}
+          state={whatsappSkipped ? 'skipped' : whatsappOk ? 'ok' : whatsappError ? 'error' : whatsappPending ? 'pending' : 'unknown'}
           detail={whatsappSkipped
             ? 'Not configured / no team recipients'
-            : `${Number(log?.sent || 0)}/${Number(log?.teamSize || 0)} sent · ${Number(log?.failed || 0)} failed`}
-          error={log?.statusBlockedReason}
+            : hasDeliveryTracking
+              ? `${accepted}/${Number(log?.teamSize || 0)} accepted · ${delivered} delivered · ${read} read · ${totalFailed} failed`
+              : `${accepted}/${Number(log?.teamSize || 0)} accepted by WATI · delivery not tracked on this older order`}
+          error={whatsappError
+            ? `${totalFailed} WhatsApp message${totalFailed === 1 ? '' : 's'} failed${log?.statusBlockedReason ? ` · ${log.statusBlockedReason}` : ''}`
+            : whatsappPending
+              ? 'Accepted by WATI; awaiting delivered/read receipt'
+              : null}
         />
       </div>
 
@@ -182,7 +196,7 @@ export default function OrderWhatsappNotify({ orderId, orderStatus = '' }) {
           {sending === 'resend-internal-email' ? <Loader2 size={12} className="star-spinning" /> : <Mail size={12} />}
           Resend internal email + PDF
         </button>
-        {(!found || !internalOk || (!whatsappOk && !whatsappSkipped)) && (
+        {(!found || !internalOk || (whatsappError && !whatsappSkipped)) && (
           <button
             type="button"
             className="oa-wa-notify-retry"
