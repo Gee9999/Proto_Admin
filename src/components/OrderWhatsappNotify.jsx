@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -37,12 +37,11 @@ function DeliveryStep({ icon: Icon, label, state, detail, error }) {
   );
 }
 
-export default function OrderWhatsappNotify({ orderId, orderStatus = '' }) {
+export default function OrderWhatsappNotify({ orderId }) {
   const [log, setLog] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState('');
   const [message, setMessage] = useState('');
-  const autoSentRef = useRef(false);
 
   const loadLog = () => {
     if (!orderId) return Promise.resolve();
@@ -55,7 +54,6 @@ export default function OrderWhatsappNotify({ orderId, orderStatus = '' }) {
   };
 
   useEffect(() => {
-    autoSentRef.current = false;
     void loadLog();
   }, [orderId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -80,17 +78,6 @@ export default function OrderWhatsappNotify({ orderId, orderStatus = '' }) {
       setSending('');
     }
   };
-
-  // Preserve the existing safety net: a genuinely new order with no readable
-  // delivery log gets one automatic notification round when expanded.
-  const isNewOrder = String(orderStatus || '').trim().toLowerCase() === 'pending';
-  useEffect(() => {
-    if (loading || sending || autoSentRef.current) return;
-    if (log && !log.found && !log.loadError && isNewOrder) {
-      autoSentRef.current = true;
-      void sendAction('send-missing');
-    }
-  }, [log, loading, isNewOrder]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const resendInternal = () => {
     const recipient = log?.alertEmail || log?.emailRecipients?.[0] || 'online@proto.co.za';
