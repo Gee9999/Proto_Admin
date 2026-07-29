@@ -2,11 +2,11 @@ import { readApiJson } from './apiError.js';
 import { catalogueDisplayTitle, catalogueDescription } from './productLoaderDisplay.js';
 import { parseIntakeFilename, siblingSkuForCopy } from './parseIntakeFilename';
 
-export async function lookupFilenames(filenames, files) {
+export async function lookupFilenames(filenames, files, { groupColourVariants = true } = {}) {
   const res = await fetch('/api/product-loader-batch-lookup', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ filenames }),
+    body: JSON.stringify({ filenames, groupColourVariants }),
   });
   const json = await readApiJson(res, { fallback: 'Lookup failed' });
   const fileByName = new Map(files.map((f) => [f.name, f]));
@@ -21,8 +21,12 @@ export async function lookupFilenames(filenames, files) {
       file,
       group,
       copyIndex,
-      publishSku: siblingSkuForCopy(item.code, copyIndex),
-      status: group === 'not_found' ? 'unmatched' : 'ready',
+      publishSku: item.isColourVariant
+        ? item.code
+        : siblingSkuForCopy(item.code, copyIndex),
+      status: group === 'not_found'
+        ? 'unmatched'
+        : (group === 'needs_review' ? 'review' : 'ready'),
       processError: item.parseError || '',
       previewUrl: '',
     };
@@ -189,6 +193,129 @@ function pathLabelsFromIds(tree, ids = []) {
   return labels;
 }
 
+function resolveLoaderCategory(item, {
+  taxonomyTree,
+  findNode,
+  defaultCategoryId,
+  defaultSub1Id,
+  defaultCategoryPathIds,
+}) {
+  const pathIds = (defaultCategoryPathIds || []).filter(Boolean);
+  const defCatId = defaultCategoryId || pathIds[0] || '';
+  const defSub1Id = defaultSub1Id || pathIds[1] || '';
+  const needsCategory = !item.websiteRow?.category;
+
+  if (needsCategory && !defCatId) {
+    throw new Error('Pick a default category for products not already on the website.');
+  }
+
+  const catId = item.websiteRow?.category
+    ? (taxonomyTree.find((c) => c.label === item.websiteRow.category)?.id || defCatId)
+    : defCatId;
+  const sub1IdForItem = item.websiteRow?.subcategory_one
+    ? ((findNode(taxonomyTree, catId)?.children || [])
+      .find((c) => c.label === item.websiteRow.subcategory_one)?.id || defSub1Id)
+    : defSub1Id;
+
+  const catNode = findNode(taxonomyTree, catId);
+  const sub1Node = findNode(taxonomyTree, sub1IdForItem);
+  const defaultPathLabels = pathLabelsFromIds(taxonomyTree, pathIds);
+  const categoryLabel = catNode?.label || item.websiteRow?.category || defaultPathLabels[0] || '';
+  const sub1Label = sub1Node?.label || item.websiteRow?.subcategory_one || categoryLabel;
+  if (!categoryLabel) throw new Error('No category available');
+
+  return {
+    categoryLabel,
+    sub1Label,
+    categoryPath: needsCategory && defaultPathLabels.length ? defaultPathLabels : undefined,
+  };
+}
+
+/**
+ * Publish all images for one recognised colour as one atomic website variant.
+ * Positill remains the base code/barcode; the website SKU keeps the colour
+ * suffix so the storefront and order line retain the customer's selection.
+ */
+export async function publishLoaderColourVariant(rows, options) {
+  const items = (rows || [])
+    .filter((item) => item?.file && item?.isColourVariant && item?.code)
+    .sort((a, b) => Number(a.imageSlot || 1) - Number(b.imageSlot || 1));
+  if (!items.length) throw new Error('No colour variant images to publish');
+
+  const item = items[0];
+  const { categoryLabel, sub1Label, categoryPath } = resolveLoaderCategory(item, options);
+  const images = [];
+  for (const row of items) {
+    const uploaded = await uploadLoaderImage(row);
+    images.push({ slot: row.imageSlot, url: uploaded.url, source: 'upload' });
+  }
+
+  const publishRes = await fetch('/api/product-loader-publish', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code: item.code,
+      barcode: item.positillCode || item.barcode || item.variantOf,
+      displayCode: item.displayCode,
+      title: item.descriptionOverride || catalogueDisplayTitle(item),
+      price: item.price ?? item.sqlRow?.price ?? 0,
+      images,
+      imageUrl: images.find((image) => Number(image.slot) === 1)?.url || images[0]?.url,
+      imageSlot: images.find((image) => Number(image.slot) === 1)?.slot || images[0]?.slot || 1,
+      imageSource: 'upload',
+      overwriteImage: options.overwrite || items.some((row) => row.warnings?.includes('image_exists')),
+      category: categoryLabel,
+      categoryPath,
+      subcategoryOne: sub1Label,
+      subcategoryTwo: item.websiteRow?.subcategory_two || null,
+      description: item.descriptionOverride || catalogueDescription(item),
+      sqlRow: item.sqlRow || null,
+      websiteRow: item.variantWebsiteRow || null,
+      stockQty: item.sqlRow?.onhand ?? item.websiteRow?.stock_qty,
+      availableStock: item.sqlRow?.available ?? item.websiteRow?.available_stock,
+      categoryConfidence: item.websiteRow ? 1 : 0.5,
+      publishMode: 'colour_variant',
+      filename: items.map((row) => row.filename).join(', '),
+    }),
+  });
+  const json = await readApiJson(publishRes, { fallback: 'Colour variant publish failed' });
+  return { sku: item.code, action: json.action || 'published', imageCount: images.length };
+}
+
+/**
+ * Attach published colour SKUs to the storefront's product-group overlay.
+ * The server discovers colours from earlier uploads through the shared
+ * Positill barcode, so a later folder drop can extend the existing card.
+ */
+export async function syncLoaderColourVariantGroup(rows) {
+  const members = [];
+  const seen = new Set();
+  for (const row of rows || []) {
+    const sku = String(row?.code || '').trim().toUpperCase();
+    if (!row?.isColourVariant || !sku || seen.has(sku)) continue;
+    seen.add(sku);
+    members.push({
+      sku,
+      variantLabel: row.variantLabel || null,
+      sortOrder: members.length,
+    });
+  }
+  if (!members.length) return { grouped: false, reason: 'no_variants' };
+
+  const first = (rows || []).find((row) => row?.isColourVariant && row?.positillCode);
+  const res = await fetch('/api/product-loader-colour-group', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      baseCode: first?.positillCode,
+      title: catalogueDisplayTitle(first),
+      primaryWebsiteSku: members[0].sku,
+      members,
+    }),
+  });
+  return readApiJson(res, { fallback: 'Colour variants were published but could not be grouped' });
+}
+
 export async function publishLoaderImageItem(item, {
   taxonomyTree,
   findNode,
@@ -200,35 +327,15 @@ export async function publishLoaderImageItem(item, {
 }) {
   if (!item?.file || !item.code) throw new Error('Missing image or product code');
 
-  const pathIds = (defaultCategoryPathIds || []).filter(Boolean);
-  const defCatId = defaultCategoryId || pathIds[0] || '';
-  const defSub1Id = defaultSub1Id || pathIds[1] || '';
-
-  const needsCategory = !item.websiteRow?.category;
-  if (needsCategory && !defCatId) {
-    throw new Error('Pick a default category for products not already on the website.');
-  }
+  const { categoryLabel, sub1Label, categoryPath } = resolveLoaderCategory(item, {
+    taxonomyTree,
+    findNode,
+    defaultCategoryId,
+    defaultSub1Id,
+    defaultCategoryPathIds,
+  });
 
   const uploadJson = await uploadLoaderImage(item);
-
-  const catId = item.websiteRow?.category
-    ? (taxonomyTree.find((c) => c.label === item.websiteRow.category)?.id || defCatId)
-    : defCatId;
-  const sub1IdForItem = item.websiteRow?.subcategory_one
-    ? ((findNode(taxonomyTree, catId)?.children || []).find((c) => c.label === item.websiteRow.subcategory_one)?.id || defSub1Id)
-    : defSub1Id;
-
-  const catNode = findNode(taxonomyTree, catId);
-  const sub1Node = findNode(taxonomyTree, sub1IdForItem);
-  const defaultPathLabels = pathLabelsFromIds(taxonomyTree, pathIds);
-  const categoryLabel = catNode?.label || item.websiteRow?.category || defaultPathLabels[0] || '';
-  const sub1Label = sub1Node?.label || item.websiteRow?.subcategory_one || categoryLabel;
-
-  if (!categoryLabel) throw new Error('No category available');
-
-  // New products get the full picked path so a deep subcategory persists;
-  // existing products keep their stored category (the API preserves deeper levels).
-  const categoryPath = needsCategory && defaultPathLabels.length ? defaultPathLabels : undefined;
 
   const publishRes = await fetch('/api/product-loader-publish', {
     method: 'POST',
