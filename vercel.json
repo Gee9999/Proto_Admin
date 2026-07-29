@@ -51,6 +51,12 @@
     },
     "api/site-config-backup.js": {
       "maxDuration": 60
+    },
+    "api/order-notification.js": {
+      "maxDuration": 60
+    },
+    "api/wati-delivery-webhook.js": {
+      "maxDuration": 30
     }
   },
   "crons": [

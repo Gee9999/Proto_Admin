@@ -102,7 +102,14 @@ export function wrapBroadcastHtml({ subject, bodyHtml }) {
 </body></html>`;
 }
 
-export async function sendBrevoTransactional({ to, subject, htmlContent, textContent }) {
+export async function sendBrevoTransactional({
+  to,
+  subject,
+  htmlContent,
+  textContent,
+  attachment,
+  headers,
+}) {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) throw new Error('BREVO_API_KEY not configured');
 
@@ -116,6 +123,8 @@ export async function sendBrevoTransactional({ to, subject, htmlContent, textCon
     htmlContent,
   };
   if (textContent) payload.textContent = textContent;
+  if (Array.isArray(attachment) && attachment.length) payload.attachment = attachment;
+  if (headers && typeof headers === 'object') payload.headers = headers;
 
   // Retry on rate-limit (429) and transient 5xx with backoff so a burst of
   // concurrent sends paces itself instead of dropping recipients.

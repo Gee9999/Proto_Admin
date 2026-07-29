@@ -16,6 +16,9 @@ function normalizeUsers(payload) {
     id: String(u.id || `user-${i + 1}`).trim(),
     name: String(u.name || '').trim(),
     whatsapp: toWatiPhone(u.whatsapp),
+    // Backward compatible: team members saved before this switch existed
+    // continue receiving order alerts until an owner explicitly disables them.
+    orderAlerts: u.orderAlerts !== false,
     isAdmin: Boolean(u.isAdmin),
     categoryIds: Array.isArray(u.categoryIds) ? [...new Set(u.categoryIds.filter(Boolean))] : [],
   })).filter((u) => u.name);

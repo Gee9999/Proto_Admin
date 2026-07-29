@@ -31,11 +31,12 @@ export default async function handler(req, res) {
 
   const data = await readSiteConfigJson(USERS_FILE, { users: [] });
   const recipients = (data.users || [])
+    .filter((u) => u?.orderAlerts !== false)
     .map((u) => ({ name: String(u.name || '').trim(), phone: normalizeWhatsapp(u.whatsapp || u.phone || '') }))
     .filter((u) => u.phone);
 
   if (!recipients.length) {
-    return res.status(400).json({ error: 'No team WhatsApp numbers saved. Add team members first.' });
+    return res.status(400).json({ error: 'No team members have active WhatsApp order alerts.' });
   }
 
   const templateName = process.env.WATI_ORDER_TEMPLATE || 'proto_order_notis';

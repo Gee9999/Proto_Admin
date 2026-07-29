@@ -1,7 +1,12 @@
 import { createClient } from '@supabase/supabase-js';
 import { PROTO_URLS } from './_proto-urls.js';
 import { sendBrevoTransactional } from './_brevo-email.js';
-import { readOrderNotifyLog, writeOrderNotifyLog } from './_site-config.js';
+import {
+  getPortalAdminClient,
+  readOrderNotifyLog,
+  writeOrderNotifyLog,
+  SITE_CONFIG_BUCKET,
+} from './_site-config.js';
 
 export const NEW_ORDER_ALERT_EMAIL = process.env.NEW_ORDER_ALERT_EMAIL || 'online@proto.co.za';
 
@@ -37,40 +42,149 @@ function formatRand(value) {
   return `R ${Number(value || 0).toFixed(2)}`;
 }
 
-async function sendNewOrderAlertEmail(order) {
+export function orderItems(order) {
+  return (order?.original_items?.length ? order.original_items : null)
+    || order?.items || [];
+}
+
+function orderPdfPath(orderId) {
+  return `orders/${orderId}.pdf`;
+}
+
+async function loadStoredOrderPdf(orderId) {
+  const supabase = getPortalAdminClient();
+  const { data, error } = await supabase.storage
+    .from(SITE_CONFIG_BUCKET)
+    .download(orderPdfPath(orderId));
+  if (error || !data) {
+    throw new Error(error?.message || 'Stored order PDF is unavailable');
+  }
+  const bytes = Buffer.from(await data.arrayBuffer());
+  if (!bytes.length) throw new Error('Stored order PDF is empty');
+  return bytes;
+}
+
+async function sendNewOrderAlertEmail(order, { resendCount = 0 } = {}) {
   const customer = order.customers || {};
   const orderNo = order.order_number || order.id;
   const amount = formatRand(orderAmountExVat(order));
   const placedAt = order.created_at
     ? new Date(order.created_at).toLocaleString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
     : '';
-  const items = (order.original_items || order.items || []);
-  const itemRows = items.slice(0, 30).map((item) => `
+  const items = orderItems(order);
+  const itemRows = items.map((item, index) => `
     <tr>
+      <td style="padding:4px 8px;border-bottom:1px solid #e5e7eb;color:#6b7280;">${index + 1}</td>
       <td style="padding:4px 8px;border-bottom:1px solid #e5e7eb;">${esc(item?.name || item?.title || item?.sku || '')}</td>
+      <td style="padding:4px 8px;border-bottom:1px solid #e5e7eb;">${esc(item?.code || item?.sku || '')}</td>
       <td style="padding:4px 8px;border-bottom:1px solid #e5e7eb;text-align:right;">${esc(item?.qty ?? item?.quantity ?? '')}</td>
     </tr>`).join('');
+  const pdf = await loadStoredOrderPdf(order.id);
 
   const htmlContent = `<!DOCTYPE html><html><body style="font-family:Arial,sans-serif;line-height:1.5;color:#111827;max-width:640px;margin:0 auto;padding:24px;">
-  <h2 style="margin:0 0 8px;">New order ${esc(orderNo)}</h2>
+  <h2 style="margin:0 0 8px;">${resendCount > 0 ? 'Resent order' : 'New order'} ${esc(orderNo)}</h2>
   <p style="margin:0 0 16px;color:#374151;">
     <strong>${esc(customer.name || customer.business_name || 'Unknown customer')}</strong>
     ${customer.email ? ` · ${esc(customer.email)}` : ''}<br/>
     ${placedAt ? `Placed ${esc(placedAt)} · ` : ''}Total <strong>${esc(amount)}</strong> ex VAT
   </p>
+  <p style="font-size:13px;color:#374151;"><strong>${items.length}</strong> product line${items.length === 1 ? '' : 's'} · complete order PDF attached.</p>
   ${itemRows ? `<table style="border-collapse:collapse;width:100%;font-size:13px;"><tbody>${itemRows}</tbody></table>` : ''}
-  ${items.length > 30 ? `<p style="font-size:12px;color:#6b7280;">+ ${items.length - 30} more line(s)</p>` : ''}
   <p style="margin:20px 0 0;">
     <a href="${PROTO_URLS.admin}" style="display:inline-block;background:#c40000;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:bold;">Open admin portal</a>
   </p>
 </body></html>`;
 
-  await sendBrevoTransactional({
+  const response = await sendBrevoTransactional({
     to: { email: NEW_ORDER_ALERT_EMAIL, name: 'Proto Trading Orders' },
     subject: `New order ${orderNo} — ${customer.name || customer.business_name || 'Unknown'} — ${amount}`,
     htmlContent,
     textContent: `New order ${orderNo} from ${customer.name || 'Unknown'} — total ${amount} ex VAT.`,
+    attachment: [{
+      name: `proto-order-${orderNo}.pdf`,
+      content: pdf.toString('base64'),
+    }],
+    headers: {
+      'Idempotency-Key': `proto-admin-order-${order.id}-resend-${resendCount}`,
+    },
   });
+  return {
+    messageId: response?.messageId || response?.message_id || null,
+    pdfBytes: pdf.length,
+    lineCount: items.length,
+  };
+}
+
+export function appendAudit(log, event) {
+  const history = Array.isArray(log?.deliveryHistory) ? log.deliveryHistory : [];
+  return [...history, event].slice(-25);
+}
+
+export async function resendInternalOrderEmail(orderId, { actorEmail = null } = {}) {
+  const supabase = getPortalDbClient();
+  const { data: order, error } = await supabase
+    .from('orders')
+    .select('*, customers(name, contact_name, email, business_name)')
+    .eq('id', orderId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!order) throw new Error('Order not found');
+
+  const previous = await readOrderNotifyLog(String(orderId)) || { orderId: String(orderId) };
+  const resendCount = Number(previous.internalEmailResendCount || 0) + 1;
+  const attemptedAt = new Date().toISOString();
+
+  try {
+    const result = await sendNewOrderAlertEmail(order, { resendCount });
+    const next = {
+      ...previous,
+      found: true,
+      emailSent: true,
+      emailRecipients: [NEW_ORDER_ALERT_EMAIL],
+      alertEmail: NEW_ORDER_ALERT_EMAIL,
+      emailMessageId: result.messageId,
+      emailFailReason: null,
+      emailProviderStatus: 201,
+      emailPdfAttached: true,
+      emailPdfSource: 'stored-order-pdf',
+      pdfStored: true,
+      internalEmailResendCount: resendCount,
+      internalEmailLastResentAt: attemptedAt,
+      internalEmailLastResentBy: actorEmail,
+      deliveryHistory: appendAudit(previous, {
+        type: 'internal-email-resend',
+        ok: true,
+        at: attemptedAt,
+        by: actorEmail,
+        recipient: NEW_ORDER_ALERT_EMAIL,
+        messageId: result.messageId,
+        lineCount: result.lineCount,
+        pdfBytes: result.pdfBytes,
+      }),
+      at: previous.at || attemptedAt,
+    };
+    await writeOrderNotifyLog(orderId, next);
+    return { ok: true, orderId, resendCount, ...result, recipient: NEW_ORDER_ALERT_EMAIL };
+  } catch (err) {
+    await writeOrderNotifyLog(orderId, {
+      ...previous,
+      found: true,
+      emailFailReason: err.message || 'Internal email resend failed',
+      internalEmailResendCount: resendCount,
+      internalEmailLastResentAt: attemptedAt,
+      internalEmailLastResentBy: actorEmail,
+      deliveryHistory: appendAudit(previous, {
+        type: 'internal-email-resend',
+        ok: false,
+        at: attemptedAt,
+        by: actorEmail,
+        recipient: NEW_ORDER_ALERT_EMAIL,
+        error: err.message || 'Internal email resend failed',
+      }),
+      at: previous.at || attemptedAt,
+    });
+    throw err;
+  }
 }
 
 /**

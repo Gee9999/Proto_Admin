@@ -54,7 +54,14 @@ function isValidWatiPhone(raw) {
 }
 
 function emptyUser() {
-  return { id: `user-${Date.now()}`, name: '', whatsapp: '', isAdmin: false, categoryIds: [] };
+  return {
+    id: `user-${Date.now()}`,
+    name: '',
+    whatsapp: '',
+    orderAlerts: true,
+    isAdmin: false,
+    categoryIds: [],
+  };
 }
 
 export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree = [] }) {
@@ -77,6 +84,7 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
         if (cancelled) return;
         setUsers(rows.map((u) => ({
           ...u,
+          orderAlerts: u.orderAlerts !== false,
           isAdmin: Boolean(u.isAdmin),
           categoryIds: normalizeAssignedCategoryIds(
             Array.isArray(u.categoryIds) ? u.categoryIds.filter(Boolean) : [],
@@ -117,17 +125,19 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
         id: u.id || slugify(u.name),
         name: u.name.trim(),
         whatsapp: toWatiPhone(u.whatsapp),
+        orderAlerts: u.orderAlerts !== false,
         isAdmin: Boolean(u.isAdmin),
         categoryIds: canonicalCategoryIdsForSave(u.categoryIds, taxonomyTree),
       }));
       if (payload.some((u) => !u.name)) throw new Error('Every team member needs a name.');
-      const badPhone = payload.find((u) => !isValidWatiPhone(u.whatsapp));
+      const badPhone = payload.find((u) => u.orderAlerts && !isValidWatiPhone(u.whatsapp));
       if (badPhone) throw new Error(`"${badPhone.name}" needs a valid WhatsApp number (e.g. 071 729 2861 or +27717292861).`);
       const noCats = payload.find((u) => !u.isAdmin && u.categoryIds.length === 0);
       if (noCats) throw new Error(`"${noCats.name}" needs at least one category (or make them a team admin).`);
       const saved = await saveFulfillmentUsers(payload);
       setUsers(saved.map((u) => ({
         ...u,
+        orderAlerts: u.orderAlerts !== false,
         isAdmin: Boolean(u.isAdmin),
         categoryIds: Array.isArray(u.categoryIds) ? u.categoryIds.filter(Boolean) : [],
       })));
@@ -165,7 +175,8 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
         </div>
         <p className="adm-modal-note">
           Tap categories to assign them. Team admins can tick items in <strong>every</strong> category on the fulfillment page.
-          Numbers are saved in WhatsApp format automatically.
+          Numbers are saved in WhatsApp format automatically. Turn off <strong>Order alerts</strong> for anyone who should
+          remain on the team without receiving new-order WhatsApps.
         </p>
 
         <div className="adm-modal-body adm-ff-settings">
@@ -207,6 +218,24 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
 
                 <div className="adm-ff-card__phone">
                   <span className="adm-field-label">WhatsApp</span>
+                  <label
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 7,
+                      marginBottom: 8,
+                      fontSize: 13,
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={user.orderAlerts !== false}
+                      onChange={(e) => updateUser(idx, { orderAlerts: e.target.checked })}
+                    />
+                    Order alerts active
+                  </label>
                   <input
                     className={`adm-field-input${!phoneOk ? ' adm-field-input--error' : ''}`}
                     value={user.whatsapp}
@@ -214,6 +243,9 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
                     placeholder="071 729 2861 or +27717292861"
                     inputMode="tel"
                   />
+                  {user.orderAlerts === false && (
+                    <span className="adm-ff-phone-preview">This team member will not receive new-order WhatsApps.</span>
+                  )}
                   {user.whatsapp && normalized && (
                     <span className={`adm-ff-phone-preview${phoneOk ? '' : ' adm-ff-phone-preview--bad'}`}>
                       {phoneOk ? <>Saved as <strong>{normalized}</strong></> : 'Number looks too short — include the area code'}
@@ -281,7 +313,7 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
             className="adm-btn-ghost"
             onClick={() => void handleTest()}
             disabled={testing || loading}
-            title="Sends a test order notification to every saved team member"
+            title="Sends a test order notification to every team member with active order alerts"
             style={{ marginRight: 'auto' }}
           >
             {testing ? <Loader2 size={14} className="star-spinning" /> : <MessageCircle size={14} />}

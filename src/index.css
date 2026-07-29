@@ -6576,6 +6576,52 @@ html, body { background: #f5f5f5; color: #111827; }
 .oa-wa-notify-retry:hover:not(:disabled) { opacity: 1; }
 .oa-wa-notify-retry:disabled { opacity: 0.5; cursor: not-allowed; }
 .oa-wa-notify--muted { flex-wrap: wrap; }
+.oa-delivery-control { color: #0f172a; background: #fff; }
+.oa-delivery-control .oa-wa-notify-head { margin-bottom: 10px; }
+.oa-delivery-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  gap: 8px;
+}
+.oa-delivery-step {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+.oa-delivery-step-icon { color: #64748b; }
+.oa-delivery-step strong,
+.oa-delivery-step small { display: block; }
+.oa-delivery-step strong { margin-bottom: 3px; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
+.oa-delivery-step small { color: #64748b; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+.oa-delivery-step--ok { background: #f0fdf4; border-color: #bbf7d0; }
+.oa-delivery-step--ok > svg,
+.oa-delivery-step--ok .oa-delivery-step-icon { color: #15803d; }
+.oa-delivery-step--error { background: #fef2f2; border-color: #fecaca; }
+.oa-delivery-step--error > svg,
+.oa-delivery-step--error .oa-delivery-step-icon,
+.oa-delivery-step-error { color: #b91c1c !important; }
+.oa-delivery-step--pending { background: #fffbeb; border-color: #fde68a; }
+.oa-delivery-step--pending > svg,
+.oa-delivery-step--pending .oa-delivery-step-icon,
+.oa-delivery-step--pending .oa-delivery-step-error { color: #a16207 !important; }
+.oa-delivery-step--skipped { background: #f8fafc; color: #64748b; }
+.oa-delivery-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.oa-delivery-actions .oa-wa-notify-retry { margin-left: 0; padding: 6px 9px; }
+.oa-delivery-history { margin-top: 10px; color: #475569; font-size: 11px; }
+.oa-delivery-history summary { cursor: pointer; font-weight: 700; }
+.oa-delivery-history ul { margin: 7px 0 0; padding-left: 18px; line-height: 1.55; }
+@media (max-width: 1050px) {
+  .oa-delivery-grid { grid-template-columns: repeat(2, minmax(170px, 1fr)); }
+}
+@media (max-width: 620px) {
+  .oa-delivery-grid { grid-template-columns: 1fr; }
+}
 
 /* ── Apollo AI ─────────────────────────────────────────────────────────── */
 .apollo-panel {

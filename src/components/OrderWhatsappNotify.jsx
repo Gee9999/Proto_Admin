@@ -1,12 +1,47 @@
-import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Loader2, MessageCircle, RefreshCw } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  FileCheck2,
+  Loader2,
+  Mail,
+  MessageCircle,
+  RefreshCw,
+  UserRoundCheck,
+} from 'lucide-react';
 
-export default function OrderWhatsappNotify({ orderId, orderStatus = '' }) {
+function stamp(value) {
+  if (!value) return '';
+  return new Date(value).toLocaleString('en-ZA', {
+    day: 'numeric',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
+function DeliveryStep({ icon: Icon, label, state, detail, error }) {
+  const ok = state === 'ok';
+  const failed = state === 'error';
+  return (
+    <div className={`oa-delivery-step oa-delivery-step--${state}`}>
+      <span className="oa-delivery-step-icon"><Icon size={15} /></span>
+      <span>
+        <strong>{label}</strong>
+        <small>{detail}</small>
+        {error && <small className="oa-delivery-step-error">{error}</small>}
+      </span>
+      {ok && <CheckCircle2 size={15} />}
+      {failed && <AlertTriangle size={15} />}
+    </div>
+  );
+}
+
+export default function OrderWhatsappNotify({ orderId }) {
   const [log, setLog] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [retrying, setRetrying] = useState(false);
-  const [retryMsg, setRetryMsg] = useState('');
-  const autoSentRef = useRef(false);
+  const [sending, setSending] = useState('');
+  const [message, setMessage] = useState('');
 
   const loadLog = () => {
     if (!orderId) return Promise.resolve();
@@ -14,167 +49,168 @@ export default function OrderWhatsappNotify({ orderId, orderStatus = '' }) {
     return fetch(`/api/order-notify-log?orderId=${encodeURIComponent(orderId)}`)
       .then((r) => r.json())
       .then((data) => setLog(data))
-      // loadError distinguishes "couldn't read the log" from "no log exists"
-      // so a transient fetch failure never triggers the auto-send below.
       .catch(() => setLog({ found: false, loadError: true }))
       .finally(() => setLoading(false));
   };
 
   useEffect(() => {
-    autoSentRef.current = false;
-    loadLog();
-  }, [orderId]);
+    void loadLog();
+  }, [orderId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // A brand-new order without any delivery log: fire the notification round
-  // (team WhatsApp + alert email) automatically, once per order. Only for
-  // orders still in "New" — expanding old orders must never re-ping the team,
-  // and a failed log fetch (loadError) is not proof that no log exists.
-  const isNewOrder = String(orderStatus || '').trim().toLowerCase() === 'pending';
-  useEffect(() => {
-    if (loading || retrying || autoSentRef.current) return;
-    if (log && !log.found && !log.loadError && isNewOrder) {
-      autoSentRef.current = true;
-      void handleRetry();
-    }
-  }, [log, loading, isNewOrder]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const handleRetry = async () => {
-    setRetrying(true);
-    setRetryMsg('');
+  const sendAction = async (action, confirm = undefined) => {
+    setSending(action);
+    setMessage('');
     try {
       const resp = await fetch('/api/order-notification', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ orderId }),
+        body: JSON.stringify({ orderId, action, confirm }),
       });
       const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) {
-        setRetryMsg(data.error || 'Retry failed');
-      } else if (data.ok) {
-        setRetryMsg(`Sent to ${data.sent} team member(s)${data.emailSent ? ' and emailed online@proto.co.za' : ''}.`);
-      } else {
-        setRetryMsg(data.statusBlockedReason || 'Some team members did not receive WhatsApp.');
-      }
+      if (!resp.ok) throw new Error(data.error || 'Notification request failed');
+      setMessage(action === 'resend-internal-email'
+        ? `Order email resent to ${data.recipient || 'online@proto.co.za'} with the PDF attached.`
+        : 'Missing order notifications sent.');
       await loadLog();
-    } catch {
-      setRetryMsg('Retry request failed.');
+    } catch (err) {
+      setMessage(err.message || 'Notification request failed.');
     } finally {
-      setRetrying(false);
+      setSending('');
     }
+  };
+
+  const resendInternal = () => {
+    const recipient = log?.alertEmail || log?.emailRecipients?.[0] || 'online@proto.co.za';
+    if (!window.confirm(`Resend this existing order to ${recipient}? This will not create a new order.`)) return;
+    void sendAction('resend-internal-email', 'RESEND');
   };
 
   if (loading) {
     return (
       <div className="oa-wa-notify oa-wa-notify--loading">
-        <Loader2 size={14} className="star-spinning" /> Checking WhatsApp delivery…
+        <Loader2 size={14} className="star-spinning" /> Checking order delivery…
       </div>
     );
   }
 
-  if (!log?.found) {
-    return (
-      <div className="oa-wa-notify oa-wa-notify--muted">
-        <MessageCircle size={14} />
-        {retrying ? 'Sending order notifications (team WhatsApp + email)…' : 'No delivery log for this order yet.'}
-        <button type="button" className="oa-wa-notify-retry" onClick={handleRetry} disabled={retrying}>
-          {retrying ? <Loader2 size={12} className="star-spinning" /> : <RefreshCw size={12} />}
-          Send order notifications
-        </button>
-        {retryMsg && <p className="oa-wa-notify-msg">{retryMsg}</p>}
-      </div>
-    );
-  }
-
-  // WhatsApp not wired up on this install — the alert email carries the order.
-  if (log.whatsappNotConfigured) {
-    return (
-      <div className={`oa-wa-notify${log.emailSent ? ' oa-wa-notify--ok' : ' oa-wa-notify--err'}`}>
-        <div className="oa-wa-notify-head">
-          {log.emailSent ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
-          <strong>Order notification</strong>
-          <span className="oa-wa-notify-meta">
-            {log.emailSent ? `Emailed to ${log.alertEmail || 'online@proto.co.za'}` : 'Email pending'}
-            {log.at ? ` · ${new Date(log.at).toLocaleString('en-ZA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}
-          </span>
-          <button type="button" className="oa-wa-notify-retry" onClick={handleRetry} disabled={retrying} title="Resend order email">
-            {retrying ? <Loader2 size={12} className="star-spinning" /> : <RefreshCw size={12} />}
-          </button>
-        </div>
-        <p className="oa-wa-notify-msg">
-          Team WhatsApp is not set up on this portal, so new orders are announced by email only.
-          {log.emailSent ? '' : ' The email has not gone out yet — retry above.'}
-        </p>
-        {retryMsg && <p className="oa-wa-notify-msg">{retryMsg}</p>}
-      </div>
-    );
-  }
-
-  const allFailed = log.failed > 0 && log.sent === 0;
-  const partial = log.failed > 0 && log.sent > 0;
-  const allOk = log.sent > 0 && log.failed === 0 && log.ok;
-  const noToken = log.skippedNoToken;
-  const noTeam = log.skippedNoTeam;
-  const blockedStatus = log.emailSent && !log.statusAdvanced && !log.advanceOnEmailOnly;
+  const found = Boolean(log?.found);
+  const pdfOk = Boolean(log?.pdfStored || log?.emailPdfAttached);
+  const internalOk = Boolean(log?.emailSent);
+  const customerKnown = log?.customerEmailSent != null;
+  const customerOk = log?.customerEmailSent === true;
+  const whatsappSkipped = Boolean(log?.whatsappNotConfigured || log?.skippedNoToken || log?.skippedNoTeam);
+  const accepted = Number(log?.accepted ?? log?.sent ?? 0);
+  const delivered = Number(log?.delivered || 0);
+  const read = Number(log?.read || 0);
+  const sendFailed = Number(log?.failed || 0);
+  const deliveryFailed = Number(log?.deliveryFailed || 0);
+  const totalFailed = sendFailed + deliveryFailed;
+  const hasDeliveryTracking = log?.deliveryConfirmed != null || (log?.sentDetails || []).some((entry) => entry.messageId);
+  const whatsappOk = accepted > 0 && delivered === accepted;
+  const whatsappPending = accepted > delivered && totalFailed === 0;
+  const whatsappError = totalFailed > 0;
+  const lastAt = log?.updatedAt || log?.at;
 
   return (
-    <div className={`oa-wa-notify${allFailed || noToken || noTeam || blockedStatus ? ' oa-wa-notify--err' : partial ? ' oa-wa-notify--warn' : ' oa-wa-notify--ok'}`}>
+    <section className={`oa-wa-notify oa-delivery-control${internalOk ? ' oa-wa-notify--ok' : ' oa-wa-notify--err'}`}>
       <div className="oa-wa-notify-head">
-        {allOk && !blockedStatus && <CheckCircle2 size={15} />}
-        {(allFailed || partial || noToken || noTeam || blockedStatus) && <AlertTriangle size={15} />}
-        <strong>Team WhatsApp</strong>
+        <strong>Order delivery control</strong>
         <span className="oa-wa-notify-meta">
-          {log.sent}/{log.teamSize ?? log.sent} sent · {log.failed} failed
-          {log.emailSent ? ' · email sent' : ' · email pending'}
-          {log.at ? ` · ${new Date(log.at).toLocaleString('en-ZA', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}` : ''}
+          {found ? `Last checked ${stamp(lastAt) || 'recently'}` : 'No delivery record yet'}
         </span>
-        <button type="button" className="oa-wa-notify-retry" onClick={handleRetry} disabled={retrying} title="Resend team WhatsApp">
-          {retrying ? <Loader2 size={12} className="star-spinning" /> : <RefreshCw size={12} />}
+        <button
+          type="button"
+          className="oa-wa-notify-retry"
+          onClick={() => void loadLog()}
+          disabled={Boolean(sending)}
+          title="Refresh delivery status"
+        >
+          <RefreshCw size={12} />
         </button>
       </div>
-      {noToken && (
-        <p className="oa-wa-notify-msg">WATI_API_TOKEN is not configured — no team WhatsApp was sent.</p>
+
+      <div className="oa-delivery-grid">
+        <DeliveryStep
+          icon={FileCheck2}
+          label="Order PDF"
+          state={pdfOk ? 'ok' : found ? 'error' : 'unknown'}
+          detail={pdfOk ? `Stored${log?.emailPdfSource ? ` · ${log.emailPdfSource}` : ''}` : 'No stored PDF confirmed'}
+        />
+        <DeliveryStep
+          icon={Mail}
+          label="Internal email"
+          state={internalOk ? 'ok' : found ? 'error' : 'unknown'}
+          detail={internalOk
+            ? `Sent to ${(log.emailRecipients || [log.alertEmail]).filter(Boolean).join(', ') || 'online@proto.co.za'}${log.internalEmailLastResentAt ? ` · resent ${stamp(log.internalEmailLastResentAt)}` : ''}`
+            : 'Not confirmed as sent'}
+          error={log?.emailFailReason}
+        />
+        <DeliveryStep
+          icon={UserRoundCheck}
+          label="Customer email"
+          state={!customerKnown ? 'unknown' : customerOk ? 'ok' : 'error'}
+          detail={!customerKnown
+            ? 'Not recorded on older orders'
+            : customerOk
+              ? `Sent to ${log.customerEmailRecipient || 'customer'}${log.customerEmailAt ? ` · ${stamp(log.customerEmailAt)}` : ''}`
+              : 'Not confirmed as sent'}
+          error={log?.customerEmailFailReason}
+        />
+        <DeliveryStep
+          icon={MessageCircle}
+          label="Team WhatsApp"
+          state={whatsappSkipped ? 'skipped' : whatsappOk ? 'ok' : whatsappError ? 'error' : whatsappPending ? 'pending' : 'unknown'}
+          detail={whatsappSkipped
+            ? 'Not configured / no team recipients'
+            : hasDeliveryTracking
+              ? `${accepted}/${Number(log?.teamSize || 0)} accepted · ${delivered} delivered · ${read} read · ${totalFailed} failed`
+              : `${accepted}/${Number(log?.teamSize || 0)} accepted by WATI · delivery not tracked on this older order`}
+          error={whatsappError
+            ? `${totalFailed} WhatsApp message${totalFailed === 1 ? '' : 's'} failed${log?.statusBlockedReason ? ` · ${log.statusBlockedReason}` : ''}`
+            : whatsappPending
+              ? 'Accepted by WATI; awaiting delivered/read receipt'
+              : null}
+        />
+      </div>
+
+      <div className="oa-delivery-actions">
+        <button
+          type="button"
+          className="oa-wa-notify-retry"
+          onClick={resendInternal}
+          disabled={Boolean(sending) || !found}
+        >
+          {sending === 'resend-internal-email' ? <Loader2 size={12} className="star-spinning" /> : <Mail size={12} />}
+          Resend internal email + PDF
+        </button>
+        {(!found || !internalOk || (whatsappError && !whatsappSkipped)) && (
+          <button
+            type="button"
+            className="oa-wa-notify-retry"
+            onClick={() => void sendAction('send-missing')}
+            disabled={Boolean(sending)}
+          >
+            {sending === 'send-missing' ? <Loader2 size={12} className="star-spinning" /> : <RefreshCw size={12} />}
+            Send missing notifications
+          </button>
+        )}
+      </div>
+      {message && <p className="oa-wa-notify-msg">{message}</p>}
+      {log?.deliveryHistory?.length > 0 && (
+        <details className="oa-delivery-history">
+          <summary>Delivery history ({log.deliveryHistory.length})</summary>
+          <ul>
+            {[...log.deliveryHistory].reverse().map((event, index) => (
+              <li key={`${event.at}-${index}`}>
+                <strong>{event.ok ? 'Sent' : 'Failed'}</strong> · {stamp(event.at)}
+                {event.by ? ` · ${event.by}` : ''}
+                {event.recipient ? ` · ${event.recipient}` : ''}
+                {event.error ? ` · ${event.error}` : ''}
+              </li>
+            ))}
+          </ul>
+        </details>
       )}
-      {noTeam && !noToken && (
-        <p className="oa-wa-notify-msg">No WhatsApp numbers in Team settings. Add team members under Order Requests → Team.</p>
-      )}
-      {blockedStatus && (
-        <p className="oa-wa-notify-msg">
-          Order email was sent but status stayed <strong>New</strong> because not all team WhatsApp messages were delivered.
-          {log.statusBlockedReason ? ` ${log.statusBlockedReason}.` : ''}
-        </p>
-      )}
-      {allFailed && !noToken && !noTeam && (
-        <p className="oa-wa-notify-msg">
-          WhatsApp failed for all {log.teamSize || 'team'} member(s) via <code>{log.template || 'proto_order_notis'}</code>
-          {log.templateCategory ? ` (${log.templateCategory})` : ''}.
-          {log.utilityTemplate === false
-            ? ' UTILITY templates do not need an open chat session — check team numbers in Order Requests → Team and WATI template approval.'
-            : ' Check team WhatsApp numbers in Order Requests → Team (placeholder numbers like 27821234501 will fail).'}
-          {' '}You can retry below.
-        </p>
-      )}
-      {partial && (
-        <p className="oa-wa-notify-msg">Some team members did not receive WhatsApp. See errors below.</p>
-      )}
-      {allOk && !blockedStatus && log.marketingWarning && (
-        <p className="oa-wa-notify-msg oa-wa-notify-msg--warn">{log.marketingWarning}</p>
-      )}
-      {allOk && !blockedStatus && !log.marketingWarning && (
-        <p className="oa-wa-notify-msg">
-          All {log.teamSize || log.sent} team member(s) notified via <code>{log.template || 'proto_order_notis'}</code>.
-          {log.statusAdvanced ? ' Order moved to Handed Over.' : ''}
-        </p>
-      )}
-      {log.failedList?.length > 0 && (
-        <ul className="oa-wa-notify-errors">
-          {log.failedList.map((f) => (
-            <li key={`${f.phone}-${f.name}`}>
-              <strong>{f.name || 'Team member'}</strong> ({f.phone}): {f.error}
-            </li>
-          ))}
-        </ul>
-      )}
-      {retryMsg && <p className="oa-wa-notify-msg">{retryMsg}</p>}
-    </div>
+    </section>
   );
 }
