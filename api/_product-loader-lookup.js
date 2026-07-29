@@ -183,7 +183,7 @@ export async function resolveProductLoaderMatch(sb, {
   const resolvedPrice = resolveLoaderCustomerPrice({
     productSellPrice: productRow?.sell_price,
     websitePrice: websiteRow?.price,
-    positillPriceExVat: rawPositillPrice,
+    positillPrice: rawPositillPrice,
   });
   const price = resolvedPrice.price;
   // The effective slot reflects the winning attempt: an exact full-code hit
