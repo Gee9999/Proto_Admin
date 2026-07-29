@@ -1,3 +1,4 @@
+// Backend Health is read-only; this comment also triggers the production deployment.
 import { createClient } from '@supabase/supabase-js';
 import { requireOwner } from './_admin-auth.js';
 import { getStockClient, enrichRowsWithProductStock } from './_stock-client.js';
