@@ -83,7 +83,7 @@ describe('Product Loader colour variants', () => {
     expect(resolveLoaderCustomerPrice({
       productSellPrice: 49.5,
       websitePrice: 43.04,
-      positillPriceExVat: 43.04,
+      positillPrice: 43.04,
     })).toEqual({
       price: 49.5,
       source: 'products.sell_price',
@@ -92,7 +92,7 @@ describe('Product Loader colour variants', () => {
 
   it('falls back to VAT conversion when no customer price exists yet', () => {
     expect(resolveLoaderCustomerPrice({
-      positillPriceExVat: 43.04,
+      positillPrice: 43.04,
     })).toEqual({
       price: 49.5,
       source: 'positill.price_a_vat_rounded',
