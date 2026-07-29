@@ -229,7 +229,7 @@ export default function CustomerEmailModal({
     () => wrapBroadcastHtml({
       subject: previewSubject,
       bodyHtml: previewBodyHtml,
-      siteUrl: PROTO_URLS.site,
+      siteUrl: PROTO_URLS.publicSite,
       registerUrl: PROTO_URLS.register,
     }),
     [previewSubject, previewBodyHtml],
