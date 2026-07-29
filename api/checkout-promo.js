@@ -12,6 +12,10 @@ const DEFAULTS = {
   code: 'PROTO75',
   percent: 7.5,
   label: '7.5% off your order',
+  // The portal validator honours both of these; they were never sent, so a
+  // minimum order or an end date could not be set from the admin at all.
+  minOrder: 0,
+  expiresAt: '',
 };
 
 export default async function handler(req, res) {
@@ -35,11 +39,19 @@ export default async function handler(req, res) {
       // into 7.5%. Only fall back to the default when it's missing/invalid.
       const rawPercent = Number(body.percent);
       const percent = Number.isFinite(rawPercent) ? Math.min(50, Math.max(0, rawPercent)) : DEFAULTS.percent;
+      const rawMin = Number(body.minOrder);
+      const minOrder = Number.isFinite(rawMin) && rawMin > 0 ? Math.round(rawMin * 100) / 100 : 0;
+      // Empty string = no expiry. An unparseable date is treated as no expiry
+      // rather than silently expiring the code the moment it is saved.
+      const rawExpiry = String(body.expiresAt || '').trim();
+      const expiresAt = rawExpiry && !Number.isNaN(Date.parse(rawExpiry)) ? rawExpiry : '';
       const promo = {
         active: Boolean(body.active),
         code: String(body.code || DEFAULTS.code).trim().toUpperCase(),
         percent,
         label: String(body.label || DEFAULTS.label).trim(),
+        minOrder,
+        expiresAt,
         updatedAt: new Date().toISOString(),
       };
       const saved = await writeSiteConfigJson(FILE, promo);
@@ -51,6 +63,8 @@ export default async function handler(req, res) {
           discountPct: promo.percent,
           active: promo.active,
           label: promo.label,
+          minOrder: promo.minOrder,
+          ...(promo.expiresAt ? { expiresAt: promo.expiresAt } : {}),
         }],
       });
       return res.status(200).json({ ok: true, ...saved });

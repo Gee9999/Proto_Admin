@@ -20,8 +20,15 @@ export default function SpecialsPanel({
     code: 'PROTO75',
     percent: 7.5,
     label: '7.5% off your order',
+    minOrder: 0,
+    expiresAt: '',
   });
   const [checkoutPromoSaving, setCheckoutPromoSaving] = useState(false);
+  // What is LIVE right now (last loaded/saved from the server). The form
+  // above is only what the admin is typing — a ticked checkbox that has not
+  // been saved is NOT live, and the status badges must never claim it is.
+  const [savedPromo, setSavedPromo] = useState(null);
+  const [savedPopup, setSavedPopup] = useState(null);
   const [popupForm, setPopupForm] = useState({ active: false, imageUrl: '', title: '' });
   const [popupSaving, setPopupSaving] = useState(false);
   const [popupUploading, setPopupUploading] = useState(false);
@@ -30,10 +37,29 @@ export default function SpecialsPanel({
     onShowToast?.(message, type);
   }, [onShowToast]);
 
+  const promoDirty = savedPromo && (
+    savedPromo.active !== checkoutPromo.active
+    || savedPromo.code !== checkoutPromo.code
+    || Number(savedPromo.percent) !== Number(checkoutPromo.percent)
+    || savedPromo.label !== checkoutPromo.label
+    || Number(savedPromo.minOrder) !== Number(checkoutPromo.minOrder)
+    || savedPromo.expiresAt !== checkoutPromo.expiresAt
+  );
+  // A popup only actually appears to customers when it is active AND has an
+  // image — active with no flyer shows nothing, which looked "on" before.
+  const popupLive = Boolean(savedPopup?.active && savedPopup?.imageUrl);
+  const popupDirty = savedPopup && (
+    savedPopup.active !== popupForm.active
+    || savedPopup.imageUrl !== popupForm.imageUrl
+    || savedPopup.title !== popupForm.title
+  );
+
   const loadPopup = useCallback(async () => {
     try {
       const data = await fetchPopupSpecial();
-      setPopupForm({ active: Boolean(data.active), imageUrl: data.imageUrl || '', title: data.title || '' });
+      const next = { active: Boolean(data.active), imageUrl: data.imageUrl || '', title: data.title || '' };
+      setPopupForm(next);
+      setSavedPopup(next);
     } catch (err) {
       toast(err.message || 'Failed to load popup', 'error');
     }
@@ -42,12 +68,16 @@ export default function SpecialsPanel({
   const loadCheckoutPromo = useCallback(async () => {
     try {
       const data = await fetchCheckoutPromo({ force: true });
-      setCheckoutPromo({
+      const next = {
         active: !!data.active,
         code: data.code || 'PROTO75',
         percent: Number(data.percent) || 7.5,
         label: data.label || '7.5% off your order',
-      });
+        minOrder: Number(data.minOrder) || 0,
+        expiresAt: data.expiresAt ? String(data.expiresAt).slice(0, 10) : '',
+      };
+      setCheckoutPromo(next);
+      setSavedPromo(next);
     } catch { /* ignore */ }
   }, []);
 
@@ -92,7 +122,10 @@ export default function SpecialsPanel({
     setPopupSaving(true);
     try {
       await savePopupSpecial(popupForm);
-      toast('Popup special saved');
+      setSavedPopup({ ...popupForm });
+      toast(popupForm.active
+        ? 'Popup saved — it is now LIVE for customers'
+        : 'Popup saved — it is switched OFF for customers');
     } catch (err) {
       toast(err.message || 'Failed to save popup', 'error');
     } finally {
@@ -104,7 +137,10 @@ export default function SpecialsPanel({
     setCheckoutPromoSaving(true);
     try {
       await saveCheckoutPromo(checkoutPromo);
-      toast('Checkout promo saved — applies on trade portal cart');
+      setSavedPromo({ ...checkoutPromo });
+      toast(checkoutPromo.active
+        ? `Promo saved — ${checkoutPromo.code} (${checkoutPromo.percent}% off) is now LIVE at checkout`
+        : 'Promo saved — no code is active at checkout');
     } catch (err) {
       toast(err.message || 'Failed to save checkout promo', 'error');
     } finally {
@@ -249,9 +285,15 @@ export default function SpecialsPanel({
       <hr style={{ margin: '32px 0', border: 'none', borderTop: '1px solid #e5e7eb' }} />
       <div className="adm-section-head">
         <div>
-          <h3 className="adm-subtitle"><DollarSign size={16} /> PROTO75 — Cart checkout discount</h3>
-          <p className="adm-section-note">Amount deducted at cart checkout on site.proto.co.za when customers enter the promo code.</p>
+          <h3 className="adm-subtitle"><DollarSign size={16} /> Checkout promo code</h3>
+          <p className="adm-section-note">Change the code and the discount whenever you like — customers enter it in the cart. One redemption per customer.</p>
         </div>
+        <LiveStatus
+          live={Boolean(savedPromo?.active)}
+          dirty={promoDirty}
+          liveText={savedPromo ? `LIVE · ${savedPromo.code} · ${savedPromo.percent}% off` : 'LIVE'}
+          offText="No promo active at checkout"
+        />
       </div>
       <div className="adm-responsive-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, maxWidth: 720, marginBottom: 8 }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, fontWeight: 600 }}>
@@ -270,17 +312,33 @@ export default function SpecialsPanel({
           <span className="adm-muted" style={{ fontSize: 12, fontWeight: 700 }}>Cart label</span>
           <input className="adm-field-input" style={{ width: '100%' }} value={checkoutPromo.label} onChange={(e) => setCheckoutPromo((p) => ({ ...p, label: e.target.value }))} />
         </label>
+        <label>
+          <span className="adm-muted" style={{ fontSize: 12, fontWeight: 700 }}>Minimum order (R) — 0 for none</span>
+          <input className="adm-field-input" type="number" min="0" step="50" style={{ width: '100%' }} value={checkoutPromo.minOrder} onChange={(e) => setCheckoutPromo((p) => ({ ...p, minOrder: Number(e.target.value) }))} />
+        </label>
+        <label>
+          <span className="adm-muted" style={{ fontSize: 12, fontWeight: 700 }}>Expires on — blank for never</span>
+          <input className="adm-field-input" type="date" style={{ width: '100%' }} value={checkoutPromo.expiresAt} onChange={(e) => setCheckoutPromo((p) => ({ ...p, expiresAt: e.target.value }))} />
+        </label>
       </div>
       <button type="button" className="adm-btn-red" disabled={checkoutPromoSaving} onClick={() => void savePromo()} style={{ marginBottom: 24 }}>
-        {checkoutPromoSaving ? 'Saving…' : 'Save PROTO75 checkout promo'}
+        {checkoutPromoSaving ? 'Saving…' : 'Save promo code'}
       </button>
 
       <hr style={{ margin: '32px 0', border: 'none', borderTop: '1px solid #e5e7eb' }} />
       <div className="adm-section-head">
         <div>
           <h3 className="adm-subtitle"><Megaphone size={16} /> Popup / Banner Promo</h3>
-          <p className="adm-section-note">Flyer popup shown once per customer when they log in (while active).</p>
+          <p className="adm-section-note">Flyer popup shown once per customer when they log in. It only appears when it is active AND a flyer image is uploaded.</p>
         </div>
+        <LiveStatus
+          live={popupLive}
+          dirty={popupDirty}
+          liveText="LIVE · customers see this popup"
+          offText={savedPopup?.active && !savedPopup?.imageUrl
+            ? 'Not showing — active but no flyer image uploaded'
+            : 'Not showing to customers'}
+        />
       </div>
       <div className="adm-responsive-2col" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, alignItems: 'start' }}>
         <div style={{ display: 'grid', gap: 12 }}>
@@ -307,6 +365,27 @@ export default function SpecialsPanel({
             : <span className="adm-muted">No image uploaded</span>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Unmistakable live/off badge. Reports the SAVED state — with an explicit
+ * "unsaved changes" warning — so the admin can never mistake a ticked
+ * checkbox for something customers are actually seeing.
+ */
+function LiveStatus({ live, dirty, liveText, offText }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+      <span className={`adm-live-badge${live ? ' adm-live-badge--on' : ''}`}>
+        <span className="adm-live-dot" />
+        {live ? liveText : offText}
+      </span>
+      {dirty && (
+        <span style={{ fontSize: 11, fontWeight: 800, color: '#b45309' }}>
+          Unsaved changes — press Save to apply
+        </span>
+      )}
     </div>
   );
 }

@@ -122,23 +122,17 @@ export default function CommsPanel({ onCompose, onShowToast }) {
     onCompose?.({ audience: 'selected', recipients });
   };
 
-  // The audience resolver can't target "no business type" as a segment (an empty
-  // businessTypes list means "everyone"), so emailing the whole audience while
-  // the list is filtered to Unspecified would silently send to ALL approved.
-  // Block that path — the admin ticks contacts and uses "Email selected" instead.
-  const unspecifiedFilter = businessType === '__unspecified__';
-
+  // "Unspecified" was removed as a filter option: an empty businessTypes list
+  // means EVERYONE to the audience resolver, so emailing the audience while
+  // filtered to Unspecified silently sent to all approved customers.
   const emailAudience = () => {
-    if (unspecifiedFilter) return;
     onCompose?.({
       audience: 'all-approved',
       businessTypes: businessType ? [businessType] : [],
     });
   };
 
-  const audienceLabel = businessType && !unspecifiedFilter
-    ? `all approved · ${businessType}`
-    : 'all approved';
+  const audienceLabel = businessType ? `all approved · ${businessType}` : 'all approved';
 
   return (
     <div className="adm-panel">
@@ -152,7 +146,7 @@ export default function CommsPanel({ onCompose, onShowToast }) {
         </div>
         <button type="button" className="adm-btn-red" onClick={() => onCompose?.()}>
           <Mail size={15} style={{ marginRight: 6, verticalAlign: -2 }} />
-          Compose email
+          Send email
         </button>
       </div>
 
@@ -173,7 +167,6 @@ export default function CommsPanel({ onCompose, onShowToast }) {
               onChange={setBusinessType}
               options={[
                 { value: '', label: 'All business types' },
-                { value: '__unspecified__', label: 'Unspecified' },
                 ...BUSINESS_TYPES.map((type) => ({ value: type, label: type })),
               ]}
             />
@@ -226,12 +219,9 @@ export default function CommsPanel({ onCompose, onShowToast }) {
               <button
                 type="button"
                 className="adm-btn-ghost"
-                style={{ fontSize: 13, padding: '7px 14px', opacity: unspecifiedFilter ? 0.5 : 1 }}
+                style={{ fontSize: 13, padding: '7px 14px' }}
                 onClick={emailAudience}
-                disabled={unspecifiedFilter}
-                title={unspecifiedFilter
-                  ? 'Customers with no business type can’t be emailed as an audience — tick them and use “Email selected”.'
-                  : 'Opens the composer targeting every approved customer in the current business-type filter (not just this page).'}
+                title="Opens the send-email window targeting every approved customer in the current business-type filter (not just this page)."
               >
                 <Users size={13} style={{ marginRight: 6, verticalAlign: -2 }} />
                 Email {audienceLabel}

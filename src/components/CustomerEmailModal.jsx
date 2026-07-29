@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BarChart2, Code2, ImagePlus, Loader2, Mail, Send } from 'lucide-react';
+import { BarChart2, Code2, Eye, ImagePlus, Loader2, Mail, Send, X } from 'lucide-react';
 import EmailTemplateTests from './EmailTemplateTests';
 import { PROTO_URLS } from '../lib/protoUrls';
 import { BUSINESS_TYPES } from '../lib/businessTypes';
@@ -105,10 +105,14 @@ export default function CustomerEmailModal({
   const [htmlPane, setHtmlPane] = useState('split');
   const [showHtml, setShowHtml] = useState(false);
   const [audience, setAudience] = useState('all-approved');
-  const [filterBusinessTypes, setFilterBusinessTypes] = useState(false);
   const [businessTypes, setBusinessTypes] = useState([]);
   const [sending, setSending] = useState(false);
   const [testSending, setTestSending] = useState(false);
+  // Explicit "send a test first?" step — a browser prompt() was easy to miss
+  // and impossible to correct, so the address is a real field.
+  const [showPreview, setShowPreview] = useState(false);
+  const [wantTest, setWantTest] = useState(false);
+  const [testEmail, setTestEmail] = useState('');
   const [campaigns, setCampaigns] = useState([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [recipientsText, setRecipientsText] = useState('');
@@ -128,17 +132,18 @@ export default function CustomerEmailModal({
     if (!open) return;
     setHtmlPane('split');
     setShowHtml(false);
+    setWantTest(false);
+    setShowPreview(false);
+    setTestEmail(adminEmail || '');
     const recips = Array.isArray(initialRecipients) ? initialRecipients.filter(Boolean) : [];
     if (recips.length) {
       setAudience('selected');
       setRecipientsText(recips.join('\n'));
-      setFilterBusinessTypes(false);
       setBusinessTypes([]);
     } else {
       setAudience(initialAudience || defaultAudienceForTab(customerTab));
       setRecipientsText('');
       const types = Array.isArray(initialBusinessTypes) ? initialBusinessTypes.filter(Boolean) : [];
-      setFilterBusinessTypes(types.length > 0);
       setBusinessTypes(types);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -253,11 +258,6 @@ export default function CustomerEmailModal({
     }
   };
 
-  const toggleBusinessType = (type) => {
-    setBusinessTypes((prev) => (
-      prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
-    ));
-  };
 
   const handleSend = async (test = false) => {
     if (!subject.trim()) {
@@ -274,21 +274,19 @@ export default function CustomerEmailModal({
       onShowToast?.('Enter at least one valid email address', 'error');
       return;
     }
-    if (!test && !isSelected && filterBusinessTypes && !businessTypes.length) {
-      onShowToast?.('Select at least one business type or turn off the filter', 'error');
-      return;
-    }
 
     const audienceLabel = isSelected
       ? `${selectedEmails.length} specific ${selectedEmails.length === 1 ? 'person' : 'people'}`
-      : `${selectedAudience.label}${filterBusinessTypes && businessTypes.length ? ` (${businessTypes.length} business type${businessTypes.length === 1 ? '' : 's'})` : ''}`;
+      : `${selectedAudience.label}${businessTypes.length ? ` · ${businessTypes.join(', ')} only` : ' · all business types'}`;
     if (!test && !window.confirm(`Send this email to: ${audienceLabel}?`)) return;
 
     if (test) {
       // A test is a self-preview with sample merge data + a [TEST] subject, so
-      // it must go to the admin — never to a real customer in the recipient list.
-      const testEmail = adminEmail || window.prompt('Send test to email address:');
-      if (!testEmail?.trim()) return;
+      // it goes to the ONE address typed below — never to a real customer.
+      if (!testEmail.trim() || !parseEmailList(testEmail).length) {
+        onShowToast?.('Enter a valid email address to send the test to', 'error');
+        return;
+      }
       setTestSending(true);
       try {
         await onSend({
@@ -297,7 +295,7 @@ export default function CustomerEmailModal({
           introText: introBody.trim(),
           htmlBlock: htmlBody.trim(),
           testEmail: testEmail.trim(),
-          businessTypes: filterBusinessTypes && !isSelected ? businessTypes : [],
+          businessTypes: isSelected ? [] : businessTypes,
         });
         onShowToast?.(`Test email sent to ${testEmail.trim()}`, 'success');
       } catch (err) {
@@ -315,7 +313,7 @@ export default function CustomerEmailModal({
         subject: subject.trim(),
         introText: introBody.trim(),
         htmlBlock: htmlBody.trim(),
-        businessTypes: filterBusinessTypes && !isSelected ? businessTypes : [],
+        businessTypes: isSelected ? [] : businessTypes,
         ...(isSelected ? { recipients: selectedEmails } : {}),
       });
       onShowToast?.(
@@ -427,33 +425,25 @@ export default function CustomerEmailModal({
 
           {audience !== 'selected' && (
           <label className="adm-email-field">
-            <span className="adm-email-field__label">Filter by business type?</span>
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}>
-                <input
-                  type="checkbox"
-                  checked={filterBusinessTypes}
-                  onChange={(e) => setFilterBusinessTypes(e.target.checked)}
-                />
-                Yes — only send to selected business types
-              </label>
-            </div>
-            {filterBusinessTypes && (
-              <div className="adm-email-merge-bar" style={{ marginTop: 8 }}>
-                <div className="adm-email-merge-bar__chips">
-                  {BUSINESS_TYPES.map((type) => (
-                    <button
-                      key={type}
-                      type="button"
-                      className={`adm-email-merge-chip${businessTypes.includes(type) ? ' adm-email-merge-chip--active' : ''}`}
-                      onClick={() => toggleBusinessType(type)}
-                    >
-                      {type}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+            <span className="adm-email-field__label">Business type</span>
+            <select
+              className="adm-field-input adm-select--enhanced"
+              value={businessTypes[0] || ''}
+              onChange={(e) => setBusinessTypes(e.target.value ? [e.target.value] : [])}
+            >
+              {/* Blank = everyone in the audience. There is deliberately no
+                  "Unspecified" option: an empty list means EVERYONE to the
+                  audience resolver, so it could never be a real segment. */}
+              <option value="">All business types — send to everyone</option>
+              {BUSINESS_TYPES.map((type) => (
+                <option key={type} value={type}>{type}</option>
+              ))}
+            </select>
+            <span className="adm-email-field__hint">
+              {businessTypes.length
+                ? `Only ${businessTypes[0]} customers in this audience will receive it.`
+                : 'Leave as “All business types” to send to every customer in this audience.'}
+            </span>
           </label>
           )}
 
@@ -609,19 +599,78 @@ export default function CustomerEmailModal({
           <EmailTemplateTests adminEmail={adminEmail} onShowToast={onShowToast} />
         </div>
 
+        {showPreview && (
+          <div className="adm-email-preview-overlay" onClick={() => setShowPreview(false)}>
+            <div className="adm-email-preview-sheet" onClick={(e) => e.stopPropagation()}>
+              <div className="adm-email-preview-sheet__head">
+                <div>
+                  <div className="adm-email-preview-sheet__eyebrow">Subject</div>
+                  <div className="adm-email-preview-sheet__subject">{previewSubject}</div>
+                </div>
+                <button type="button" className="adm-modal-close" onClick={() => setShowPreview(false)} aria-label="Close preview">
+                  <X size={18} />
+                </button>
+              </div>
+              <p className="adm-email-preview-sheet__note">
+                Exactly what a customer receives — merge fields filled with sample data.
+              </p>
+              <iframe
+                title="Email preview"
+                className="adm-email-preview-sheet__frame"
+                srcDoc={fullPreviewDoc}
+                sandbox=""
+              />
+            </div>
+          </div>
+        )}
+
+        <div className="adm-email-testbar">
+          <button
+            type="button"
+            className="adm-btn-ghost adm-btn--sm"
+            onClick={() => setShowPreview(true)}
+            title="See the email exactly as a customer receives it"
+          >
+            <Eye size={13} style={{ marginRight: 5, verticalAlign: -2 }} />
+            Preview email
+          </button>
+          <span className="adm-email-testbar__spacer" />
+          <span className="adm-email-testbar__label">Send yourself a test first?</span>
+          <label className="adm-email-testbar__opt">
+            <input type="radio" name="wantTest" checked={wantTest} onChange={() => setWantTest(true)} />
+            Yes
+          </label>
+          <label className="adm-email-testbar__opt">
+            <input type="radio" name="wantTest" checked={!wantTest} onChange={() => setWantTest(false)} />
+            No
+          </label>
+          {wantTest && (
+            <>
+              <input
+                type="email"
+                className="adm-field-input adm-email-testbar__input"
+                value={testEmail}
+                onChange={(e) => setTestEmail(e.target.value)}
+                placeholder="you@proto.co.za"
+                aria-label="Send the test to this address"
+              />
+              <button
+                type="button"
+                className="adm-btn-ghost adm-btn--sm"
+                disabled={sending || testSending}
+                onClick={() => void handleSend(true)}
+              >
+                {testSending ? <><Loader2 size={13} className="spin" /> Sending…</> : <><Send size={13} /> Send test</>}
+              </button>
+            </>
+          )}
+        </div>
+
         <div className="adm-modal-footer adm-modal-footer--end adm-email-modal__footer">
           <button type="button" className="adm-btn-ghost" onClick={onClose} disabled={sending || testSending}>
             Cancel
           </button>
           <div className="adm-email-modal__footer-actions" style={{ flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
-            <button
-              type="button"
-              className="adm-btn-ghost"
-              disabled={sending || testSending}
-              onClick={() => void handleSend(true)}
-            >
-              {testSending ? <><Loader2 size={14} className="spin" /> Sending test…</> : 'Send test'}
-            </button>
             <button
               type="button"
               className="adm-btn-red"

@@ -8647,3 +8647,168 @@ html, body { background: #f5f5f5; color: #111827; }
   .health-panel__head { flex-direction: column; }
   .health-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Send-email: explicit "test first?" step ─────────────────────────────── */
+.adm-email-testbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 20px;
+  border-top: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+.adm-email-testbar__label { font-size: 13px; font-weight: 800; color: #111827; }
+.adm-email-testbar__opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  cursor: pointer;
+}
+.adm-email-testbar__input { max-width: 260px; }
+
+/* ── Email analytics: spreadsheet view ───────────────────────────────────── */
+.adm-email-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.adm-email-stat {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+.adm-email-stat--bad { border-color: #fecaca; background: #fef2f2; }
+.adm-email-stat__label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+.adm-email-stat__value { font-size: 24px; font-weight: 900; line-height: 1.2; color: #0f172a; }
+.adm-email-stat__sub { font-size: 11px; color: #6b7280; }
+
+.adm-email-analytics-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.adm-table-scroll { overflow-x: auto; border: 1px solid #e5e7eb; border-radius: 10px; background: #fff; }
+.adm-sheet { width: 100%; border-collapse: collapse; font-size: 13px; }
+.adm-sheet thead th {
+  position: sticky;
+  top: 0;
+  background: #f9fafb;
+  border-bottom: 1px solid #e5e7eb;
+  padding: 9px 12px;
+  text-align: left;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #6b7280;
+  white-space: nowrap;
+}
+.adm-sheet tbody td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: top; }
+.adm-sheet tbody tr:nth-child(even) { background: #fcfcfd; }
+.adm-sheet tbody tr:hover { background: #f8fafc; }
+.adm-sheet__num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.adm-rate {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+}
+.adm-rate--good { background: #dcfce7; color: #15803d; }
+.adm-rate--warn { background: #fef3c7; color: #92400e; }
+.adm-rate--bad  { background: #fee2e2; color: #b91c1c; }
+
+/* ── Live/off status badge (checkout promo, popup) ───────────────────────── */
+.adm-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid #e5e7eb;
+  background: #f3f4f6;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.adm-live-badge--on {
+  border-color: #bbf7d0;
+  background: #dcfce7;
+  color: #15803d;
+}
+.adm-live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9ca3af;
+  flex-shrink: 0;
+}
+.adm-live-badge--on .adm-live-dot {
+  background: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
+}
+
+.adm-email-testbar__spacer { flex: 1; }
+/* ── Full email preview overlay ──────────────────────────────────────────── */
+.adm-email-preview-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.adm-email-preview-sheet {
+  background: #fff;
+  border-radius: 14px;
+  width: min(760px, 100%);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+}
+.adm-email-preview-sheet__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px 6px;
+}
+.adm-email-preview-sheet__eyebrow {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: #6b7280;
+}
+.adm-email-preview-sheet__subject { font-size: 16px; font-weight: 800; color: #0f172a; }
+.adm-email-preview-sheet__note { margin: 0 20px 12px; font-size: 12px; color: #6b7280; }
+.adm-email-preview-sheet__frame {
+  flex: 1;
+  width: 100%;
+  min-height: 420px;
+  border: 0;
+  border-top: 1px solid #e5e7eb;
+  background: #fff;
+}
