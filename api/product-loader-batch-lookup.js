@@ -118,7 +118,9 @@ export default async function handler(req, res) {
       }
       const hasSource = Boolean(match.sqlRow || inheritedWebsiteRow);
       if (!hasSource) warnings.push('not_in_catalog');
-      const resolvedPrice = Number(match.sqlRow?.price ?? inheritedWebsiteRow?.price ?? match.price ?? 0);
+      // match.price is already resolved to the customer-facing VAT-inclusive
+      // price. Do not let raw Positill PRICE_A override it for colour children.
+      const resolvedPrice = Number(match.price ?? inheritedWebsiteRow?.price ?? 0);
       const resolvedAvailable = match.sqlRow?.available
         ?? inheritedWebsiteRow?.available_stock
         ?? inheritedWebsiteRow?.stock_qty
@@ -145,6 +147,9 @@ export default async function handler(req, res) {
         barcode: colourVariant.positillCode,
         title: variantTitle,
         price: resolvedPrice,
+        priceSource: match.priceSource,
+        erpPriceExVat: match.erpPriceExVat,
+        productSellPrice: match.productSellPrice,
         stockOnHand: resolvedAvailable,
         imageSlot,
         websiteRow: inheritedWebsiteRow,
