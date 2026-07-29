@@ -122,6 +122,7 @@ const SpecialsPanel = lazyRetry(() => import('../components/SpecialsPanel'));
 const PricingPanel = lazyRetry(() => import('../components/PricingPanel'));
 const ReorderPanel = lazyRetry(() => import('../components/ReorderPanel'));
 const OrdersWorkspacePanel = lazyRetry(() => import('../components/OrdersWorkspacePanel'));
+const BackendHealthPanel = lazyRetry(() => import('../components/BackendHealthPanel'));
 
 function orderWorkspaceIdFromPath() {
   const match = window.location.pathname.match(/^\/(?:apollo\/)?orders\/workspace\/([^/?#]+)/i);
@@ -2026,6 +2027,14 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
               </SectionErrorBoundary>
             )}
 
+
+            {activeSection === 'backend-health' && (
+              <SectionErrorBoundary name="backend-health" title="Backend Health crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Checking backend health…" />}>
+                  <BackendHealthPanel />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
 
             {activeSection === 'product-loader' && (
               <SectionErrorBoundary name="product-loader" title="Product Loader crashed" resetKey={activeSection}>
