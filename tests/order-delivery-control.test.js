@@ -4,6 +4,7 @@ import {
   isOrderNotifyComplete,
   orderItems,
 } from '../api/_order-notify-core.js';
+import { normalizeWatiDeliveryEvent } from '../api/wati-delivery-webhook.js';
 
 describe('order delivery control centre', () => {
   it('keeps all 250 product lines available for an internal resend', () => {
@@ -31,5 +32,25 @@ describe('order delivery control centre', () => {
     expect(next).toHaveLength(25);
     expect(next[0].at).toBe('1');
     expect(next[24].at).toBe('newest');
+  });
+
+  it('does not confuse WATI acceptance with delivered or read', () => {
+    expect(normalizeWatiDeliveryEvent({
+      eventType: 'templateMessageSent_v2',
+      statusString: 'SENT',
+    })).toBe('sent');
+    expect(normalizeWatiDeliveryEvent({
+      eventType: 'sentMessageDELIVERED_v2',
+      statusString: 'Delivered',
+    })).toBe('delivered');
+    expect(normalizeWatiDeliveryEvent({
+      eventType: 'sentMessageREAD_v2',
+      statusString: 'Read',
+    })).toBe('read');
+    expect(normalizeWatiDeliveryEvent({
+      eventType: 'templateMessageFailed',
+      failedCode: '131026',
+      statusString: 'Failed',
+    })).toBe('failed');
   });
 });
