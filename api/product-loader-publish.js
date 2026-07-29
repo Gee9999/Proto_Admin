@@ -3,6 +3,8 @@ import { catalogueDescription, catalogueDisplayTitle } from '../lib/product-load
 import { requireOwner } from './_admin-auth.js';
 import { logProductLoaderAudit } from './_product-loader-audit.js';
 import { labelsToDbFields } from './_taxonomy-utils.js';
+import { fetchProductLookupMap, findProductBySku } from './_sku-match.js';
+import { canonicalPublishValues } from '../lib/catalogue-safety.mjs';
 
 function getStockClient() {
   return createClient(
@@ -106,6 +108,34 @@ export default async function handler(req, res) {
 
   const now = new Date().toISOString();
   const erpBarcode = String(bodyBarcode || existing?.barcode || sku).trim();
+  let canonicalProduct = null;
+  try {
+    const productMap = await fetchProductLookupMap(
+      sb,
+      [erpBarcode],
+      'sku, sell_price, stock_qty, available_stock',
+    );
+    canonicalProduct = findProductBySku(productMap, erpBarcode);
+  } catch (error) {
+    return res.status(503).json({
+      error: `Catalogue safety check could not verify the ERP product: ${error.message}`,
+      code: 'catalogue_safety_unavailable',
+    });
+  }
+
+  const safeValues = canonicalPublishValues({
+    product: canonicalProduct,
+    existing,
+    submitted: { price, stockQty, availableStock },
+  });
+  if (safeValues.blocked) {
+    return res.status(422).json({
+      error: safeValues.message,
+      code: safeValues.code,
+      sku,
+    });
+  }
+
   const catalogItem = {
     code: sku,
     displayCode,
@@ -123,11 +153,6 @@ export default async function handler(req, res) {
     : catalogueDisplayTitle(catalogItem);
   const resolvedDescription = catalogueDescription(catalogItem);
 
-  // Never overwrite a real price with 0. On re-publish (e.g. adding an image
-  // slot) the resolved price can be 0 when there's no ERP/website match — in
-  // that case keep the existing DB price instead of dropping the product to R0.
-  const numericPrice = Number(price);
-  const hasValidPrice = Number.isFinite(numericPrice) && numericPrice > 0;
   // When the caller supplies a full category path (the loader's cascading
   // picker), persist EVERY level via labelsToDbFields — including
   // subcategory_three/four and the subcategory_extra overflow — so a move into
@@ -147,16 +172,17 @@ export default async function handler(req, res) {
 
   const patch = {
     title: resolvedTitle,
-    price: hasValidPrice ? numericPrice : (Number(existing?.price) || 0),
+    // Never trust browser-supplied price/stock when a synchronised ERP product
+    // exists. This closes both the double-VAT and stale-stock publication paths.
+    price: safeValues.price,
+    stock_qty: safeValues.stockQty,
+    available_stock: safeValues.availableStock,
     ...catFields,
     ...imageFields,
     updated_at: now,
   };
 
   if (resolvedDescription) patch.original_description = resolvedDescription;
-  if (stockQty != null && Number.isFinite(Number(stockQty))) patch.stock_qty = Number(stockQty);
-  if (availableStock != null && Number.isFinite(Number(availableStock))) patch.available_stock = Number(availableStock);
-
   let action;
   let writeError;
 
@@ -230,6 +256,7 @@ export default async function handler(req, res) {
       imageSlots: filledSlots,
       imageSource,
       publishMode,
+      safetyCorrections: safeValues.corrections,
       filename: String(filename || '').trim() || null,
     },
     publishedBy: String(publishedBy || '').trim() || null,
