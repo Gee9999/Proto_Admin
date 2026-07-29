@@ -9,7 +9,14 @@ import {
   Upload,
 } from 'lucide-react';
 import { exportBatchReportCsv, isImageFile } from '../../lib/parseIntakeFilename';
-import { archiveLoaderImageItem, lookupFilenames, logPublishFailure, publishLoaderImageItem } from '../../lib/productLoaderApi';
+import {
+  archiveLoaderImageItem,
+  lookupFilenames,
+  logPublishFailure,
+  publishLoaderColourVariant,
+  publishLoaderImageItem,
+  syncLoaderColourVariantGroup,
+} from '../../lib/productLoaderApi';
 import { catalogueDisplayTitle, loaderCodeLabel } from '../../lib/productLoaderDisplay.js';
 import LoaderCodeEllipsis from './LoaderCodeEllipsis.jsx';
 import CategoryPathSelect from './CategoryPathSelect';
@@ -40,8 +47,23 @@ const GROUP_LABELS = {
   not_found: 'Not Found',
 };
 
-// Each image is an independent upload + row write, so a batch can process
-// several at once instead of one-at-a-time (which took minutes on big folders).
+const WARNING_LABELS = {
+  image_exists: 'Image already exists',
+  low_stock: 'No available stock',
+  price_zero: 'Price missing',
+  needs_category: 'Category required',
+  not_in_catalog: 'Positill code not found',
+  too_many_variant_images: 'Maximum 4 images per colour',
+};
+
+function rowStatusLabel(row) {
+  if (row.processError) return `${row.status || row.group} — ${row.processError}`;
+  const warnings = (row.warnings || []).map((warning) => WARNING_LABELS[warning] || warning);
+  return [row.status || row.group, ...warnings].filter(Boolean).join(' — ');
+}
+
+// Regular products are independent work units. All images for one recognised
+// colour are one work unit so their four image slots publish atomically.
 // Kept modest so a large folder doesn't overwhelm the serverless upload route.
 const FOLDER_CONCURRENCY = 5;
 
@@ -77,6 +99,7 @@ export default function ProductLoaderUpload({
   const [startedAt, setStartedAt] = useState(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [stats, setStats] = useState({ published: 0, dormant: 0, failed: 0 });
+  const [groupColourVariants, setGroupColourVariants] = useState(true);
 
   const batchDefaultCategoryId = batchDefaultPathIds?.[0] || '';
 
@@ -107,7 +130,7 @@ export default function ProductLoaderUpload({
     setItems([]);
     setStats({ published: 0, dormant: 0, failed: 0 });
     try {
-      const merged = await lookupFilenames(files.map((f) => f.name), files);
+      const merged = await lookupFilenames(files.map((f) => f.name), files, { groupColourVariants });
       for (const row of merged) {
         if (row.file) row.previewUrl = URL.createObjectURL(row.file);
       }
@@ -133,38 +156,102 @@ export default function ProductLoaderUpload({
     setError('');
     const start = Date.now();
     setStartedAt(start);
-    setProgress({ done: 0, total: ready.length, current: '' });
+    const variantGroups = new Map();
+    const workUnits = [];
+    for (const row of ready) {
+      if (!row.isColourVariant) {
+        workUnits.push({ key: row.filename, rows: [row], isColourVariant: false });
+        continue;
+      }
+      if (!variantGroups.has(row.code)) {
+        const unit = { key: row.code, rows: [], isColourVariant: true };
+        variantGroups.set(row.code, unit);
+        workUnits.push(unit);
+      }
+      variantGroups.get(row.code).rows.push(row);
+    }
+
+    setProgress({ done: 0, total: workUnits.length, current: '' });
     let published = 0;
+    let publishedImages = 0;
     let failed = 0;
     let done = 0;
+    const publishedColourRows = [];
 
-    await runWithConcurrency(ready, FOLDER_CONCURRENCY, async (row) => {
-      setItems((prev) => prev.map((r) => (r.filename === row.filename ? { ...r, status: 'processing' } : r)));
+    await runWithConcurrency(workUnits, FOLDER_CONCURRENCY, async (unit) => {
+      const filenames = new Set(unit.rows.map((row) => row.filename));
+      setItems((prev) => prev.map((row) => (
+        filenames.has(row.filename) ? { ...row, status: 'processing' } : row
+      )));
       try {
-        await publishLoaderImageItem(row, {
-          taxonomyTree,
-          findNode,
-          defaultCategoryPathIds: batchDefaultPathIds,
-          overwrite: batchOverwrite,
-        });
+        if (unit.isColourVariant) {
+          await publishLoaderColourVariant(unit.rows, {
+            taxonomyTree,
+            findNode,
+            defaultCategoryPathIds: batchDefaultPathIds,
+            overwrite: batchOverwrite,
+          });
+          publishedColourRows.push(...unit.rows);
+        } else {
+          await publishLoaderImageItem(unit.rows[0], {
+            taxonomyTree,
+            findNode,
+            defaultCategoryPathIds: batchDefaultPathIds,
+            overwrite: batchOverwrite,
+          });
+        }
         published += 1;
-        setItems((prev) => prev.map((r) => (r.filename === row.filename ? { ...r, status: 'done' } : r)));
+        publishedImages += unit.rows.length;
+        setItems((prev) => prev.map((row) => (
+          filenames.has(row.filename) ? { ...row, status: 'done' } : row
+        )));
       } catch (err) {
         failed += 1;
-        await logPublishFailure({ sku: row.code, filename: row.filename, reason: err.message });
-        setItems((prev) => prev.map((r) => (r.filename === row.filename ? { ...r, status: 'error', processError: err.message } : r)));
+        await logPublishFailure({
+          sku: unit.rows[0]?.code,
+          filename: unit.rows.map((row) => row.filename).join(', '),
+          reason: err.message,
+        });
+        setItems((prev) => prev.map((row) => (
+          filenames.has(row.filename)
+            ? { ...row, status: 'error', processError: err.message }
+            : row
+        )));
       } finally {
         done += 1;
-        setProgress({ done, total: ready.length, current: row.filename });
+        setProgress({ done, total: workUnits.length, current: unit.key });
         setElapsedMs(Date.now() - start);
       }
     });
 
+    const groupedFamilies = new Map();
+    for (const row of publishedColourRows) {
+      if (!groupedFamilies.has(row.positillCode)) groupedFamilies.set(row.positillCode, []);
+      groupedFamilies.get(row.positillCode).push(row);
+    }
+    const groupingErrors = [];
+    for (const [baseCode, familyRows] of groupedFamilies) {
+      try {
+        await syncLoaderColourVariantGroup(familyRows);
+      } catch (err) {
+        groupingErrors.push(`${baseCode}: ${err.message}`);
+        const filenames = new Set(familyRows.map((row) => row.filename));
+        setItems((prev) => prev.map((row) => (
+          filenames.has(row.filename)
+            ? { ...row, status: 'review', processError: `Published; grouping needs review — ${err.message}` }
+            : row
+        )));
+      }
+    }
+
     setStats((s) => ({ ...s, published: s.published + published, failed: s.failed + failed }));
-    setProgress({ done: ready.length, total: ready.length, current: '' });
+    setProgress({ done: workUnits.length, total: workUnits.length, current: '' });
     setElapsedMs(Date.now() - start);
     setProcessing(false);
-    onShowToast?.(`Published ${published}${failed ? `, ${failed} failed` : ''}`, failed ? 'warning' : 'success');
+    onShowToast?.(
+      `Published ${published} product variant${published === 1 ? '' : 's'} from ${publishedImages} image${publishedImages === 1 ? '' : 's'}${failed ? `, ${failed} failed` : ''}${groupingErrors.length ? `; ${groupingErrors.length} family group needs review` : ''}`,
+      failed || groupingErrors.length ? 'warning' : 'success',
+    );
   };
 
   const retryFailed = async () => {
@@ -228,8 +315,9 @@ export default function ProductLoaderUpload({
           <table className="pl-folder-table">
             <colgroup>
               <col style={{ width: 48 }} />
-              <col style={{ width: '22%' }} />
-              <col style={{ width: '30%' }} />
+              <col style={{ width: '18%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '26%' }} />
               <col style={{ width: 56 }} />
               <col style={{ width: 88 }} />
             </colgroup>
@@ -237,6 +325,7 @@ export default function ProductLoaderUpload({
               <tr>
                 <th>Preview</th>
                 <th>SKU</th>
+                <th>Positill / Colour</th>
                 <th>Description</th>
                 <th>Slot</th>
                 <th>Status</th>
@@ -248,10 +337,15 @@ export default function ProductLoaderUpload({
                   <td>{row.previewUrl ? <img src={row.previewUrl} alt="" className="pl-folder-thumb" /> : '—'}</td>
                   <td className="pl-table-clip"><LoaderCodeEllipsis value={loaderCodeLabel(row)} fill /></td>
                   <td className="pl-table-clip">
+                    {row.isColourVariant ? (
+                      <span>{row.positillCode}<br /><strong>{row.variantLabel}</strong></span>
+                    ) : '—'}
+                  </td>
+                  <td className="pl-table-clip">
                     <LoaderCodeEllipsis value={catalogueDisplayTitle(row)} strong={false} fill />
                   </td>
                   <td>{row.imageSlot}</td>
-                  <td className={row.status === 'error' ? 'pl-error' : ''}>{row.status || row.group}{row.processError ? ` — ${row.processError}` : ''}</td>
+                  <td className={row.status === 'error' ? 'pl-error' : ''}>{rowStatusLabel(row)}</td>
                 </tr>
               ))}
             </tbody>
@@ -268,8 +362,8 @@ export default function ProductLoaderUpload({
     <div className="pl-section">
       <p className="pl-section-note">
         Upload a single image or a whole folder of supplier images. Each filename is parsed as a
-        product code (the text before the first hyphen) and looked up automatically via the bridge —
-        then publish live or send to archive.
+        product code and looked up automatically via the bridge. Recognised colour suffixes create
+        website variants under one Positill product; for example, 8621000002-WHT becomes White.
       </p>
 
       <div className="pl-action-row">
@@ -281,6 +375,15 @@ export default function ProductLoaderUpload({
         </button>
         <input ref={filesRef} type="file" accept="image/*" multiple hidden onChange={(e) => { void handleFiles(e.target.files); e.target.value = ''; }} />
         <input ref={folderRef} type="file" accept="image/*" multiple webkitdirectory="" directory="" hidden onChange={(e) => { void handleFiles(e.target.files); e.target.value = ''; }} />
+        <label className="pl-check">
+          <input
+            type="checkbox"
+            checked={groupColourVariants}
+            disabled={busy}
+            onChange={(event) => setGroupColourVariants(event.target.checked)}
+          />
+          Group recognised colour suffixes as variants
+        </label>
       </div>
 
       {error && <p className="pl-error">{error}</p>}
@@ -290,6 +393,7 @@ export default function ProductLoaderUpload({
           <div className="pl-summary-dashboard">
             <div><strong>{summary.found}</strong><span>Images Found</span></div>
             <div><strong>{summary.matched}</strong><span>Matched</span></div>
+            <div><strong>{new Set(items.filter((item) => item.isColourVariant).map((item) => item.code)).size}</strong><span>Colour Variants</span></div>
             <div><strong>{summary.published}</strong><span>Published</span></div>
             <div><strong>{summary.dormant}</strong><span>Dormant</span></div>
             <div><strong>{summary.needsReview}</strong><span>Needs Review</span></div>
@@ -325,6 +429,15 @@ export default function ProductLoaderUpload({
             <button type="button" className="adm-btn-red" disabled={processing || scanning || !grouped.ready.length} onClick={() => void publishItems(grouped.ready)}>
               {processing ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}
               Publish All Ready ({grouped.ready.length})
+            </button>
+            <button
+              type="button"
+              className="adm-btn-ghost"
+              disabled={processing || scanning || !grouped.needs_review.length}
+              onClick={() => void publishItems(grouped.needs_review)}
+              title="Publish after reviewing warnings such as an existing image or zero stock"
+            >
+              <Upload size={14} /> Publish Reviewed ({grouped.needs_review.length})
             </button>
             <button
               type="button"
