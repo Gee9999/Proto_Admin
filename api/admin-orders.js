@@ -443,7 +443,7 @@ export default async function handler(req, res) {
         });
       }
       // A pending order may only leave "New" once the new-order round is done:
-      // team WhatsApp delivered and the alert email to online@proto.co.za sent.
+      // the new-order alert email to the order team was sent.
       const { data: currentOrder, error: currentErr } = await supabase
         .from('orders')
         .select('id, status')

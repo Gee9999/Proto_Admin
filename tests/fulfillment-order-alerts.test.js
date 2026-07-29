@@ -2,30 +2,10 @@ import fs from 'node:fs';
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 
-const usersApiSource = fs.readFileSync(new URL('../api/fulfillment-users.js', import.meta.url), 'utf8');
-const testApiSource = fs.readFileSync(new URL('../api/team-whatsapp-test.js', import.meta.url), 'utf8');
-const modalSource = fs.readFileSync(new URL('../src/components/FulfillmentSettingsModal.jsx', import.meta.url), 'utf8');
-
-test('fulfilment users default to active order alerts unless explicitly disabled', () => {
-  assert.match(usersApiSource, /orderAlerts:\s*u\.orderAlerts !== false/);
-  assert.match(modalSource, /orderAlerts:\s*u\.orderAlerts !== false/);
-});
-
-test('the team settings UI saves an explicit order-alert switch', () => {
-  assert.match(modalSource, /Order alerts active/);
-  assert.match(modalSource, /updateUser\(idx,\s*\{\s*orderAlerts:\s*e\.target\.checked\s*\}\)/);
-  assert.match(modalSource, /u\.orderAlerts && !isValidWatiPhone/);
-});
-
-test('WhatsApp tests skip team members whose order alerts are disabled', () => {
-  assert.match(testApiSource, /\.filter\(\(u\) => u\?\.orderAlerts !== false\)/);
-});
-
-// ── New-order alert hardening ────────────────────────────────────────────────
-// PT_00099 (160 lines, R67 451.50) reached nobody. Two causes, both fixed here:
-// the alert went to ONE address, so the cron sweep and the manual resend could
-// only ever recover that one; and the stored PDF was awaited unguarded, so a
-// missing or oversized file threw and killed the whole alert.
+// New-order alert (email-only). WhatsApp/WATI order notifications were removed
+// entirely — the alert email IS the notification, so it must reach the whole
+// team and must never be blocked by the PDF. (PT_00099 — 160 lines — reached
+// nobody under the old rules.)
 
 const notifySource = fs.readFileSync(new URL('../api/_order-notify-core.js', import.meta.url), 'utf8');
 const brevoSource = fs.readFileSync(new URL('../api/_brevo-email.js', import.meta.url), 'utf8');
@@ -37,7 +17,6 @@ test('the new-order alert reaches the whole team, and config can only add', asyn
   const withExtra = resolveOrderAlertRecipients('someone-else@example.com');
   for (const email of required) assert.ok(withExtra.includes(email), `${email} cannot be dropped`);
   assert.ok(withExtra.includes('someone-else@example.com'), 'configured extra is added');
-  // Case-folded so an env value cannot duplicate a required address.
   assert.deepEqual(resolveOrderAlertRecipients('GEORGE@Proto.co.za'), required);
 });
 
@@ -50,4 +29,12 @@ test('a missing or oversized PDF never cancels the alert', () => {
   assert.match(notifySource, /attachment: pdf \?/, 'the attachment is conditional');
   assert.match(notifySource, /pdfProblem/, 'the email says why the PDF is absent');
   assert.doesNotMatch(notifySource, /^\s*const pdf = await loadStoredOrderPdf/m, 'the PDF load is guarded');
+});
+
+test('no WATI/WhatsApp sends remain in the order-notify path', () => {
+  assert.doesNotMatch(notifySource, /watiSend|sendTemplateMessage|whatsappNumber/, 'no WATI calls');
+  assert.ok(!fs.existsSync(new URL('../api/_wati.js', import.meta.url).pathname), '_wati.js deleted');
+  assert.ok(!fs.existsSync(new URL('../api/_wati-notify.js', import.meta.url).pathname), '_wati-notify.js deleted');
+  assert.ok(!fs.existsSync(new URL('../api/team-whatsapp-test.js', import.meta.url).pathname), 'team WhatsApp test deleted');
+  assert.match(notifySource, /email is the notification/i);
 });

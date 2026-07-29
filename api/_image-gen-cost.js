@@ -54,7 +54,7 @@ function sleep(ms) {
 
 /**
  * Read-modify-write with optimistic retry — prevents lost lock updates when
- * multiple admins run Apollo batches at the same time.
+ * multiple admins run image-analysis batches at the same time.
  */
 async function mutateStore(file, fallback, mutator, { maxRetries = 10 } = {}) {
   let lastErr;

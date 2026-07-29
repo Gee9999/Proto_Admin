@@ -28,7 +28,7 @@ function publicDocument(document) {
 }
 
 function actorFallback(req) {
-  return String(req.headers['x-admin-email'] || req.body?.actor || 'apollo').trim().toLowerCase() || 'apollo';
+  return String(req.headers['x-admin-email'] || req.body?.actor || 'admin').trim().toLowerCase() || 'admin';
 }
 
 async function requestActor(req) {
@@ -37,7 +37,7 @@ async function requestActor(req) {
 }
 
 function validateScope(workspaceType, category = 'general') {
-  if (!WORKSPACE_TYPES.includes(workspaceType)) throw new Error('Unknown Apollo workspace');
+  if (!WORKSPACE_TYPES.includes(workspaceType)) throw new Error('Unknown workspace type');
   if (!DOCUMENT_CATEGORIES.includes(category)) throw new Error('Unknown document category');
 }
 

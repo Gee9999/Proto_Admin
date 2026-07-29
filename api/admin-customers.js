@@ -115,11 +115,10 @@ export default async function handler(req, res) {
     // manually whenever the admin is ready, and are NEVER auto-generated. If a
     // code was supplied in this same patch it was already validated above.
 
-    // WhatsApp welcome fires on the TRANSITION into approved; the confirmation
-    // email fires on the TRANSITION into having a customer code (empty → a real
-    // 6-char code). Both need the pre-update row so re-saving an unchanged
-    // customer never re-spams them. A code being CHANGED (already had one) also
-    // never re-sends.
+    // The confirmation email fires on the TRANSITION into having a customer
+    // code (empty → a real 6-char code). It needs the pre-update row so
+    // re-saving an unchanged customer never re-spams them. A code being
+    // CHANGED (already had one) also never re-sends.
     const settingCode = typeof patch.customer_code === 'string' && !!patch.customer_code;
     let priorApproved = null;
     let priorCode = '';
@@ -143,54 +142,6 @@ export default async function handler(req, res) {
     // customer. No code → no email (allocate the code later, then it sends).
     const justGotCode = settingCode && !priorCode && data?.is_approved === true;
 
-    // Send WhatsApp welcome via WATI on approval — skip only if customer explicitly opted out
-    let watiWelcome = 'skipped';
-    if (justApproved && data?.accept_whatsapp !== false && data?.phone) {
-      const rawPhone = data.phone.replace(/\D/g, '');
-      // WATI expects numbers without + in international format: 27821234567
-      const watiPhone = rawPhone.startsWith('0') ? `27${rawPhone.slice(1)}` : rawPhone;
-      const watiBase = process.env.WATI_API_URL || 'https://live-mt-server.wati.io/10138950';
-      const watiToken = process.env.WATI_API_TOKEN;
-      const welcomeTemplate = process.env.WATI_WELCOME_TEMPLATE || 'proto_welcome_';
-      if (watiToken) {
-        try {
-          // Step 1: Add/update contact in WATI so the number is registered
-          await fetch(`${watiBase}/api/v1/addContact`, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${watiToken}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              name: data.name || data.business_name || 'Customer',
-              phoneNumber: watiPhone,
-            }),
-          }).catch(() => {}); // non-fatal if contact already exists
-
-          // Step 2: Send the template message
-          const waRes = await fetch(
-            `${watiBase}/api/v1/sendTemplateMessage?whatsappNumber=${watiPhone}`,
-            {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${watiToken}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                template_name: welcomeTemplate,
-                broadcast_name: welcomeTemplate,
-                parameters: [],
-              }),
-            }
-          );
-          if (!waRes.ok) {
-            const waBody = await waRes.json().catch(() => ({}));
-            console.error('WATI send error:', waRes.status, JSON.stringify(waBody));
-            watiWelcome = 'failed';
-          } else {
-            watiWelcome = 'sent';
-          }
-        } catch (waErr) {
-          console.error('WATI broadcast error:', waErr.message);
-          watiWelcome = 'failed';
-        }
-      }
-    }
-
     // Confirmation email fires only when a code is newly assigned to an approved
     // customer (best-effort) + stamps last-email status. Approving without a
     // code sends nothing — the email waits until the code is typed and saved.
@@ -205,7 +156,7 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({ row: data, watiWelcome, welcomeEmail });
+    return res.status(200).json({ row: data, welcomeEmail });
   }
 
   // POST — manually add a customer into a chosen section (never trade-requests,

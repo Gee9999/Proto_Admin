@@ -61,7 +61,7 @@ export default function OrdersWorkspacePanel({ initialWorkspaceId = '', onShowTo
     setWorkspace(row);
     setFields({ dueDate: row?.due_date || '', notes: row?.notes || '', supplier: row?.supplier || '' });
     if (row?.id) {
-      const url = `/apollo/orders/${row.id}`;
+      const url = `/orders/workspace/${row.id}`;
       if (replace) window.history.replaceState({}, '', url);
       else window.history.pushState({}, '', url);
     }
@@ -389,7 +389,7 @@ export default function OrdersWorkspacePanel({ initialWorkspaceId = '', onShowTo
           </section>
           <section className="ow-card">
             <h3>Recommendations</h3>
-            <p className="adm-muted">Keep every customer promise as a promise, not a note. Tasks are for internal work; reminders are for Apollo's Daily Brief.</p>
+            <p className="adm-muted">Keep every customer promise as a promise, not a note. Tasks are for internal work; reminders keep promises visible here.</p>
           </section>
         </aside>
       </div>

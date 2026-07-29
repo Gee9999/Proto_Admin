@@ -183,7 +183,7 @@ export default function WorkspaceDocuments({
           <span className="workspace-document-drop-icon"><UploadCloud size={22} /></span>
           <div>
             <strong>{uploading ? `Processing ${uploading.index} of ${uploading.total}` : 'Drop business documents or images here'}</strong>
-            <small>{ingestion?.detail || uploading?.name || 'Apollo extracts, classifies and indexes each file privately · 25 MB each'}</small>
+            <small>{ingestion?.detail || uploading?.name || 'Each file is stored privately with the order · 25 MB each'}</small>
             {uploading && <span className="workspace-document-progress"><i style={{ width: `${Math.round(Number(ingestion?.progress || 0.08) * 100)}%` }} /></span>}
           </div>
           <button type="button" onClick={() => inputRef.current?.click()} disabled={Boolean(uploading)}>
@@ -232,7 +232,7 @@ export default function WorkspaceDocuments({
                   {document.summary && <small className="workspace-document-summary">{document.summary}</small>}
                   <div className="workspace-document-chips">
                     {(document.tags || []).map((tag) => <span key={tag}>{tag}</span>)}
-                    {document.extraction_status === 'ready' && <span className="is-searchable"><BrainCircuit size={9} />Apollo searchable</span>}
+                    {document.extraction_status === 'ready' && <span className="is-searchable"><BrainCircuit size={9} />Indexed</span>}
                     {document.suggested_workspace && document.suggested_workspace !== document.workspace_type && (
                       <span className="is-suggestion">Suggested: {document.suggested_workspace}</span>
                     )}

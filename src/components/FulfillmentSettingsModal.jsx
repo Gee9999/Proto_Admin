@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, Crown, Loader2, MessageCircle, Plus, Trash2, X } from 'lucide-react';
+import { Check, Crown, Loader2, Plus, Trash2, X } from 'lucide-react';
 import { fetchFulfillmentUsers, saveFulfillmentUsers } from '../lib/fulfillmentUsers';
 import { LEGACY_NAV_ALIASES } from '../lib/taxonomy';
 
@@ -39,7 +39,7 @@ function buildMainCategories(taxonomyTree) {
   return mains;
 }
 
-/** Mirror of the server-side WATI normalisation so the user sees the saved shape live. */
+/** Mirror of the server-side phone normalisation so the user sees the saved shape live. */
 function toWatiPhone(raw) {
   const digits = String(raw || '').replace(/\D/g, '');
   if (!digits) return '';
@@ -58,7 +58,6 @@ function emptyUser() {
     id: `user-${Date.now()}`,
     name: '',
     whatsapp: '',
-    orderAlerts: true,
     isAdmin: false,
     categoryIds: [],
   };
@@ -69,8 +68,6 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState(null);
 
   const mainCategories = useMemo(() => buildMainCategories(taxonomyTree), [taxonomyTree]);
 
@@ -84,7 +81,6 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
         if (cancelled) return;
         setUsers(rows.map((u) => ({
           ...u,
-          orderAlerts: u.orderAlerts !== false,
           isAdmin: Boolean(u.isAdmin),
           categoryIds: normalizeAssignedCategoryIds(
             Array.isArray(u.categoryIds) ? u.categoryIds.filter(Boolean) : [],
@@ -125,19 +121,17 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
         id: u.id || slugify(u.name),
         name: u.name.trim(),
         whatsapp: toWatiPhone(u.whatsapp),
-        orderAlerts: u.orderAlerts !== false,
         isAdmin: Boolean(u.isAdmin),
         categoryIds: canonicalCategoryIdsForSave(u.categoryIds, taxonomyTree),
       }));
       if (payload.some((u) => !u.name)) throw new Error('Every team member needs a name.');
-      const badPhone = payload.find((u) => u.orderAlerts && !isValidWatiPhone(u.whatsapp));
-      if (badPhone) throw new Error(`"${badPhone.name}" needs a valid WhatsApp number (e.g. 071 729 2861 or +27717292861).`);
+      const badPhone = payload.find((u) => u.whatsapp && !isValidWatiPhone(u.whatsapp));
+      if (badPhone) throw new Error(`"${badPhone.name}" needs a valid phone number (e.g. 071 729 2861 or +27717292861).`);
       const noCats = payload.find((u) => !u.isAdmin && u.categoryIds.length === 0);
       if (noCats) throw new Error(`"${noCats.name}" needs at least one category (or make them a team admin).`);
       const saved = await saveFulfillmentUsers(payload);
       setUsers(saved.map((u) => ({
         ...u,
-        orderAlerts: u.orderAlerts !== false,
         isAdmin: Boolean(u.isAdmin),
         categoryIds: Array.isArray(u.categoryIds) ? u.categoryIds.filter(Boolean) : [],
       })));
@@ -149,20 +143,6 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
     }
   };
 
-  const handleTest = async () => {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const res = await fetch('/api/team-whatsapp-test', { method: 'POST' });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(json.error || 'Test failed');
-      setTestResult(json);
-    } catch (e) {
-      setTestResult({ error: e.message });
-    } finally {
-      setTesting(false);
-    }
-  };
 
   if (!open) return null;
 
@@ -175,8 +155,6 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
         </div>
         <p className="adm-modal-note">
           Tap categories to assign them. Team admins can tick items in <strong>every</strong> category on the fulfillment page.
-          Numbers are saved in WhatsApp format automatically. Turn off <strong>Order alerts</strong> for anyone who should
-          remain on the team without receiving new-order WhatsApps.
         </p>
 
         <div className="adm-modal-body adm-ff-settings">
@@ -217,25 +195,7 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
                 </div>
 
                 <div className="adm-ff-card__phone">
-                  <span className="adm-field-label">WhatsApp</span>
-                  <label
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: 7,
-                      marginBottom: 8,
-                      fontSize: 13,
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={user.orderAlerts !== false}
-                      onChange={(e) => updateUser(idx, { orderAlerts: e.target.checked })}
-                    />
-                    Order alerts active
-                  </label>
+                  <span className="adm-field-label">Phone</span>
                   <input
                     className={`adm-field-input${!phoneOk ? ' adm-field-input--error' : ''}`}
                     value={user.whatsapp}
@@ -243,9 +203,6 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
                     placeholder="071 729 2861 or +27717292861"
                     inputMode="tel"
                   />
-                  {user.orderAlerts === false && (
-                    <span className="adm-ff-phone-preview">This team member will not receive new-order WhatsApps.</span>
-                  )}
                   {user.whatsapp && normalized && (
                     <span className={`adm-ff-phone-preview${phoneOk ? '' : ' adm-ff-phone-preview--bad'}`}>
                       {phoneOk ? <>Saved as <strong>{normalized}</strong></> : 'Number looks too short — include the area code'}
@@ -283,42 +240,9 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
             </button>
           )}
           {error && <p style={{ color: '#c40000', fontSize: 13, margin: '8px 0 0' }}>{error}</p>}
-
-          {testResult && (
-            <div className={`adm-ff-test-result${testResult.error || testResult.failed > 0 ? ' adm-ff-test-result--err' : ''}`}>
-              {testResult.error ? (
-                <p>{testResult.error}</p>
-              ) : (
-                <>
-                  <p style={{ margin: 0, fontWeight: 700 }}>
-                    Test sent to {testResult.sent}/{testResult.teamSize} member(s) via <code>{testResult.template}</code>
-                  </p>
-                  <ul>
-                    {(testResult.results || []).map((r) => (
-                      <li key={r.phone}>
-                        <strong>{r.name}</strong> ({r.phone}): template {r.template?.ok ? '✓' : `✗ ${r.template?.error || ''}`}
-                        {' · '}session {r.session?.ok ? '✓' : `✗ ${r.session?.error || ''}`}
-                      </li>
-                    ))}
-                  </ul>
-                </>
-              )}
-            </div>
-          )}
         </div>
 
         <div className="adm-modal-footer adm-modal-footer--end">
-          <button
-            type="button"
-            className="adm-btn-ghost"
-            onClick={() => void handleTest()}
-            disabled={testing || loading}
-            title="Sends a test order notification to every team member with active order alerts"
-            style={{ marginRight: 'auto' }}
-          >
-            {testing ? <Loader2 size={14} className="star-spinning" /> : <MessageCircle size={14} />}
-            {testing ? 'Sending test…' : 'Send test WhatsApp'}
-          </button>
           <div className="adm-modal-footer__actions">
             <button type="button" className="adm-btn-ghost" onClick={() => onClose(false)}>Cancel</button>
             <button type="button" className="adm-btn-red" onClick={() => void handleSave()} disabled={saving || loading}>

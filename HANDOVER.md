@@ -166,7 +166,7 @@ requires explicit opt-in** ("ultracode" or the user asking); it's off by default
 - **9am scheduled email** — user confirmed it sent. No action.
 - **Speed** — obvious wins already in (React Query caching, code-split, chunking,
   cache-bust removal). Deeper pass needs the user to name the *specific* slow
-  interaction. Product Manager + Apollo are kept mounted (hidden via CSS) by
+  interaction. Product Manager is kept mounted (hidden via CSS) by
   design.
 - **Deploys need a hard refresh** — repeatedly the user saw "no change"/"still
   the bug" because their tab hadn't picked up the new bundle. Tell them to

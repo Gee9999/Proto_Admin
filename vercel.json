@@ -2,11 +2,30 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/((?!api/|assets/).*)", "destination": "/index.html" }
+    {
+      "source": "/((?!api/|assets/).*)",
+      "destination": "/index.html"
+    }
   ],
   "headers": [
-    { "source": "/assets/(.*)", "headers": [{ "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }] },
-    { "source": "/((?!assets/).*)", "headers": [{ "key": "Cache-Control", "value": "no-cache, must-revalidate" }] }
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/((?!assets/).*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, must-revalidate"
+        }
+      ]
+    }
   ],
   "functions": {
     "api/seed-proto-active-customers.js": {
@@ -42,9 +61,6 @@
     "api/bulk-image-replace.js": {
       "maxDuration": 60
     },
-    "api/apollo-daily-brief.js": {
-      "maxDuration": 60
-    },
     "api/apply-category-moves.js": {
       "maxDuration": 300,
       "includeFiles": "data/category-move-*.xlsx"
@@ -54,16 +70,24 @@
     },
     "api/order-notification.js": {
       "maxDuration": 60
-    },
-    "api/wati-delivery-webhook.js": {
-      "maxDuration": 30
     }
   },
   "crons": [
-    { "path": "/api/order-notify-sweep", "schedule": "*/10 * * * *" },
-    { "path": "/api/brevo-sync", "schedule": "*/15 * * * *" },
-    { "path": "/api/apollo-daily-brief", "schedule": "0 6 * * 1-5" },
-    { "path": "/api/purge-expired-staging", "schedule": "0 3 * * *" },
-    { "path": "/api/site-config-backup", "schedule": "0 2 * * *" }
+    {
+      "path": "/api/order-notify-sweep",
+      "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/brevo-sync",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/purge-expired-staging",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/site-config-backup",
+      "schedule": "0 2 * * *"
+    }
   ]
 }

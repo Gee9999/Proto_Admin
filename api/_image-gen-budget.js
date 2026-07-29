@@ -326,7 +326,7 @@ async function maybeAlertPeriod(sb, { period, periodKeyVal, spent, limitUsd, con
     <p>Period: ${periodKeyVal} (UTC)</p>
     ${level === 'exceeded' && config.blockAtLimit
     ? '<p style="color:#991b1b"><strong>New image generation is blocked</strong> until the next period or you raise the limits in Admin → Cost Tracking.</p>'
-    : '<p>Consider pausing large Apollo batches until the period resets.</p>'}
+    : '<p>Consider pausing large image-analysis batches until the period resets.</p>'}
     <p><a href="${PROTO_URLS.admin}">Open Cost Tracking in admin</a></p>
   `;
 

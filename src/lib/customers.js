@@ -173,7 +173,7 @@ export async function seedProtoActiveCustomers() {
 }
 
 /**
- * PATCH a customer. Returns the full response { row, welcomeEmail, watiWelcome }
+ * PATCH a customer. Returns the full response { row, welcomeEmail }
  * so callers can tell whether a confirmation email was sent (it only sends when
  * a code is newly assigned to an approved customer).
  */

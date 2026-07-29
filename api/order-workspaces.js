@@ -12,7 +12,7 @@ import {
 const WORKSPACE_SELECT = 'id,status,priority,command,customer_id,due_date,supplier,notes,created_by,created_at,updated_at,archived_at';
 
 function actorFromReq(req) {
-  return String(req.headers['x-admin-email'] || req.body?.actor || 'apollo').trim() || 'apollo';
+  return String(req.headers['x-admin-email'] || req.body?.actor || 'admin').trim() || 'admin';
 }
 
 function safeSearchTerm(value) {

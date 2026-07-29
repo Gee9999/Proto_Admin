@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -159,7 +159,8 @@ assert.deepEqual(
   codeLookupCandidates('8636737332-8636737333'),
   ['8636737332-8636737333', '8636737332', '8636737333'],
 );
-assert.deepEqual(codeLookupCandidates('ABC-2'), ['ABC-2', 'ABC', '2']);
+// Tiny numeric fragments are deliberately dropped as lookup noise.
+assert.deepEqual(codeLookupCandidates('ABC-2'), ['ABC-2', 'ABC']);
 assert.deepEqual(
   codeLookupCandidates('sku1 / sku2 & sku3'),
   ['SKU1 / SKU2 & SKU3', 'SKU1', 'SKU2', 'SKU3'],
@@ -368,18 +369,14 @@ console.log('✓ Item 5 UI polish (labels + move gap 409)');
 // Perf — heavy section panels are lazy-loaded so the initial AdminPage chunk
 // only ships Product Manager. Assert we don't accidentally re-add eager imports.
 assert.match(adminPageSrc, /const AnalyticsHub = lazyRetry\(/, 'AnalyticsHub is lazy');
-assert.match(adminPageSrc, /const ApolloPanel = lazyRetry\(/, 'ApolloPanel is lazy');
 assert.match(adminPageSrc, /const ProductLoaderPanel = lazyRetry\(/, 'ProductLoaderPanel is lazy');
-assert.match(adminPageSrc, /const WhatsappPanel = lazyRetry\(/, 'WhatsappPanel is lazy');
 assert.match(adminPageSrc, /const CustomerEmailModal = lazyRetry\(/, 'CustomerEmailModal is lazy');
-assert.match(adminPageSrc, /const CrmContactsModal = lazyRetry\(/, 'CrmContactsModal is lazy');
 assert.match(adminPageSrc, /const FulfillmentSettingsModal = lazyRetry\(/, 'FulfillmentSettingsModal is lazy');
 assert.doesNotMatch(adminPageSrc, /^import AnalyticsHub /m, 'no eager AnalyticsHub import');
-assert.doesNotMatch(adminPageSrc, /^import ApolloPanel /m, 'no eager ApolloPanel import');
 assert.doesNotMatch(adminPageSrc, /^import ProductLoaderPanel /m, 'no eager ProductLoaderPanel import');
-assert.match(adminPageSrc, /apolloEverActive/, 'Apollo mounted only after first activation');
+// Apollo and the WhatsApp CRM are REMOVED — nothing may quietly reintroduce them.
+assert.doesNotMatch(adminPageSrc, /ApolloPanel|WhatsappPanel|CrmContactsModal|OrderWhatsappNotify/, 'Apollo/WhatsApp surfaces stay removed');
 assert.match(adminPageSrc, /\{customerEmailOpen && \(/, 'CustomerEmailModal mounts only when open');
-assert.match(adminPageSrc, /\{crmContactsOpen && \(/, 'CrmContactsModal mounts only when open');
 assert.match(adminPageSrc, /\{fulfillmentSettingsOpen && \(/, 'FulfillmentSettingsModal mounts only when open');
 
 const sidebarSrc = readSrc('src/components/GroupedSidebar.jsx');
@@ -498,13 +495,8 @@ assert.match(orderDocsSrc, /drawAddressBlock\('Delivery Address'/, 'order confir
   assert.ok(deliveryAddressLines({ customers: {} }).length > 0, 'delivery block always has a fallback line');
 }
 
-// PDF export moved from ApolloPanel to ApolloChatPanel in the Apollo Command
-// Centre refactor; the lazy-jspdf perf guard follows the code there. ApolloPanel
-// itself no longer references jspdf at all (better than lazy-loading it).
-const apolloPdfSrc = readSrc('src/components/ApolloChatPanel.jsx');
-assert.doesNotMatch(apolloPdfSrc, /^import \{ jsPDF \} from 'jspdf'/m, 'ApolloChatPanel does not statically import jspdf');
-assert.match(apolloPdfSrc, /loadJsPDF/, 'ApolloChatPanel uses lazy jspdf loader');
-assert.doesNotMatch(readSrc('src/components/ApolloPanel.jsx'), /jspdf/i, 'ApolloPanel no longer references jspdf');
+// Apollo is removed entirely — no component may statically import jspdf.
+
 
 const lazyJsPdfSrc = readSrc('src/lib/lazyJspdf.js');
 assert.match(lazyJsPdfSrc, /_jspdfPromise/, 'lazyJspdf caches the dynamic import');
@@ -603,13 +595,14 @@ assert.match(
 assert.match(pmEngineSrc, /NeedsSohPriceBadge/, 'Needs SOH/price badge for unlinked zero-stock live rows');
 assert.match(pmEngineSrc, /OutOfStockLinkedBadge/, 'Out of stock badge for ERP-linked zero-stock rows');
 assert.match(pmEngineSrc, /soh !== 0 \|\| item\.stockLinked !== true/, 'OOS badge when zero SOH and stockLinked true');
-assert.match(pmEngineSrc, /Show only in stock/, 'Product Manager only-in-stock toggle');
+assert.match(pmEngineSrc, /'In stock only'/, 'Product Manager only-in-stock filter option');
 assert.match(readSrc('src/lib/products.js'), /onlyInStock=false/, 'fetchReorderProducts documents catalog parity');
 assert.match(readSrc('api/_catalog-adapt.js'), /stockLinked/, 'catalog rows expose stockLinked for badge');
 console.log('✓ Live product visibility policy (PM default = Reorder Grid)');
 
 const boundaryCount = (adminPageSrc.match(/<SectionErrorBoundary/g) || []).length;
-assert.ok(boundaryCount >= 12, `AdminPage should wrap all sections in SectionErrorBoundary (found ${boundaryCount})`);
+// 11 sections since Apollo and the WhatsApp CRM were removed.
+assert.ok(boundaryCount >= 11, `AdminPage should wrap all sections in SectionErrorBoundary (found ${boundaryCount})`);
 console.log('✓ AdminPage section error boundaries');
 
 const lazyRetrySrc = readSrc('src/lib/lazyRetry.js');
@@ -1033,14 +1026,11 @@ console.log('✓ Motarro subcategory delete (hide + archive products + reversibl
 
 // Production hardening (post-audit) — security, promo contract, lifecycle fixes
 
-// Action-taking webhooks must fail CLOSED when WEBHOOK_SECRET is unset.
-// (The Brevo email webhook is analytics-only — it fails OPEN with a warning so
-// open/click stats work out of the box; asserted separately above.)
-for (const f of ['api/wati-intercom.js', 'api/intercom-reply.js']) {
-  const src = readSrc(f);
-  assert.match(src, /if \(!webhookSecret \|\|/, `${f} fails closed without WEBHOOK_SECRET`);
+// The WATI↔Intercom relay webhooks were removed with the WhatsApp automations.
+for (const f of ['api/wati-intercom.js', 'api/intercom-reply.js', 'api/wati-delivery-webhook.js']) {
+  assert.ok(!existsSync(join(REPO_ROOT, f)), `${f} stays removed`);
 }
-console.log('✓ Hardening: action webhooks fail closed');
+console.log('✓ WhatsApp/WATI webhooks removed');
 
 // Checkout promo must mirror into the portal validator file
 const promoSrc = readSrc('api/checkout-promo.js');
@@ -1087,7 +1077,6 @@ console.log('✓ Hardening: canonical availability rule');
 assert.match(readSrc('api/stock-actions.js'), /clean\.subcategory_one = clean\.category/, 'create defaults subcategory_one');
 assert.match(readSrc('api/admin-customers.js'), /not\.\?found/, 'customer delete tolerates missing auth user');
 const plSrc = readSrc('src/components/ProductLoaderPanel.jsx');
-assert.match(plSrc, /setActiveTab\('single'\);/, 'Apollo hand-off routes to the Single tab');
 assert.doesNotMatch(plSrc, /setActiveTab\('advanced'\)/, 'no route to nonexistent advanced tab');
 assert.match(readSrc('src/components/PricingPanel.jsx'), /Promise\.allSettled/, 'pricing reports partial failures');
 assert.match(readSrc('src/pages/AdminPage.jsx'), /synced from ERP/, 'stock-on-hand field is read-only');

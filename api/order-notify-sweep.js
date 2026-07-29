@@ -6,7 +6,7 @@ import { readOrderNotifyLog } from './_site-config.js';
 const SWEEP_WINDOW_DAYS = 14;
 const SWEEP_BATCH = 20;
 // Back off between retries for the same order so a persistently failing
-// round (e.g. Brevo outage) can't re-ping the team WhatsApp every 10 min.
+// round (e.g. Brevo outage) can't re-send the alert email every 10 min.
 const SWEEP_RETRY_BACKOFF_MS = 6 * 60 * 60 * 1000;
 
 function getPortalDbClient() {
@@ -19,7 +19,7 @@ function getPortalDbClient() {
 
 /**
  * Cron safety net: any recent order still in "pending" without a completed
- * notification round (email + team WhatsApp) gets its notifications
+ * notification round (alert email + stored PDF) gets its notifications
  * (re)triggered, so new orders are announced even when nobody has the admin
  * portal open.
  */
@@ -57,8 +57,8 @@ export default async function handler(req, res) {
         orderId: order.id,
         orderNumber: order.order_number,
         emailSent: outcome.emailSent,
-        whatsappSent: outcome.sent,
-        whatsappFailed: outcome.failed,
+        pdfStored: outcome.pdfStored ?? null,
+        statusAdvanced: outcome.statusAdvanced ?? null,
         error: outcome.error || outcome.emailError || null,
       });
     } catch (err) {
