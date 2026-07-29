@@ -69,7 +69,7 @@ export default function OrderWhatsappNotify({ orderId }) {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.error || 'Notification request failed');
       setMessage(action === 'resend-internal-email'
-        ? `Order email resent to ${data.recipient || 'online@proto.co.za'} with the PDF attached.`
+        ? `Order email resent to ${(data.recipients || []).join(', ') || data.recipient || 'the order team'} with the PDF attached.`
         : 'Missing order notifications sent.');
       await loadLog();
     } catch (err) {

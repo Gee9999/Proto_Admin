@@ -118,7 +118,13 @@ export async function sendBrevoTransactional({
       name: process.env.BREVO_SENDER_NAME || 'Proto Trading',
       email: process.env.BREVO_SENDER_EMAIL || 'online@proto.co.za',
     },
-    to: [{ email: to.email, name: to.name || to.email }],
+    // Accepts a single recipient or a list. The new-order alert goes to the
+    // whole team, and this is the path the cron sweep and the manual resend
+    // both use — a single-recipient signature meant only one address could
+    // ever be recovered after a failure.
+    to: (Array.isArray(to) ? to : [to])
+      .filter((entry) => entry && entry.email)
+      .map((entry) => ({ email: entry.email, name: entry.name || entry.email })),
     subject,
     htmlContent,
   };
