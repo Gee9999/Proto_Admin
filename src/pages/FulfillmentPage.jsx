@@ -125,19 +125,37 @@ export default function FulfillmentPage() {
     [activeUser],
   );
 
-  // Number of item-tick saves currently in flight. The 30s poll must not
-  // overwrite an optimistic tick with pre-toggle server data mid-request.
-  const savingRef = useRef(0);
+  // Ticks the server has not confirmed yet, keyed by item. EVERY server
+  // snapshot (poll, focus refresh, another tick's response) is overlaid with
+  // these before it touches the screen — a snapshot taken before a tick was
+  // written can never untick it. The old in-flight counter missed two races:
+  // a poll that STARTED before a tick but resolved after its save finished,
+  // and two ticks whose responses arrived out of order.
+  const pendingTicksRef = useRef(new Map());
+  const lastTickAtRef = useRef(0);
+
+  const overlayPendingTicks = useCallback((data) => {
+    if (!pendingTicksRef.current.size) return data;
+    const map = { ...(data.items || {}) };
+    for (const [key, pending] of pendingTicksRef.current) {
+      if (pending.checked) map[key] = pending.entry;
+      else delete map[key];
+    }
+    return { ...data, items: map };
+  }, []);
 
   const refreshProgress = useCallback(async () => {
     if (!orderId) return;
+    const startedAt = Date.now();
     try {
       const data = await fetchFulfillmentProgress(orderId);
-      if (savingRef.current > 0) return; // a tick is mid-flight; don't clobber it
-      setProgress(data);
+      // The snapshot predates a tick made while it was in flight — discard it;
+      // the tick's own response (or the next poll) carries fresher state.
+      if (lastTickAtRef.current > startedAt) return;
+      setProgress(overlayPendingTicks(data));
       setItems((prev) => applyProgress(prev, data.sections));
     } catch {}
-  }, [orderId]);
+  }, [orderId, overlayPendingTicks]);
 
   useEffect(() => {
     if (!orderId) { setError('No order ID in URL.'); setLoading(false); return; }
@@ -251,11 +269,13 @@ export default function FulfillmentPage() {
     if (itemSavingKeys.has(key)) return;
     const next = !isItemPacked(item);
 
-    savingRef.current += 1;
+    const entry = { userId: activeUser.id, userName: activeUser.name, checkedAt: new Date().toISOString() };
+    lastTickAtRef.current = Date.now();
+    pendingTicksRef.current.set(key, { checked: next, entry });
     setItemSavingKeys((prev) => new Set(prev).add(key));
     setProgress((prev) => {
       const map = { ...(prev.items || {}) };
-      if (next) map[key] = { userId: activeUser.id, userName: activeUser.name, checkedAt: new Date().toISOString() };
+      if (next) map[key] = entry;
       else delete map[key];
       return { ...prev, items: map };
     });
@@ -268,17 +288,19 @@ export default function FulfillmentPage() {
         itemKey: key,
         checked: next,
       });
-      setProgress(data);
+      pendingTicksRef.current.delete(key);
+      // Overlay OTHER in-flight ticks so this response cannot untick them.
+      setProgress(overlayPendingTicks(data));
     } catch (e) {
+      pendingTicksRef.current.delete(key);
       setProgress((prev) => {
         const map = { ...(prev.items || {}) };
         if (next) delete map[key];
-        else map[key] = { userId: activeUser.id, userName: activeUser.name, checkedAt: new Date().toISOString() };
+        else map[key] = entry;
         return { ...prev, items: map };
       });
       setStatusMsg({ type: 'err', text: e.message });
     } finally {
-      savingRef.current = Math.max(0, savingRef.current - 1);
       setItemSavingKeys((prev) => { const n = new Set(prev); n.delete(key); return n; });
     }
   };
