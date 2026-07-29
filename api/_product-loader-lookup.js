@@ -1,7 +1,9 @@
 import { codeLookupCandidates, baseCodeToken } from '../lib/code-normalize.mjs';
+import { resolveLoaderCustomerPrice } from '../lib/catalogue-price.mjs';
 import { getProductByCode } from './_sql-provider.js';
 import { toSqlPreview } from './_sql-stmast.js';
 import { parseLoaderFilename } from './_product-loader-filename.js';
+import { fetchProductLookupMap, findProductBySku } from './_sku-match.js';
 
 export { parseLoaderFilename } from './_product-loader-filename.js';
 
@@ -15,12 +17,23 @@ function slugPattern(term) {
   return String(term || '').trim().replace(/[-_]+/g, '%');
 }
 
+export async function lookupWebsiteStockExact(sb, code) {
+  const upper = String(code || '').trim().toUpperCase();
+  if (!upper) return null;
+  const { data } = await sb
+    .from('website_stock')
+    .select(WEBSITE_STOCK_COLS)
+    .eq('sku', upper)
+    .maybeSingle();
+  return data || null;
+}
+
 async function lookupWebsiteStock(sb, code, displayCode) {
   const upper = String(code || '').trim().toUpperCase();
   if (!upper) return { row: null, matchedBy: null };
 
-  const bySku = await sb.from('website_stock').select(WEBSITE_STOCK_COLS).eq('sku', upper).maybeSingle();
-  if (bySku.data) return { row: bySku.data, matchedBy: 'code' };
+  const bySku = await lookupWebsiteStockExact(sb, upper);
+  if (bySku) return { row: bySku, matchedBy: 'code' };
 
   const byBarcode = await sb.from('website_stock').select(WEBSITE_STOCK_COLS).eq('barcode', upper).maybeSingle();
   if (byBarcode.data) return { row: byBarcode.data, matchedBy: 'barcode' };
@@ -159,7 +172,20 @@ export async function resolveProductLoaderMatch(sb, {
     : '';
   const upperEffective = String(effectiveCode || '').trim().toUpperCase();
   const title = rawTitle && rawTitle.toUpperCase() !== upperEffective ? rawTitle : '';
-  const price = Number(sqlRow?.price ?? websiteRow?.price ?? 0);
+  const productCode = String(
+    sqlRow?.code || websiteRow?.barcode || effectiveCode || '',
+  ).trim().toUpperCase();
+  const productLookup = productCode
+    ? await fetchProductLookupMap(sb, [productCode], 'sku, sell_price').catch(() => new Map())
+    : new Map();
+  const productRow = findProductBySku(productLookup, productCode);
+  const rawPositillPrice = Number(sqlRow?.price) || 0;
+  const resolvedPrice = resolveLoaderCustomerPrice({
+    productSellPrice: productRow?.sell_price,
+    websitePrice: websiteRow?.price,
+    positillPriceExVat: rawPositillPrice,
+  });
+  const price = resolvedPrice.price;
   // The effective slot reflects the winning attempt: an exact full-code hit
   // publishes to slot 1; otherwise the stripped slot from the filename.
   const slot = matchedSlot;
@@ -185,6 +211,9 @@ export async function resolveProductLoaderMatch(sb, {
     displayCode: displayCode || code,
     title: hasCatalogMatch ? title : '',
     price,
+    priceSource: resolvedPrice.source,
+    erpPriceExVat: rawPositillPrice || null,
+    productSellPrice: productRow?.sell_price != null ? Number(productRow.sell_price) : null,
     imageSlot: slot,
     sqlRow,
     websiteRow,
