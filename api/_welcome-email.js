@@ -18,7 +18,8 @@ export const WELCOME_SUBJECT = 'Welcome to Proto Trading — your trade account 
 export function buildWelcomeEmail(recipient = {}, { needsPasswordSetup = false } = {}) {
   const vars = buildRecipientVars(recipient);
   const greetingName = vars.first_name || vars.contact_name || vars.business_name || 'there';
-  const site = PROTO_URLS.site;
+  // Customer-facing link → proto.co.za (never the API-base `site` origin).
+  const site = PROTO_URLS.publicSite;
   // Manually-added customers have no password yet — point them at "Forgot
   // password" so they can set one. Self-registered members already have one.
   const passwordHtml = needsPasswordSetup

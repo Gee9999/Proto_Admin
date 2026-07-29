@@ -75,7 +75,7 @@ export function buildEmailTextContent({ introText = '', htmlBlock = '' }, vars =
   return parts.join('\n\n').trim();
 }
 
-export function wrapBroadcastHtml({ subject, bodyHtml, siteUrl = 'https://site.proto.co.za' }) {
+export function wrapBroadcastHtml({ subject, bodyHtml, siteUrl = 'https://proto.co.za' }) {
   const safeBody = bodyHtml || '<p style="color:#9ca3af;">Your message will appear here.</p>';
   // Keep in sync with api/_brevo-email.js wrapBroadcastHtml (the sent version).
   // No footer/button — the email ends with the composed body.
