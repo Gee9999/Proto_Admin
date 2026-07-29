@@ -6606,6 +6606,10 @@ html, body { background: #f5f5f5; color: #111827; }
 .oa-delivery-step--error > svg,
 .oa-delivery-step--error .oa-delivery-step-icon,
 .oa-delivery-step-error { color: #b91c1c !important; }
+.oa-delivery-step--pending { background: #fffbeb; border-color: #fde68a; }
+.oa-delivery-step--pending > svg,
+.oa-delivery-step--pending .oa-delivery-step-icon,
+.oa-delivery-step--pending .oa-delivery-step-error { color: #a16207 !important; }
 .oa-delivery-step--skipped { background: #f8fafc; color: #64748b; }
 .oa-delivery-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .oa-delivery-actions .oa-wa-notify-retry { margin-left: 0; padding: 6px 9px; }
