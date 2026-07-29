@@ -1093,10 +1093,16 @@ console.log('✓ Export all customers');
 // Full-review pass — perf wins + serious-bug fixes
 assert.match(readSrc('src/hooks/useDashboardStats.js'), /refresh: false/, 'dashboard stats no longer force a full recompute every load');
 assert.doesNotMatch(readSrc('src/lib/taxonomyAdmin.js'), /counts=1\$\{stockParam\}&_=\$\{Date\.now/, 'category counts no longer bust the edge cache');
-assert.match(readSrc('api/product-loader-publish.js'), /hasValidPrice \? numericPrice/, 'publish never overwrites a real price with 0');
-assert.match(readSrc('api/admin-customers.js'), /const justApproved =/, 'WhatsApp welcome only fires on the approve transition');
-assert.match(readSrc('api/admin-customers.js'), /const justGotCode = settingCode && !priorCode && data\?\.is_approved === true/, 'confirmation email fires only when a code is newly assigned to an approved customer');
-assert.match(readSrc('api/admin-customers.js'), /if \(justGotCode && data\?\.email\)/, 'confirmation email gated on code-assignment, not on plain approval');
+// The price guard moved into lib/catalogue-safety.mjs (PR #184): publish now
+// derives price/stock through canonicalPublishValues, which blocks bad values.
+assert.match(readSrc('api/product-loader-publish.js'), /canonicalPublishValues\(/, 'publish derives price/stock through the catalogue safety module');
+assert.match(readSrc('lib/catalogue-safety.mjs'), /isDoubleVatSignature/, 'safety module guards against the double-VAT signature');
+assert.match(readSrc('api/admin-customers.js'), /const justApproved =/, 'approval transition is detected against the pre-update row');
+// LAUNCH RULE CHANGE: the welcome email fires ON APPROVAL (customers are
+// promised a mail the moment they are approved; codes come later). The
+// last_email_type guard stops double-sends when the code is assigned after.
+assert.match(readSrc('api/admin-customers.js'), /justApproved \|\| \(justGotCode && neverWelcomed\)/, 'welcome email fires on approval, code-assignment only backfills the never-welcomed');
+assert.match(readSrc('api/approve-customers-bulk.js'), /sendWelcomeApprovalEmail/, 'bulk approval also welcomes each customer');
 assert.match(readSrc('api/admin-orders.js'), /Field writes commit only after every gate/, 'order field writes run after the workflow gates');
 assert.match(readSrc('api/archive-floaters.js'), /deptLabels\.size === 0/, 'floater sweep refuses to run on an empty taxonomy');
 assert.doesNotMatch(readSrc('src/lib/products.js'), /uploadDormantImageWithBase64/, 'dead image-gen helper removed');
