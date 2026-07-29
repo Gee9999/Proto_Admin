@@ -1,7 +1,9 @@
 import { codeLookupCandidates, baseCodeToken } from '../lib/code-normalize.mjs';
+import { resolveLoaderCustomerPrice } from '../lib/catalogue-price.mjs';
 import { getProductByCode } from './_sql-provider.js';
 import { toSqlPreview } from './_sql-stmast.js';
 import { parseLoaderFilename } from './_product-loader-filename.js';
+import { fetchProductLookupMap, findProductBySku } from './_sku-match.js';
 
 export { parseLoaderFilename } from './_product-loader-filename.js';
 
@@ -170,7 +172,20 @@ export async function resolveProductLoaderMatch(sb, {
     : '';
   const upperEffective = String(effectiveCode || '').trim().toUpperCase();
   const title = rawTitle && rawTitle.toUpperCase() !== upperEffective ? rawTitle : '';
-  const price = Number(sqlRow?.price ?? websiteRow?.price ?? 0);
+  const productCode = String(
+    sqlRow?.code || websiteRow?.barcode || effectiveCode || '',
+  ).trim().toUpperCase();
+  const productLookup = productCode
+    ? await fetchProductLookupMap(sb, [productCode], 'sku, sell_price').catch(() => new Map())
+    : new Map();
+  const productRow = findProductBySku(productLookup, productCode);
+  const rawPositillPrice = Number(sqlRow?.price) || 0;
+  const resolvedPrice = resolveLoaderCustomerPrice({
+    productSellPrice: productRow?.sell_price,
+    websitePrice: websiteRow?.price,
+    positillPriceExVat: rawPositillPrice,
+  });
+  const price = resolvedPrice.price;
   // The effective slot reflects the winning attempt: an exact full-code hit
   // publishes to slot 1; otherwise the stripped slot from the filename.
   const slot = matchedSlot;
@@ -196,6 +211,9 @@ export async function resolveProductLoaderMatch(sb, {
     displayCode: displayCode || code,
     title: hasCatalogMatch ? title : '',
     price,
+    priceSource: resolvedPrice.source,
+    erpPriceExVat: rawPositillPrice || null,
+    productSellPrice: productRow?.sell_price != null ? Number(productRow.sell_price) : null,
     imageSlot: slot,
     sqlRow,
     websiteRow,
