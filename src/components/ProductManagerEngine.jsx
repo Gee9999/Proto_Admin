@@ -1226,28 +1226,30 @@ export default function ProductManagerEngine({
     setInStockCountsNonce((n) => n + 1);
   };
 
-  const runBulk = async (action, { successMessage } = {}) => {
+  // ONE request for the whole selection. The old runner looped mutateAsync per
+  // SKU — hundreds of HTTP calls, each followed by a full catalogue-cache
+  // invalidation — which produced the 5xx storms during big recycle runs.
+  const runBulkBatch = async (mutateAsync, buildArg, { successMessage, confirmMessage } = {}) => {
     const skus = [...selected];
     if (!skus.length) return;
-    const errors = [];
-    const syncWarnings = [];
-    for (const sku of skus) {
-      try {
-        const result = await action.mutateAsync(sku);
-        if (result?.syncWarnings?.length) syncWarnings.push(`${sku}: ${result.syncWarnings.join('; ')}`);
-      } catch (err) {
-        errors.push(`${sku}: ${err.message}`);
+    if (confirmMessage && !window.confirm(confirmMessage(skus.length))) return;
+    setBulkActionPending(true);
+    try {
+      const result = await mutateAsync(buildArg(skus));
+      setSelected(new Set());
+      onRefreshStats?.();
+      if (result?.syncWarnings?.length) {
+        onShowToast?.(syncWarningMessage(result.syncWarnings, { plural: skus.length > 1 }), 'warning');
+      } else {
+        onShowToast?.(successMessage?.(skus.length) || `${skus.length} updated`, 'success');
       }
-    }
-    setSelected(new Set());
-    queryClient.invalidateQueries({ queryKey: ['catalog'] });
-    onRefreshStats?.();
-    if (errors.length) {
-      onShowToast?.(`${skus.length - errors.length} ok, ${errors.length} failed`, 'warning');
-    } else if (syncWarnings.length) {
-      onShowToast?.(syncWarningMessage(syncWarnings, { plural: skus.length > 1 }), 'warning');
-    } else {
-      onShowToast?.(successMessage || `${skus.length} updated`, 'success');
+    } catch (err) {
+      // Partial failures arrive as "<n> ok, <m> failed — …" from the bulk API.
+      onShowToast?.(err.message || 'Bulk action failed', 'warning');
+      setSelected(new Set());
+      onRefreshStats?.();
+    } finally {
+      setBulkActionPending(false);
     }
   };
 
@@ -1734,7 +1736,7 @@ export default function ProductManagerEngine({
                         >
                           {bulkActionPending ? 'Archiving…' : `Archive ${selected.size}`}
                         </button>
-                        <button type="button" className="adm-btn-red adm-btn--sm" onClick={() => runBulk({ mutateAsync: (sku) => mutations.softDelete.mutateAsync({ sku, fromArchive: false }) })}>To recycle</button>
+                        <button type="button" className="adm-btn-red adm-btn--sm" disabled={bulkActionPending} onClick={() => void runBulkBatch(mutations.bulkRecycle.mutateAsync, (skus) => ({ skus, fromArchive: false }), { successMessage: (n) => `${n} moved to recycle bin` })}>To recycle</button>
                       </>
                     )}
                     {status === 'archived' && !archiveNegativeLive && (
@@ -1755,13 +1757,13 @@ export default function ProductManagerEngine({
                               </>
                             )}
                         </button>
-                        <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={() => runBulk({ mutateAsync: (sku) => mutations.softDelete.mutateAsync({ sku, fromArchive: true }) })}>To recycle</button>
+                        <button type="button" className="adm-btn-ghost adm-btn--sm" disabled={bulkActionPending} onClick={() => void runBulkBatch(mutations.bulkRecycle.mutateAsync, (skus) => ({ skus, fromArchive: true }), { successMessage: (n) => `${n} moved to recycle bin` })}>To recycle</button>
                       </>
                     )}
                     {status === 'recycle' && (
                       <>
-                        <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={() => runBulk(mutations.restoreRecycle)}>Restore</button>
-                        <button type="button" className="adm-btn-red adm-btn--sm" onClick={() => runBulk(mutations.permanentDelete)}>Delete forever</button>
+                        <button type="button" className="adm-btn-ghost adm-btn--sm" disabled={bulkActionPending} onClick={() => void runBulkBatch(mutations.bulkRestoreRecycle.mutateAsync, (skus) => skus, { successMessage: (n) => `${n} restored` })}>Restore</button>
+                        <button type="button" className="adm-btn-red adm-btn--sm" disabled={bulkActionPending} onClick={() => void runBulkBatch(mutations.bulkPermanentDelete.mutateAsync, (skus) => skus, { successMessage: (n) => `${n} deleted forever`, confirmMessage: (n) => `Permanently delete ${n} product${n === 1 ? '' : 's'}? This cannot be undone.` })}>Delete forever</button>
                       </>
                     )}
                   </div>

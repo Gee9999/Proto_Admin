@@ -75,8 +75,12 @@ describe('Product Loader colour variants', () => {
     expect(assigned.filter((row) => row.tooManyVariantImages)).toHaveLength(1);
   });
 
-  it('converts raw Positill PRICE_A to the customer VAT-inclusive half-rand price', () => {
-    expect(customerPriceFromPositill(43.04)).toBe(49.5);
+  it('passes Positill PRICE_A through unchanged — it is already VAT-inclusive', () => {
+    // The double-VAT hotfix: PRICE_A is Proto's customer-facing price with VAT
+    // already in it. Multiplying by 1.15 here double-charged the catalogue.
+    expect(customerPriceFromPositill(43.04)).toBe(43.04);
+    expect(customerPriceFromPositill(0)).toBe(0);
+    expect(customerPriceFromPositill(-5)).toBe(0);
   });
 
   it('uses the synchronised customer price before raw ERP or website values', () => {
@@ -90,12 +94,12 @@ describe('Product Loader colour variants', () => {
     });
   });
 
-  it('falls back to VAT conversion when no customer price exists yet', () => {
+  it('falls back to raw PRICE_A (no VAT markup) when no customer price exists yet', () => {
     expect(resolveLoaderCustomerPrice({
       positillPrice: 43.04,
     })).toEqual({
-      price: 49.5,
-      source: 'positill.price_a_vat_rounded',
+      price: 43.04,
+      source: 'positill.price_a_incl_vat',
     });
   });
 });

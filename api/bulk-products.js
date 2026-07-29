@@ -5,6 +5,7 @@ import { parseExtraLabels } from '../lib/taxonomy-match.mjs';
 import { deriveMotarroPathFromLabels, isMotarroProduct, motarroPathSnapshot } from './_mottaro-category.js';
 import { restoreArchivedToLive } from './_ensure-product.js';
 import { buildMoveTagPatch, tableHasMoveTagColumns } from './_move-tag.js';
+import { detachSkuFromGroup } from './_group-cascade.js';
 import { BULK_CHUNK_SIZE, MOVE_UPDATE_CHUNK_SIZE, runInChunks } from '../lib/bulk-chunk.mjs';
 
 function sliceIntoChunks(list, size) {
@@ -236,6 +237,17 @@ async function bulkDeleteProducts(supabase, normalizedSkus) {
   return results;
 }
 
+async function recycleLiveProduct(supabase, sku) {
+  const { data: live } = await supabase.from('website_stock').select('sku').eq('sku', sku).maybeSingle();
+  if (!live) return { sku, ok: false, error: 'Not in active catalogue' };
+  const { error } = await supabase.rpc('archive_product', { p_sku: sku, p_by: 'recycle-bin' });
+  if (error) return { sku, ok: false, error: error.message };
+  // Same group hygiene as the single-item path: an archived SKU must not stay
+  // the face of a live variant group.
+  await detachSkuFromGroup(supabase, sku).catch(() => {});
+  return { sku, ok: true };
+}
+
 async function bulkArchiveOrUnarchive(supabase, normalizedSkus, action) {
   const fn = action === 'archive' ? archiveProduct : unarchiveProduct;
   const chunked = await runInChunks(normalizedSkus, BULK_CHUNK_SIZE, (sku) => fn(supabase, sku));
@@ -328,6 +340,43 @@ export default async function handler(req, res) {
         deleted: results.filter((r) => r.ok).length,
         failed,
       });
+    }
+
+    if (action === 'recycle') {
+      // Live -> recycle bin. One request for the whole selection: the old UI
+      // looped one request per SKU and invalidated the catalogue cache after
+      // each, which is what produced the bulk-action error storms.
+      const results = await runInChunks(normalizedSkus, BULK_CHUNK_SIZE, (sku) => recycleLiveProduct(supabase, sku));
+      const rows = results.map((r) => (r.error && !r.sku ? { sku: r.item, ok: false, error: r.error } : r));
+      const failed = rows.filter((r) => !r.ok);
+      return res.status(failed.length ? 207 : 200).json({
+        ok: failed.length === 0,
+        recycled: rows.filter((r) => r.ok).length,
+        failed,
+      });
+    }
+
+    if (action === 'recycleFromArchive') {
+      // Archived -> recycle bin is just a re-tag; do it as one UPDATE per chunk
+      // instead of a round-trip per SKU.
+      const failed = [];
+      let recycled = 0;
+      for (let i = 0; i < normalizedSkus.length; i += MOVE_UPDATE_CHUNK_SIZE) {
+        const chunk = normalizedSkus.slice(i, i + MOVE_UPDATE_CHUNK_SIZE);
+        const { data, error } = await supabase
+          .from('archived_products')
+          .update({ archived_by: 'recycle-bin', archived_at: new Date().toISOString() })
+          .in('sku', chunk)
+          .select('sku');
+        if (error) {
+          failed.push(...chunk.map((sku) => ({ sku, ok: false, error: error.message })));
+          continue;
+        }
+        const updated = new Set((data || []).map((r) => r.sku));
+        recycled += updated.size;
+        failed.push(...chunk.filter((sku) => !updated.has(sku)).map((sku) => ({ sku, ok: false, error: 'Not in archive' })));
+      }
+      return res.status(failed.length ? 207 : 200).json({ ok: failed.length === 0, recycled, failed });
     }
 
     if (action === 'unarchive') {
