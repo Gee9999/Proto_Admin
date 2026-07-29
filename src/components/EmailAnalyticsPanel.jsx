@@ -1,15 +1,63 @@
-import { useCallback, useEffect, useState } from 'react';
-import { BarChart2, Loader2, Mail } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { BarChart2, Download, Loader2, X } from 'lucide-react';
 import { ADMIN_REFRESH_EVENT } from '../lib/adminRefresh';
 
-function formatPct(part, total) {
-  if (!total) return '0%';
-  return `${Math.round((part / total) * 100)}%`;
+/**
+ * Email analytics as a SPREADSHEET, not a wall of text.
+ *
+ * The previous version printed every campaign as a card with hundreds of
+ * comma-separated addresses inline, which was unreadable. Now: headline totals
+ * across all campaigns, one sortable row per campaign with its rates, and the
+ * recipient detail moved behind a per-campaign drawer (plus CSV export).
+ */
+
+function pct(part, total) {
+  if (!total) return 0;
+  return Math.round((part / total) * 100);
 }
+
+function rateClass(value, { good, warn }) {
+  if (value >= good) return 'adm-rate adm-rate--good';
+  if (value >= warn) return 'adm-rate adm-rate--warn';
+  return 'adm-rate adm-rate--bad';
+}
+
+function fmtDate(value) {
+  if (!value) return '—';
+  return new Date(value).toLocaleString('en-ZA', {
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
+  });
+}
+
+function csvEscape(value) {
+  const str = String(value ?? '');
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
+function downloadCsv(filename, rows) {
+  const blob = new Blob([rows.map((r) => r.map(csvEscape).join(',')).join('\n')], {
+    type: 'text/csv;charset=utf-8;',
+  });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const SORTS = {
+  date: (a, b) => new Date(b.sentAt || 0) - new Date(a.sentAt || 0),
+  sent: (a, b) => b.sent - a.sent,
+  opened: (a, b) => b.openRate - a.openRate,
+  clicked: (a, b) => b.clickRate - a.clickRate,
+};
 
 export default function EmailAnalyticsPanel({ onShowToast }) {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [sort, setSort] = useState('date');
+  const [detail, setDetail] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -36,127 +84,251 @@ export default function EmailAnalyticsPanel({ onShowToast }) {
     return () => window.removeEventListener(ADMIN_REFRESH_EVENT, onRefresh);
   }, [load]);
 
+  const rows = useMemo(() => {
+    const mapped = (campaigns || []).map((c) => {
+      const e = c.events || {};
+      const sent = c.sent || c.recipientCount || 0;
+      const delivered = e.delivered || 0;
+      const opened = e.opened || 0;
+      const clicked = e.clicked || 0;
+      const bounced = e.bounced || 0;
+      // Opens/clicks are counted per EVENT (one person opening 3 times is 3),
+      // so rates are measured against unique recipients where we have them and
+      // capped at 100% — a "300% open rate" is meaningless to read.
+      const openedUnique = (c.eventEmails?.opened || []).length || opened;
+      const clickedUnique = (c.eventEmails?.clicked || []).length || clicked;
+      return {
+        ...c,
+        sent,
+        delivered,
+        opened,
+        clicked,
+        bounced,
+        openedUnique,
+        clickedUnique,
+        deliveryRate: Math.min(100, pct(delivered, sent)),
+        openRate: Math.min(100, pct(openedUnique, sent)),
+        clickRate: Math.min(100, pct(clickedUnique, sent)),
+        bounceRate: Math.min(100, pct(bounced, sent)),
+      };
+    });
+    return mapped.sort(SORTS[sort] || SORTS.date);
+  }, [campaigns, sort]);
+
+  const totals = useMemo(() => rows.reduce((acc, r) => ({
+    campaigns: acc.campaigns + 1,
+    sent: acc.sent + r.sent,
+    delivered: acc.delivered + r.delivered,
+    openedUnique: acc.openedUnique + r.openedUnique,
+    clickedUnique: acc.clickedUnique + r.clickedUnique,
+    bounced: acc.bounced + r.bounced,
+  }), { campaigns: 0, sent: 0, delivered: 0, openedUnique: 0, clickedUnique: 0, bounced: 0 }), [rows]);
+
+  const exportCsv = () => {
+    downloadCsv('proto-email-campaigns.csv', [
+      ['Sent at', 'Subject', 'Audience', 'Business types', 'Recipients', 'Delivered', 'Delivered %', 'Opened (people)', 'Open %', 'Clicked (people)', 'Click %', 'Bounced', 'Bounce %'],
+      ...rows.map((r) => [
+        r.sentAt ? new Date(r.sentAt).toISOString() : '',
+        r.subject || '(no subject)',
+        r.audience || '',
+        (r.businessTypes || []).join(' / '),
+        r.sent, r.delivered, `${r.deliveryRate}%`,
+        r.openedUnique, `${r.openRate}%`,
+        r.clickedUnique, `${r.clickRate}%`,
+        r.bounced, `${r.bounceRate}%`,
+      ]),
+    ]);
+  };
+
   return (
-    <div className="adm-list" style={{ marginTop: 8 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-        <p className="adm-section-note" style={{ margin: 0 }}>
-          Campaign sends are logged automatically. Open, click, and delivery stats update when Brevo webhooks hit <code>/api/brevo-email-webhook</code>.
-        </p>
-        {loading && <Loader2 size={16} className="spin" aria-label="Loading" />}
+    <div style={{ marginTop: 8 }}>
+      <div className="adm-email-stats">
+        <Headline label="Campaigns" value={totals.campaigns} />
+        <Headline label="Emails sent" value={totals.sent.toLocaleString('en-ZA')} />
+        <Headline label="Delivered" value={`${pct(totals.delivered, totals.sent)}%`} sub={`${totals.delivered.toLocaleString('en-ZA')} of ${totals.sent.toLocaleString('en-ZA')}`} />
+        <Headline label="Opened" value={`${pct(totals.openedUnique, totals.sent)}%`} sub={`${totals.openedUnique.toLocaleString('en-ZA')} people`} />
+        <Headline label="Clicked" value={`${pct(totals.clickedUnique, totals.sent)}%`} sub={`${totals.clickedUnique.toLocaleString('en-ZA')} people`} />
+        <Headline label="Bounced" value={`${pct(totals.bounced, totals.sent)}%`} sub={`${totals.bounced.toLocaleString('en-ZA')} addresses`} tone={totals.bounced > 0 ? 'bad' : undefined} />
       </div>
 
-      {campaigns.length === 0 && !loading && (
+      <div className="adm-email-analytics-bar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span className="adm-muted" style={{ fontSize: 12, fontWeight: 700 }}>Sort</span>
+          {[['date', 'Newest'], ['sent', 'Most sent'], ['opened', 'Best open rate'], ['clicked', 'Best click rate']].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              className={`adm-tab${sort === key ? ' adm-tab--active' : ''}`}
+              style={{ fontSize: 12, padding: '4px 10px' }}
+              onClick={() => setSort(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {loading && <Loader2 size={15} className="spin" aria-label="Loading" />}
+          <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={exportCsv} disabled={!rows.length}>
+            <Download size={13} style={{ marginRight: 5, verticalAlign: -2 }} />
+            Export CSV
+          </button>
+        </div>
+      </div>
+
+      {rows.length === 0 && !loading ? (
         <div className="adm-empty" style={{ padding: '32px 0' }}>
           <BarChart2 size={28} style={{ color: '#9ca3af', marginBottom: 8 }} />
           <div>No email campaigns logged yet. Use <strong>Send email</strong> to start tracking.</div>
         </div>
-      )}
-
-      {campaigns.map((campaign) => {
-        const events = campaign.events || {};
-        const sent = campaign.sent || campaign.recipientCount || 0;
-        const delivered = events.delivered || 0;
-        const opened = events.opened || 0;
-        const clicked = events.clicked || 0;
-        const bounced = events.bounced || 0;
-        return (
-          <div key={campaign.id} className="adm-card" style={{ marginBottom: 12, padding: 16 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>{campaign.subject || '(no subject)'}</div>
-                <div className="adm-muted" style={{ fontSize: 12, marginTop: 4 }}>
-                  {campaign.sentAt ? new Date(campaign.sentAt).toLocaleString('en-ZA') : '—'}
-                  {' · '}
-                  Audience: {campaign.audience || '—'}
-                  {campaign.businessTypes?.length ? ` · Types: ${campaign.businessTypes.join(', ')}` : ''}
-                </div>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#374151' }}>
-                <Mail size={14} />
-                {sent} sent{campaign.failed ? ` · ${campaign.failed} failed` : ''}
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: 10, marginTop: 14 }}>
-              <Stat label="Delivered" value={delivered} hint={formatPct(delivered, sent)} />
-              <Stat label="Opened" value={opened} hint={formatPct(opened, sent)} />
-              <Stat label="Clicked" value={clicked} hint={formatPct(clicked, sent)} />
-              <Stat label="Bounced" value={bounced} hint={formatPct(bounced, sent)} />
-              {(events.unsubscribed || 0) > 0 && <Stat label="Unsubscribed" value={events.unsubscribed} hint={formatPct(events.unsubscribed, sent)} />}
-              {(events.complained || 0) > 0 && <Stat label="Complaints" value={events.complained} hint={formatPct(events.complained, sent)} />}
-            </div>
-            <CampaignRecipients campaign={campaign} />
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/** Who opened / clicked — expandable per-campaign recipient detail. */
-function CampaignRecipients({ campaign }) {
-  const [open, setOpen] = useState(false);
-  const eventEmails = campaign.eventEmails || {};
-  const clickedEmails = eventEmails.clicked || [];
-  const openedEmails = eventEmails.opened || [];
-  const bouncedEmails = eventEmails.bounced || [];
-  const clickedLinks = campaign.clickedLinks || {};
-  const hasDetail = clickedEmails.length || openedEmails.length || bouncedEmails.length || Object.keys(clickedLinks).length;
-  if (!hasDetail) return null;
-
-  return (
-    <div style={{ marginTop: 12 }}>
-      <button
-        type="button"
-        className="adm-btn-ghost adm-btn--sm"
-        onClick={() => setOpen((v) => !v)}
-      >
-        {open ? 'Hide' : 'Show'} who opened / clicked
-      </button>
-      {open && (
-        <div style={{ marginTop: 10, display: 'grid', gap: 10, fontSize: 12 }}>
-          {clickedEmails.length > 0 && (
-            <RecipientList label={`Clicked (${clickedEmails.length})`} emails={clickedEmails} color="#15803d" />
-          )}
-          {Object.keys(clickedLinks).length > 0 && (
-            <div>
-              <div className="adm-muted" style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4 }}>Links clicked</div>
-              {Object.entries(clickedLinks).map(([url, info]) => (
-                <div key={url} style={{ marginBottom: 6 }}>
-                  <div style={{ fontWeight: 600, wordBreak: 'break-all' }}>{url} <span className="adm-muted">· {info.count} click(s)</span></div>
-                  {info.emails?.length > 0 && (
-                    <div className="adm-muted" style={{ wordBreak: 'break-word' }}>{info.emails.join(', ')}</div>
-                  )}
-                </div>
+      ) : (
+        <div className="adm-table-scroll">
+          <table className="adm-sheet">
+            <thead>
+              <tr>
+                <th style={{ minWidth: 150 }}>Sent</th>
+                <th style={{ minWidth: 220 }}>Subject</th>
+                <th style={{ minWidth: 130 }}>Audience</th>
+                <th className="adm-sheet__num">Recipients</th>
+                <th className="adm-sheet__num">Delivered</th>
+                <th className="adm-sheet__num">Opened</th>
+                <th className="adm-sheet__num">Clicked</th>
+                <th className="adm-sheet__num">Bounced</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id}>
+                  <td className="adm-muted" style={{ whiteSpace: 'nowrap' }}>{fmtDate(r.sentAt)}</td>
+                  <td style={{ fontWeight: 700 }}>{r.subject || '(no subject)'}</td>
+                  <td className="adm-muted">
+                    {r.audience || '—'}
+                    {r.businessTypes?.length ? <div style={{ fontSize: 11 }}>{r.businessTypes.join(', ')}</div> : null}
+                  </td>
+                  <td className="adm-sheet__num">{r.sent.toLocaleString('en-ZA')}</td>
+                  <td className="adm-sheet__num">
+                    {r.delivered.toLocaleString('en-ZA')}<span className={rateClass(r.deliveryRate, { good: 90, warn: 60 })}>{r.deliveryRate}%</span>
+                  </td>
+                  <td className="adm-sheet__num">
+                    {r.openedUnique.toLocaleString('en-ZA')}<span className={rateClass(r.openRate, { good: 25, warn: 10 })}>{r.openRate}%</span>
+                  </td>
+                  <td className="adm-sheet__num">
+                    {r.clickedUnique.toLocaleString('en-ZA')}<span className={rateClass(r.clickRate, { good: 10, warn: 3 })}>{r.clickRate}%</span>
+                  </td>
+                  <td className="adm-sheet__num">
+                    {r.bounced.toLocaleString('en-ZA')}
+                    {r.bounced > 0 && <span className="adm-rate adm-rate--bad">{r.bounceRate}%</span>}
+                  </td>
+                  <td>
+                    <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={() => setDetail(r)}>
+                      Details
+                    </button>
+                  </td>
+                </tr>
               ))}
-            </div>
-          )}
-          {openedEmails.length > 0 && (
-            <RecipientList label={`Opened (${openedEmails.length})`} emails={openedEmails} color="#374151" />
-          )}
-          {bouncedEmails.length > 0 && (
-            <RecipientList label={`Bounced (${bouncedEmails.length})`} emails={bouncedEmails} color="#b91c1c" />
-          )}
+            </tbody>
+          </table>
         </div>
       )}
+
+      <p className="adm-section-note" style={{ marginTop: 12 }}>
+        Open and click rates count each PERSON once, measured against recipients. Stats arrive from Brevo webhooks —
+        a campaign sent moments ago may still show zeros.
+      </p>
+
+      {detail && <CampaignDetail campaign={detail} onClose={() => setDetail(null)} />}
     </div>
   );
 }
 
-function RecipientList({ label, emails, color }) {
+function Headline({ label, value, sub, tone }) {
   return (
-    <div>
-      <div className="adm-muted" style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', marginBottom: 4, color }}>{label}</div>
-      <div style={{ wordBreak: 'break-word', lineHeight: 1.6 }}>{emails.join(', ')}</div>
+    <div className={`adm-email-stat${tone === 'bad' ? ' adm-email-stat--bad' : ''}`}>
+      <div className="adm-email-stat__label">{label}</div>
+      <div className="adm-email-stat__value">{value}</div>
+      {sub && <div className="adm-email-stat__sub">{sub}</div>}
     </div>
   );
 }
 
-function Stat({ label, value, hint }) {
+/** Per-campaign recipient detail — one address per line, exportable. */
+function CampaignDetail({ campaign, onClose }) {
+  const groups = [
+    { key: 'clicked', label: 'Clicked', emails: campaign.eventEmails?.clicked || [] },
+    { key: 'opened', label: 'Opened', emails: campaign.eventEmails?.opened || [] },
+    { key: 'bounced', label: 'Bounced', emails: campaign.eventEmails?.bounced || [] },
+  ].filter((g) => g.emails.length);
+  const links = Object.entries(campaign.clickedLinks || {});
+  const [tab, setTab] = useState(groups[0]?.key || 'links');
+  const active = groups.find((g) => g.key === tab);
+
+  const exportRecipients = () => {
+    downloadCsv(`campaign-${(campaign.subject || 'email').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}.csv`, [
+      ['Email', 'Status'],
+      ...groups.flatMap((g) => g.emails.map((e) => [e, g.label])),
+    ]);
+  };
+
   return (
-    <div style={{ background: '#f9fafb', borderRadius: 8, padding: '10px 12px' }}>
-      <div className="adm-muted" style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase' }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 800, lineHeight: 1.2 }}>{value}</div>
-      <div className="adm-muted" style={{ fontSize: 11 }}>{hint}</div>
+    <div className="adm-modal-backdrop" onClick={onClose}>
+      <div className="adm-modal adm-modal--wide" onClick={(e) => e.stopPropagation()}>
+        <div className="adm-modal-header">
+          <div>
+            <h3 className="adm-modal-title">{campaign.subject || '(no subject)'}</h3>
+            <p className="adm-modal-note" style={{ margin: '2px 0 0' }}>{fmtDate(campaign.sentAt)} · {campaign.sent} recipients</p>
+          </div>
+          <button type="button" className="adm-modal-close" onClick={onClose} aria-label="Close"><X size={18} /></button>
+        </div>
+        <div className="adm-modal-body">
+          <div className="adm-customer-tabs" style={{ marginBottom: 12 }}>
+            {groups.map((g) => (
+              <button key={g.key} type="button" className={`adm-tab${tab === g.key ? ' adm-tab--active' : ''}`} onClick={() => setTab(g.key)}>
+                {g.label} ({g.emails.length})
+              </button>
+            ))}
+            {links.length > 0 && (
+              <button type="button" className={`adm-tab${tab === 'links' ? ' adm-tab--active' : ''}`} onClick={() => setTab('links')}>
+                Links ({links.length})
+              </button>
+            )}
+          </div>
+
+          {tab === 'links' ? (
+            <div className="adm-table-scroll">
+              <table className="adm-sheet">
+                <thead><tr><th>Link</th><th className="adm-sheet__num">Clicks</th></tr></thead>
+                <tbody>
+                  {links.map(([url, info]) => (
+                    <tr key={url}>
+                      <td style={{ wordBreak: 'break-all' }}>{url}</td>
+                      <td className="adm-sheet__num">{info.count}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : active ? (
+            <div className="adm-table-scroll" style={{ maxHeight: '50vh' }}>
+              <table className="adm-sheet">
+                <thead><tr><th style={{ width: 48 }}>#</th><th>Email address</th></tr></thead>
+                <tbody>
+                  {active.emails.map((email, i) => (
+                    <tr key={email}><td className="adm-muted">{i + 1}</td><td>{email}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <div className="adm-empty" style={{ padding: 24 }}>No recipient detail recorded for this campaign.</div>
+          )}
+        </div>
+        <div className="adm-modal-footer adm-modal-footer--end">
+          <button type="button" className="adm-btn-ghost" onClick={exportRecipients} disabled={!groups.length}>
+            <Download size={13} style={{ marginRight: 5, verticalAlign: -2 }} /> Export recipients
+          </button>
+          <button type="button" className="adm-btn-red" onClick={onClose}>Close</button>
+        </div>
+      </div>
     </div>
   );
 }
