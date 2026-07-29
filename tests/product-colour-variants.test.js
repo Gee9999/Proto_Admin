@@ -3,6 +3,10 @@ import {
   assignColourVariantImageSlots,
   parseColourVariantFilename,
 } from '../lib/product-colour-variants.mjs';
+import {
+  customerPriceFromPositill,
+  resolveLoaderCustomerPrice,
+} from '../lib/catalogue-price.mjs';
 
 describe('Product Loader colour variants', () => {
   it('splits a recognised suffix from the Positill base code', () => {
@@ -69,5 +73,29 @@ describe('Product Loader colour variants', () => {
     }));
     const assigned = assignColourVariantImageSlots(rows);
     expect(assigned.filter((row) => row.tooManyVariantImages)).toHaveLength(1);
+  });
+
+  it('converts raw Positill PRICE_A to the customer VAT-inclusive half-rand price', () => {
+    expect(customerPriceFromPositill(43.04)).toBe(49.5);
+  });
+
+  it('uses the synchronised customer price before raw ERP or website values', () => {
+    expect(resolveLoaderCustomerPrice({
+      productSellPrice: 49.5,
+      websitePrice: 43.04,
+      positillPriceExVat: 43.04,
+    })).toEqual({
+      price: 49.5,
+      source: 'products.sell_price',
+    });
+  });
+
+  it('falls back to VAT conversion when no customer price exists yet', () => {
+    expect(resolveLoaderCustomerPrice({
+      positillPriceExVat: 43.04,
+    })).toEqual({
+      price: 49.5,
+      source: 'positill.price_a_vat_rounded',
+    });
   });
 });
