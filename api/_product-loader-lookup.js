@@ -15,12 +15,23 @@ function slugPattern(term) {
   return String(term || '').trim().replace(/[-_]+/g, '%');
 }
 
+export async function lookupWebsiteStockExact(sb, code) {
+  const upper = String(code || '').trim().toUpperCase();
+  if (!upper) return null;
+  const { data } = await sb
+    .from('website_stock')
+    .select(WEBSITE_STOCK_COLS)
+    .eq('sku', upper)
+    .maybeSingle();
+  return data || null;
+}
+
 async function lookupWebsiteStock(sb, code, displayCode) {
   const upper = String(code || '').trim().toUpperCase();
   if (!upper) return { row: null, matchedBy: null };
 
-  const bySku = await sb.from('website_stock').select(WEBSITE_STOCK_COLS).eq('sku', upper).maybeSingle();
-  if (bySku.data) return { row: bySku.data, matchedBy: 'code' };
+  const bySku = await lookupWebsiteStockExact(sb, upper);
+  if (bySku) return { row: bySku, matchedBy: 'code' };
 
   const byBarcode = await sb.from('website_stock').select(WEBSITE_STOCK_COLS).eq('barcode', upper).maybeSingle();
   if (byBarcode.data) return { row: byBarcode.data, matchedBy: 'barcode' };
