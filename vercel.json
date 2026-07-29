@@ -51,6 +51,9 @@
     },
     "api/site-config-backup.js": {
       "maxDuration": 60
+    },
+    "api/order-notification.js": {
+      "maxDuration": 60
     }
   },
   "crons": [
