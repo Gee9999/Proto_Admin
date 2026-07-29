@@ -11,6 +11,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Star,
+  HeartPulse,
   User,
   Users,
 } from 'lucide-react';
@@ -30,6 +31,7 @@ const NAV_ITEMS = [
   { id: 'comms', label: 'Email CRM', icon: Mail },
   { id: 'site-content', label: 'Site Content', icon: Star },
   { id: 'analytics', label: 'Analytics', icon: BarChart2 },
+  { id: 'backend-health', label: 'Backend Health', icon: HeartPulse },
   { id: 'pricing', label: 'Pricing', icon: SlidersHorizontal },
   { id: 'team', label: 'Team', icon: User },
 ];
@@ -41,6 +43,7 @@ const CHUNK_PREFETCH = {
   'site-content': () => import('./FeaturedPanel'),
   pricing: () => import('./PricingPanel'),
   reorder: () => import('./ReorderPanel'),
+  'backend-health': () => import('./BackendHealthPanel'),
 };
 
 function prefetchSection(sectionId) {
