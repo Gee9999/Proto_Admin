@@ -61,7 +61,7 @@ async function sendNewOrderAlertEmail(order) {
   ${itemRows ? `<table style="border-collapse:collapse;width:100%;font-size:13px;"><tbody>${itemRows}</tbody></table>` : ''}
   ${items.length > 30 ? `<p style="font-size:12px;color:#6b7280;">+ ${items.length - 30} more line(s)</p>` : ''}
   <p style="margin:20px 0 0;">
-    <a href="https://protoportal-admin.vercel.app" style="display:inline-block;background:#c40000;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:bold;">Open admin portal</a>
+    <a href="${PROTO_URLS.admin}" style="display:inline-block;background:#c40000;color:#ffffff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:bold;">Open admin portal</a>
   </p>
 </body></html>`;
 
