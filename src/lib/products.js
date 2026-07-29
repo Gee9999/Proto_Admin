@@ -690,6 +690,41 @@ export async function bulkRemoveFromCategory({ skus }) {
   return json;
 }
 
+/**
+ * Batched bulk actions against /api/bulk-products — ONE request per action for
+ * the whole selection. The per-SKU loop these replace fired hundreds of
+ * requests plus a cache invalidation each, which is what melted the API during
+ * large "To recycle" runs.
+ */
+async function bulkProductsAction(action, skus, { fallback }) {
+  const res = await fetch('/api/bulk-products', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, skus }),
+  });
+  const json = await readApiJson(res, { fallback });
+  // Invalidate BEFORE any throw — a partial success still changed data.
+  invalidateProductCache();
+  invalidateAdminCache();
+  if (json.failed?.length) {
+    const okCount = json.recycled ?? json.restored ?? json.deleted ?? json.archived ?? 0;
+    throw new Error(`${okCount} ok, ${json.failed.length} failed — ${summarizeFailed(json.failed)}`);
+  }
+  return json;
+}
+
+export function bulkRecycleProducts(skus, { fromArchive = false } = {}) {
+  return bulkProductsAction(fromArchive ? 'recycleFromArchive' : 'recycle', skus, { fallback: 'Bulk recycle failed' });
+}
+
+export function bulkRestoreRecycledProducts(skus) {
+  return bulkProductsAction('unarchive', skus, { fallback: 'Bulk restore failed' });
+}
+
+export function bulkDeleteForeverProducts(skus) {
+  return bulkProductsAction('delete', skus, { fallback: 'Bulk delete failed' });
+}
+
 export async function bulkArchiveProducts(skus) {
   const res = await fetch('/api/bulk-products', {
     method: 'POST',

@@ -81,6 +81,22 @@ export function useCatalogMutations() {
     onSettled: () => invalidateCatalogAndStats(queryClient, ['live', 'archived']),
   });
 
+  // Batched recycle-bin actions: ONE request + ONE invalidation per run.
+  const bulkRecycle = useMutation({
+    mutationFn: ({ skus, fromArchive = false }) => bulkRecycleProducts(skus, { fromArchive }),
+    onSettled: () => invalidateCatalogAndStats(queryClient, ['live', 'archived', 'recycle']),
+  });
+
+  const bulkRestoreRecycle = useMutation({
+    mutationFn: (skus) => bulkRestoreRecycledProducts(skus),
+    onSettled: () => invalidateCatalogAndStats(queryClient, ['live', 'archived', 'recycle']),
+  });
+
+  const bulkPermanentDelete = useMutation({
+    mutationFn: (skus) => bulkDeleteForeverProducts(skus),
+    onSettled: () => invalidateCatalogAndStats(queryClient, ['live', 'archived', 'recycle']),
+  });
+
   const bulkUnarchive = useMutation({
     mutationFn: (skus) => bulkUnarchiveProducts(skus),
     onSettled: () => invalidateCatalogAndStats(queryClient, ['live', 'archived']),
@@ -90,6 +106,9 @@ export function useCatalogMutations() {
     archive,
     unarchive,
     bulkArchive,
+    bulkRecycle,
+    bulkRestoreRecycle,
+    bulkPermanentDelete,
     bulkUnarchive,
     softDelete,
     restoreRecycle,

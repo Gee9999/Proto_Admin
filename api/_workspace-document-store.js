@@ -1,4 +1,6 @@
-export const WORKSPACE_DOCUMENT_BUCKET = 'apollo-documents';
+// New uploads land here. Older document rows carry their own storage_bucket
+// (the retired 'apollo-documents' name), so reads of existing rows still work.
+export const WORKSPACE_DOCUMENT_BUCKET = 'workspace-documents';
 const INDEX_PATH = '_system/document-index.json';
 let mutationQueue = Promise.resolve();
 
