@@ -142,11 +142,14 @@ export default async function handler(req, res) {
     // customer. No code → no email (allocate the code later, then it sends).
     const justGotCode = settingCode && !priorCode && data?.is_approved === true;
 
-    // Confirmation email fires only when a code is newly assigned to an approved
-    // customer (best-effort) + stamps last-email status. Approving without a
-    // code sends nothing — the email waits until the code is typed and saved.
+    // The application-received email PROMISES the customer a confirmation the
+    // moment they are approved, and approval does not require a code — so the
+    // welcome email fires on the APPROVAL transition. Assigning a code later
+    // only sends if the customer was somehow never welcomed (last_email_type
+    // guard, so nobody is double-mailed).
     let welcomeEmail = 'skipped';
-    if (justGotCode && data?.email) {
+    const neverWelcomed = data?.last_email_type !== 'welcome';
+    if (data?.email && (justApproved || (justGotCode && neverWelcomed))) {
       try {
         const result = await sendWelcomeApprovalEmail(data, { supabase });
         welcomeEmail = result?.sent ? 'sent' : 'skipped';

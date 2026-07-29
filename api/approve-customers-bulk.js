@@ -1,6 +1,7 @@
 import { requireOwner } from './_admin-auth.js';
 import { createClient } from '@supabase/supabase-js';
 import { BULK_CHUNK_SIZE, runInChunks } from '../lib/bulk-chunk.mjs';
+import { sendWelcomeApprovalEmail } from './_welcome-email.js';
 
 function getAdminClient() {
   return createClient(
@@ -42,12 +43,26 @@ function classifyEmail(email, customer) {
 }
 
 async function approveCustomer(supabase, email, customer) {
-  const { error } = await supabase
+  const { data: fresh, error } = await supabase
     .from('customers')
     .update({ is_approved: true })
-    .eq('id', customer.id);
+    .eq('id', customer.id)
+    .select('*')
+    .single();
   if (error) return { kind: 'failed', entry: { email, error: error.message } };
-  return { kind: 'approved', entry: { email, id: customer.id } };
+  // The customer was promised an email on approval. Best-effort: an email
+  // failure never fails the approval itself (sendBrevoTransactional retries
+  // 429/5xx internally, so bursts pace themselves).
+  let welcomed = false;
+  try {
+    if (fresh?.email && fresh?.last_email_type !== 'welcome') {
+      const result = await sendWelcomeApprovalEmail(fresh, { supabase });
+      welcomed = Boolean(result?.sent);
+    }
+  } catch (mailErr) {
+    console.error('bulk approve: welcome email failed for', email, mailErr.message);
+  }
+  return { kind: 'approved', entry: { email, id: customer.id, welcomed } };
 }
 
 /** Bulk-approve customers whose email appears in the uploaded list. */
