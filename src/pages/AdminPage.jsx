@@ -536,6 +536,16 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   const swapSearchTimerRef = useRef(null);
 
   const [orders, setOrders] = useState([]);
+  const ordersReqSeqRef = useRef(0);
+  const ordersCacheRef = useRef(new Map());
+  const ordersCacheKeyRef = useRef('');
+  // The sidebar badge behaves like a notification: opening Order Requests
+  // marks the current count as SEEN (persisted), and the badge only returns
+  // when the count rises above what was seen.
+  const [ordersBadgeSeen, setOrdersBadgeSeen] = useState(() => {
+    const stored = Number(localStorage.getItem('adm-orders-badge-seen'));
+    return Number.isFinite(stored) ? stored : 0;
+  });
   const [orderTab, setOrderTab] = useState('new');
   const [orderPage, setOrderPage] = useState(1);
   const [orderTotal, setOrderTotal] = useState(0);
@@ -760,6 +770,23 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   };
 
   const loadOrders = async () => {
+    // Tab switches and the 30s auto-refresh can put several requests in
+    // flight at once; a slow response landing after a newer one used to
+    // repaint the list with stale rows — the "order flickers away" bug. Only
+    // the latest request may touch state.
+    const key = `${orderTab}|${orderPage}|${orderSearchDebounced}`;
+    const seq = (ordersReqSeqRef.current += 1);
+    // Paint a previously seen tab instantly from cache while revalidating, so
+    // switching tabs never blanks the list or shows another tab's orders.
+    const cached = ordersCacheRef.current.get(key);
+    if (cached) {
+      setOrders(cached.rows);
+      setOrderTotal(cached.total);
+    } else if (ordersCacheKeyRef.current !== key) {
+      // Unseen tab: clear rather than leave the previous tab's rows on screen.
+      setOrders([]);
+    }
+    ordersCacheKeyRef.current = key;
     setLoading(true);
     try {
       const data = await fetchOrdersPage({
@@ -768,18 +795,19 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         search: orderSearchDebounced,
         tab: orderTab,
       });
+      if (seq !== ordersReqSeqRef.current) return; // superseded — drop it
+      ordersCacheRef.current.set(key, { rows: data.rows, total: data.total });
       setOrders(data.rows);
       setOrderTotal(data.total);
       if (data.tabCounts) {
         setOrderTabCounts(data.tabCounts);
-        // The sidebar notification only clears once orders are marked as paid.
         const badge = data.tabCounts.unpaid ?? data.tabCounts.new;
         if (badge != null) setNewOrdersCount(badge);
       }
     } catch (err) {
-      showToast(err.message || 'Failed to load orders', 'error');
+      if (seq === ordersReqSeqRef.current) showToast(err.message || 'Failed to load orders', 'error');
     } finally {
-      setLoading(false);
+      if (seq === ordersReqSeqRef.current) setLoading(false);
     }
   };
 
@@ -1081,6 +1109,11 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     return () => clearTimeout(timer);
   }, [focusOrderId, activeSection, orders]);
   useEffect(() => { if (activeSection === 'orders') void loadOrders(); }, [activeSection, orderPage, orderTab, orderSearchDebounced]);
+  useEffect(() => {
+    if (activeSection !== 'orders') return;
+    setOrdersBadgeSeen(newOrdersCount);
+    try { localStorage.setItem('adm-orders-badge-seen', String(newOrdersCount)); } catch { /* ignore */ }
+  }, [activeSection, newOrdersCount]);
   useEffect(() => {
     if (activeSection !== 'orders') return undefined;
     fetchFulfillmentUsers()
@@ -1928,7 +1961,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 }
               }}
               pendingCustomerCount={pendingCount}
-              newOrdersCount={newOrdersCount}
+              newOrdersCount={activeSection === 'orders' || newOrdersCount <= ordersBadgeSeen ? 0 : newOrdersCount}
             />
           </aside>
 
