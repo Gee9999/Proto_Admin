@@ -3,7 +3,7 @@
 import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import OrderWhatsappNotify from '../src/components/OrderWhatsappNotify.jsx';
+import OrderEmailNotify from '../src/components/OrderEmailNotify.jsx';
 
 globalThis.IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -42,7 +42,7 @@ describe('order delivery control expansion', () => {
     root = createRoot(container);
 
     await act(async () => {
-      root.render(React.createElement(OrderWhatsappNotify, {
+      root.render(React.createElement(OrderEmailNotify, {
         orderId: 'order-123',
         orderStatus: 'pending',
       }));
@@ -69,7 +69,7 @@ describe('order delivery control expansion', () => {
     root = createRoot(container);
 
     await act(async () => {
-      root.render(React.createElement(OrderWhatsappNotify, {
+      root.render(React.createElement(OrderEmailNotify, {
         orderId: 'order-456',
         orderStatus: 'pending',
       }));

@@ -3,7 +3,7 @@ import { notifyNewOrder, resendInternalOrderEmail } from './_order-notify-core.j
 
 /**
  * Send the full new-order notification round for one order: the alert email
- * to online@proto.co.za (once) plus team WhatsApp via the main portal
+ * to the order team (once) plus the portal PDF/status round
  * notification API.
  */
 export default async function handler(req, res) {

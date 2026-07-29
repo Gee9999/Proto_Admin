@@ -13,7 +13,7 @@ function flattenNodes(nodes) {
 
 const TAXONOMY_NODES = flattenNodes(loadBundledTaxonomy());
 
-/** All taxonomy labels for Apollo routing hints. */
+/** All taxonomy labels for lookup routing hints. */
 export function getTaxonomySubcategoryLabels() {
   return TAXONOMY_NODES.map((n) => n.label);
 }

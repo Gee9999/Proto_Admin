@@ -118,7 +118,7 @@ export async function uploadWorkspaceDocument({
       contentHash: ingestion.contentHash,
     }),
   });
-  onIngestionProgress?.({ phase: 'complete', progress: 1, detail: 'Apollo indexing complete' });
+  onIngestionProgress?.({ phase: 'complete', progress: 1, detail: 'Document indexed' });
   return completed.document;
 }
 

@@ -218,39 +218,23 @@ export async function resendInternalOrderEmail(orderId, { actorEmail = null } = 
 
 /**
  * A new order counts as fully notified once the new-order email went out and
- * the team WhatsApp round completed without failures. When WhatsApp is not
- * possible at all (no WATI token / no team numbers), the email alone unblocks
- * the workflow so orders cannot deadlock on a config outage.
+ * the fulfilment PDF is stored. (WhatsApp/WATI notifications were removed —
+ * email is the notification. Old logs may still carry WhatsApp fields; they
+ * are ignored.)
  */
 export function isOrderNotifyComplete(log) {
-  if (!log || (!log.found && log.sent == null)) {
+  if (!log || (!log.found && log.emailSent == null && log.sent == null)) {
     return { ok: false, reason: 'No new-order notification has been sent for this order yet' };
   }
-  const emailOk = !!log.emailSent;
-  const teamSize = Number(log.teamSize);
-  const sentToWholeTeam = Number(log.sent) > 0
-    && Number(log.failed || 0) === 0
-    && (!Number.isFinite(teamSize) || teamSize <= 0 || Number(log.sent) >= teamSize);
-  const whatsappOk = !!log.statusAdvanced
-    || sentToWholeTeam
-    || !!log.skippedNoToken
-    || !!log.skippedNoTeam
-    // WhatsApp isn't wired up on this install (no ORDER_NOTIFY_SECRET) — the
-    // alert email alone is enough to release the order.
-    || !!log.whatsappNotConfigured;
-  if (!emailOk) {
+  if (!log.emailSent) {
     return { ok: false, reason: `The new-order email to ${NEW_ORDER_ALERT_EMAIL} has not been sent yet` };
-  }
-  if (!whatsappOk) {
-    return { ok: false, reason: 'Not all team WhatsApp notifications were delivered' };
   }
   return { ok: true };
 }
-
 /**
- * Send the new-order email (once) and trigger the team WhatsApp round via the
- * main portal notify endpoint, which also advances the order to Handed Over
- * when every message lands.
+ * Send the new-order email (once) and ask the main portal to store the
+ * fulfilment PDF and advance the order's workflow status. (The portal endpoint
+ * used to also fan out team WhatsApp — that automation is removed.)
  */
 export async function notifyNewOrder(orderId) {
   const supabase = getPortalDbClient();
@@ -276,9 +260,9 @@ export async function notifyNewOrder(orderId) {
 
   const secret = process.env.ORDER_NOTIFY_SECRET;
   if (!secret) {
-    // No team-WhatsApp link configured. Record an email-only round so the
-    // order can still leave "New" on the strength of the alert email, and the
-    // dashboard shows an honest status instead of an empty log.
+    // No shared secret for the portal endpoint. Record an email-only round so
+    // the order can still leave "New" on the strength of the alert email, and
+    // the dashboard shows an honest status instead of an empty log.
     await writeOrderNotifyLog(orderId, {
       found: true,
       emailSent,

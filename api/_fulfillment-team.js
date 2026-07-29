@@ -1,6 +1,6 @@
 import { readSiteConfigJson } from './_site-config.js';
 import { defaultFulfillmentUsers } from './_fulfillment-defaults.js';
-import { normalizePhone } from './_wati.js';
+import { normalizePhone } from './_phone.js';
 
 const USERS_FILE = 'fulfillment/users.json';
 

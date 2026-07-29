@@ -5,10 +5,13 @@ import {
   FileCheck2,
   Loader2,
   Mail,
-  MessageCircle,
   RefreshCw,
   UserRoundCheck,
 } from 'lucide-react';
+
+// Email-only successor to OrderWhatsappNotify — WhatsApp/WATI order
+// notifications were removed (2026-07). Order delivery is: stored PDF,
+// internal team email, customer acknowledgement email.
 
 function stamp(value) {
   if (!value) return '';
@@ -37,7 +40,7 @@ function DeliveryStep({ icon: Icon, label, state, detail, error }) {
   );
 }
 
-export default function OrderWhatsappNotify({ orderId }) {
+export default function OrderEmailNotify({ orderId }) {
   const [log, setLog] = useState(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState('');
@@ -69,7 +72,7 @@ export default function OrderWhatsappNotify({ orderId }) {
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) throw new Error(data.error || 'Notification request failed');
       setMessage(action === 'resend-internal-email'
-        ? `Order email resent to ${(data.recipients || []).join(', ') || data.recipient || 'the order team'} with the PDF attached.`
+        ? `Order email resent to ${(data.recipients || []).join(', ') || 'the order team'} with the PDF attached.`
         : 'Missing order notifications sent.');
       await loadLog();
     } catch (err) {
@@ -80,8 +83,8 @@ export default function OrderWhatsappNotify({ orderId }) {
   };
 
   const resendInternal = () => {
-    const recipient = log?.alertEmail || log?.emailRecipients?.[0] || 'online@proto.co.za';
-    if (!window.confirm(`Resend this existing order to ${recipient}? This will not create a new order.`)) return;
+    const recipients = (log?.emailRecipients || []).filter(Boolean).join(', ') || 'the order team';
+    if (!window.confirm(`Resend this existing order to ${recipients}? This will not create a new order.`)) return;
     void sendAction('resend-internal-email', 'RESEND');
   };
 
@@ -98,17 +101,6 @@ export default function OrderWhatsappNotify({ orderId }) {
   const internalOk = Boolean(log?.emailSent);
   const customerKnown = log?.customerEmailSent != null;
   const customerOk = log?.customerEmailSent === true;
-  const whatsappSkipped = Boolean(log?.whatsappNotConfigured || log?.skippedNoToken || log?.skippedNoTeam);
-  const accepted = Number(log?.accepted ?? log?.sent ?? 0);
-  const delivered = Number(log?.delivered || 0);
-  const read = Number(log?.read || 0);
-  const sendFailed = Number(log?.failed || 0);
-  const deliveryFailed = Number(log?.deliveryFailed || 0);
-  const totalFailed = sendFailed + deliveryFailed;
-  const hasDeliveryTracking = log?.deliveryConfirmed != null || (log?.sentDetails || []).some((entry) => entry.messageId);
-  const whatsappOk = accepted > 0 && delivered === accepted;
-  const whatsappPending = accepted > delivered && totalFailed === 0;
-  const whatsappError = totalFailed > 0;
   const lastAt = log?.updatedAt || log?.at;
 
   return (
@@ -141,7 +133,7 @@ export default function OrderWhatsappNotify({ orderId }) {
           label="Internal email"
           state={internalOk ? 'ok' : found ? 'error' : 'unknown'}
           detail={internalOk
-            ? `Sent to ${(log.emailRecipients || [log.alertEmail]).filter(Boolean).join(', ') || 'online@proto.co.za'}${log.internalEmailLastResentAt ? ` · resent ${stamp(log.internalEmailLastResentAt)}` : ''}`
+            ? `Sent to ${(log.emailRecipients || []).filter(Boolean).join(', ') || 'the order team'}${log.internalEmailLastResentAt ? ` · resent ${stamp(log.internalEmailLastResentAt)}` : ''}`
             : 'Not confirmed as sent'}
           error={log?.emailFailReason}
         />
@@ -156,21 +148,6 @@ export default function OrderWhatsappNotify({ orderId }) {
               : 'Not confirmed as sent'}
           error={log?.customerEmailFailReason}
         />
-        <DeliveryStep
-          icon={MessageCircle}
-          label="Team WhatsApp"
-          state={whatsappSkipped ? 'skipped' : whatsappOk ? 'ok' : whatsappError ? 'error' : whatsappPending ? 'pending' : 'unknown'}
-          detail={whatsappSkipped
-            ? 'Not configured / no team recipients'
-            : hasDeliveryTracking
-              ? `${accepted}/${Number(log?.teamSize || 0)} accepted · ${delivered} delivered · ${read} read · ${totalFailed} failed`
-              : `${accepted}/${Number(log?.teamSize || 0)} accepted by WATI · delivery not tracked on this older order`}
-          error={whatsappError
-            ? `${totalFailed} WhatsApp message${totalFailed === 1 ? '' : 's'} failed${log?.statusBlockedReason ? ` · ${log.statusBlockedReason}` : ''}`
-            : whatsappPending
-              ? 'Accepted by WATI; awaiting delivered/read receipt'
-              : null}
-        />
       </div>
 
       <div className="oa-delivery-actions">
@@ -183,7 +160,7 @@ export default function OrderWhatsappNotify({ orderId }) {
           {sending === 'resend-internal-email' ? <Loader2 size={12} className="star-spinning" /> : <Mail size={12} />}
           Resend internal email + PDF
         </button>
-        {(!found || !internalOk || (whatsappError && !whatsappSkipped)) && (
+        {(!found || !internalOk) && (
           <button
             type="button"
             className="oa-wa-notify-retry"

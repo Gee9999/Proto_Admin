@@ -1,6 +1,6 @@
 ---
 name: protoportal-admin
-description: Expert guide for the standalone Proto Admin Portal (admin.proto.co.za). Use whenever the user mentions admin portal, admin dashboard, Product Manager, Archive, Reorder Grid, Product Loader, WhatsApp CRM, Site Content (Featured/Specials/Banner), Analytics, Pricing, or any fix/feature for protoportal-admin — even if they don't say "admin" explicitly. NEVER use the deprecated embedded AdminPage in protoportal-main for admin work.
+description: Expert guide for the standalone Proto Admin Portal (admin.proto.co.za). Use whenever the user mentions admin portal, admin dashboard, Product Manager, Archive, Reorder Grid, Product Loader, Site Content (Featured/Specials/Banner), Analytics, Pricing, or any fix/feature for protoportal-admin — even if they don't say "admin" explicitly. NEVER use the deprecated embedded AdminPage in protoportal-main for admin work.
 ---
 
 # Proto Admin Portal (standalone)
@@ -50,18 +50,16 @@ npm run build
 | `orders` | Order Requests (workflow tabs, Rand amounts, notify gate) |
 | `product-loader` | Product Loader (Nutstore PTR Photos, single/folder upload) |
 | `image-replace` | Image Replace (live + archived scope) |
-| `apollo` | Apollo — Understand · Remember · Advise (read-only; NO image gen) |
 | `catalogue` | Product Manager (live products only) |
 | `archive` | Archive (archived products, no category sidebar) |
 | `reorder` | Reorder Grid (`ReorderPanel.jsx` + `ReorderGrid.jsx`) |
 | `customers` | Customer Management (requests / pre-registration / approved / email analytics) |
 | `site-content` | Site Content — Featured + Specials + Banner Editor sub-tabs |
-| `crm` | WhatsApp |
 | `analytics` | Analytics |
 | `pricing` | Pricing |
 | `team` | Team (opens fulfillment team modal, no section) |
 
-Removed (never reintroduce): Apollo image generation, Cost Tracking,
+Removed (never reintroduce): Apollo (entire tab + engine), WhatsApp/WATI outgoing messaging (opt-in data stays), Cost Tracking,
 product approval tab, reorder mode inside Product Manager, recycle-bin
 buttons, product-type dropdown.
 
@@ -71,7 +69,7 @@ buttons, product-type dropdown.
 - `src/lib/taxonomyAdmin.js` + `api/taxonomy.js` — main categories
 - `src/lib/fuzzySearch.js` — client search
 - `src/components/ReorderGrid.jsx` — drag reorder UI
-- `api/` — bulk upload, image transform, WhatsApp, orders, analytics, etc.
+- `api/` — bulk upload, image transform, orders, analytics, etc.
 
 Taxonomy tree loaded dynamically (`taxonomyTree`), not only static JSON.
 
@@ -79,20 +77,6 @@ Taxonomy tree loaded dynamically (`taxonomyTree`), not only static JSON.
 
 - Vercel project: **protoportal-admin**
 - Do not deploy protoportal-main to this URL
-
-## Apollo (Intelligence — `apollo-core` branch)
-
-**Constitution (governing, frozen v1.0):** `docs/APOLLO_CONSTITUTION.md` — operational brain charter, four assets, responsibility ladder, engineering rules.
-
-**Mission (purpose):** `docs/APOLLO_MISSION.md` — Apollo preserves, improves, and extends human judgement — never replaces it.
-
-**Education:** `docs/APOLLO_EDUCATION_PLAN.md` · **Integration (build):** `docs/APOLLO_INTEGRATION_LAYER.md` · **Rulebook:** `docs/PROTO_RULEBOOK.md`
-
-**Rule:** Constitution and architecture frozen v1.0. Every capability must strengthen one rung on the responsibility ladder.
-
-**Pipeline:** NL → Intent Engine → Business Context → Query Engine → SQL/Supabase → evidence → answer. Work on branch `apollo-core`; do not merge Intelligence to `main` without explicit approval.
-
-**ERP / Positill:** read-only forever — hardcoded SELECT only, `ProtoSyncReadOnly`, `readOnlyIntent`. Never write to POSWINSQL from Apollo or the SQL bridge.
 
 ## Common mistakes to avoid
 

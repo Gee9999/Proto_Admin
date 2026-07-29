@@ -101,7 +101,7 @@ import SectionErrorBoundary from '../components/SectionErrorBoundary';
 import PlacementsEditor from '../components/PlacementsEditor';
 import AdminSelect from '../components/AdminSelect';
 import ComingSoonPanel from '../components/ComingSoonPanel';
-import OrderWhatsappNotify from '../components/OrderWhatsappNotify';
+import OrderEmailNotify from '../components/OrderEmailNotify';
 import ProductManagerEngine from '../components/ProductManagerEngine';
 import GroupedSidebar, { NAV_GROUPS } from '../components/GroupedSidebar';
 import { useDashboardStats } from '../hooks/useDashboardStats';
@@ -114,10 +114,8 @@ import { lazyRetry } from '../lib/lazyRetry';
 // default section (Product Manager). Each lazy chunk is fetched on demand
 // when the admin clicks a nav item.
 const AnalyticsHub = lazyRetry(() => import('../components/AnalyticsHub'));
-const ApolloPanel = lazyRetry(() => import('../components/ApolloPanel'));
 const ProductLoaderPanel = lazyRetry(() => import('../components/ProductLoaderPanel'));
 const BulkImageReplacePanel = lazyRetry(() => import('../components/BulkImageReplacePanel'));
-const WhatsappPanel = lazyRetry(() => import('../components/WhatsappPanel'));
 const BannerPanel = lazyRetry(() => import('../components/BannerPanel'));
 const FeaturedPanel = lazyRetry(() => import('../components/FeaturedPanel'));
 const SpecialsPanel = lazyRetry(() => import('../components/SpecialsPanel'));
@@ -126,7 +124,7 @@ const ReorderPanel = lazyRetry(() => import('../components/ReorderPanel'));
 const OrdersWorkspacePanel = lazyRetry(() => import('../components/OrdersWorkspacePanel'));
 
 function orderWorkspaceIdFromPath() {
-  const match = window.location.pathname.match(/^\/apollo\/orders\/([^/?#]+)/i);
+  const match = window.location.pathname.match(/^\/(?:apollo\/)?orders\/workspace\/([^/?#]+)/i);
   return match ? decodeURIComponent(match[1]) : '';
 }
 
@@ -147,8 +145,6 @@ const CommsPanel = lazyRetry(() => import('../components/CommsPanel'));
 import AddCustomerModal from '../components/AddCustomerModal';
 import ActionMenu from '../components/ActionMenu';
 import BridgeStatusDot from '../components/BridgeStatusDot';
-import WhatsappHealthDot from '../components/WhatsappHealthDot';
-const CrmContactsModal = lazyRetry(() => import('../components/CrmContactsModal'));
 const FulfillmentSettingsModal = lazyRetry(() => import('../components/FulfillmentSettingsModal'));
 import categories from '../data/categories.json';
 
@@ -168,7 +164,7 @@ function LazySectionFallback({ label = 'Loading section…' }) {
 }
 
 const ADMIN_PAGE_SIZE = 50;
-const CUSTOMER_SERVICE_SECTIONS = ['orders', 'apollo', 'customers', 'comms', 'crm'];
+const CUSTOMER_SERVICE_SECTIONS = ['orders', 'customers', 'comms'];
 
 function sectionsForAdminRole(role) {
   return role === 'customer_service'
@@ -460,13 +456,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     const preferred = initialOrderWorkspaceId ? 'orders' : 'catalogue';
     return allowedSectionIds.includes(preferred) ? preferred : allowedSectionIds[0] || 'orders';
   });
-  // Apollo panel keeps its own state (chat, staged image ops). Track when it
-  // was first opened so we can lazily mount it once and then keep it in the
-  // DOM via CSS display, matching the pre-lazy behaviour.
-  const [apolloEverActive, setApolloEverActive] = useState(false);
-  useEffect(() => {
-    if (activeSection === 'apollo') setApolloEverActive(true);
-  }, [activeSection]);
   const [productLoaderCode, setProductLoaderCode] = useState('');
   const [siteContentTab, setSiteContentTab] = useState('featured');
   const { data: dashStats } = useDashboardStats();
@@ -569,19 +558,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   const [specials, setSpecials] = useState([]);
   const [specialsSaving, setSpecialsSaving] = useState(false);
 
-  const [crmAllCustomers, setCrmAllCustomers] = useState([]);
-  const [crmLoading, setCrmLoading] = useState(false);
-  const [crmFilters, setCrmFilters] = useState({ businessTypes: [], joinedStatuses: [] });
-  const [crmSearch, setCrmSearch] = useState('');
-  const [crmTemplates, setCrmTemplates] = useState([]);
-  const [crmTemplatesLoading, setCrmTemplatesLoading] = useState(false);
-  const [crmError, setCrmError] = useState('');
-  const [crmSelectedTemplate, setCrmSelectedTemplate] = useState('');
-  const [crmSending, setCrmSending] = useState(false);
-  const [crmSentCount, setCrmSentCount] = useState(null);
-  const [crmLastSentTemplate, setCrmLastSentTemplate] = useState('');
-  const [crmMeta, setCrmMeta] = useState({ total: 0, totalFiltered: 0, page: 1, pageSize: 25, summary: null });
-  const [crmContactsOpen, setCrmContactsOpen] = useState(false);
 
 
 
@@ -592,18 +568,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     [taxonomyTree],
   );
   const firstMainCategoryId = mainCategories[0]?.id || '';
-  const crmBusinessTypeOptions = useMemo(() => (
-    [...new Set(crmAllCustomers.map((c) => c.businessType).filter(Boolean))].sort()
-  ), [crmAllCustomers]);
-
-  const crmJoinStatusOptions = useMemo(() => (
-    [...new Set(crmAllCustomers.map((c) => c.joinedStatus).filter(Boolean))]
-  ), [crmAllCustomers]);
-
-  const crmFilteredCustomers = useMemo(() => crmAllCustomers, [crmAllCustomers]);
-  const crmSelectedTemplateData = useMemo(() => (
-    crmTemplates.find((template) => template.name === crmSelectedTemplate) || null
-  ), [crmTemplates, crmSelectedTemplate]);
 
   useEffect(() => {
     fetchDistinctCategories().then(setLiveCategories).catch(() => {});
@@ -619,8 +583,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     return () => clearTimeout(timer);
   }, [orderSearch]);
   useEffect(() => { setOrderPage(1); }, [orderTab, orderSearchDebounced]);
-  useEffect(() => { if (activeSection === 'crm') void loadCrmCustomers(1); }, [crmFilters.businessTypes.join('|'), crmFilters.joinedStatuses.join('|'), crmSearch]);
-  useEffect(() => { if (activeSection === 'crm' && !crmTemplates.length && !crmTemplatesLoading) void loadCrmTemplates(); }, [activeSection, crmTemplates.length, crmTemplatesLoading]);
   // Banner + Specials own their own load effects — see BannerPanel and SpecialsPanel.
 
 
@@ -1183,7 +1145,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       window.removeEventListener('focus', refresh);
     };
   }, [activeSection]);
-  useEffect(() => { if (activeSection === 'crm' && !crmAllCustomers.length && !crmLoading) void loadCrmCustomers(1); }, [activeSection]);
 
   // Load specials on mount
   useEffect(() => {
@@ -1403,18 +1364,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       queryClient.invalidateQueries({ queryKey: ['catalog'] });
       return reloadTaxonomy();
     }
-    if (activeSection === 'crm') {
-      await loadCrmCustomers(crmMeta.page || 1);
-      return loadCrmTemplates();
-    }
     if (activeSection === 'analytics') {
       dispatchAdminRefresh('analytics');
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats() });
-      return;
-    }
-    if (activeSection === 'apollo') {
-      queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats() });
-      refreshDashboardStats();
       return;
     }
     dispatchAdminRefresh(activeSection);
@@ -1478,78 +1430,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
 
 
 
-  const loadCrmCustomers = async (page = crmMeta.page || 1) => {
-    setCrmLoading(true);
-    setCrmError('');
-    try {
-      const params = new URLSearchParams({ page: String(page), pageSize: String(crmMeta.pageSize || 25), search: crmSearch.trim() });
-      crmFilters.businessTypes.forEach((value) => params.append('businessType', value));
-      crmFilters.joinedStatuses.forEach((value) => params.append('joinedStatus', value));
-      const res = await fetch(`/api/whatsapp-contacts?${params}`);
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Failed to load WhatsApp contacts');
-      setCrmAllCustomers(json.contacts || []);
-      setCrmMeta({
-        total: json.total || 0,
-        totalFiltered: json.totalFiltered || 0,
-        page: json.page || page,
-        pageSize: json.pageSize || 25,
-        summary: json.summary || null,
-      });
-    } catch (e) {
-      console.error(e);
-      setCrmError(e.message || 'Failed to load WhatsApp contacts');
-    }
-    finally { setCrmLoading(false); }
-  };
-
-  const loadCrmTemplates = async () => {
-    setCrmTemplatesLoading(true);
-    setCrmError('');
-    try {
-      const res = await fetch('/api/whatsapp-templates');
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Failed to load WhatsApp templates');
-      const templates = json.templates || [];
-      setCrmTemplates(templates);
-      setCrmSelectedTemplate((current) => current && templates.some((template) => template.name === current)
-        ? current
-        : (templates[0]?.name || ''));
-    } catch (e) {
-      console.error(e);
-      setCrmError(e.message || 'Failed to load WhatsApp templates — check WATI_API_TOKEN');
-    } finally {
-      setCrmTemplatesLoading(false);
-    }
-  };
-
-  const sendCrmEmail = async (overrides = {}) => {
-    const templateName = overrides.templateName || crmSelectedTemplate;
-    const businessTypes = overrides.businessTypes ?? crmFilters.businessTypes;
-    const joinedStatuses = overrides.joinedStatuses ?? crmFilters.joinedStatuses;
-    if (!templateName) return;
-    if (!window.confirm(`Send the ${templateName} WhatsApp broadcast now?`)) return;
-    setCrmSending(true); setCrmSentCount(null);
-    try {
-      const res = await fetch('/api/send-whatsapp-broadcast', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          templateName,
-          broadcastName: templateName,
-          search: crmSearch.trim(),
-          businessTypes,
-          joinedStatuses,
-        }),
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error || 'Broadcast failed');
-      setCrmSentCount(json.sent ?? 0);
-      setCrmLastSentTemplate(json.broadcastName || templateName);
-      await loadCrmCustomers(crmMeta.page || 1);
-    } catch (e) { alert('Error: ' + e.message); }
-    finally { setCrmSending(false); }
-  };
 
   // Banner + Specials editors now live in BannerPanel / SpecialsPanel.
 
@@ -1757,10 +1637,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     }
     setSaving(person.id);
     try {
-      const result = await approveCustomer(person.id, true, customerCode ? { customerCode } : {});
-      if (result.watiWelcome === 'failed') {
-        showToast('Approved, but WhatsApp welcome message failed to send', 'error');
-      }
+      await approveCustomer(person.id, true, customerCode ? { customerCode } : {});
       setApprovalCodes((prev) => {
         const next = { ...prev };
         delete next[person.id];
@@ -2011,7 +1888,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
           </div>
           <div className="adm-header-actions">
             <BridgeStatusDot />
-            <WhatsappHealthDot />
             <button type="button" onClick={goHome} className="adm-btn-ghost"><Home size={15} /><span className="adm-btn-text">Home</span></button>
             <button onClick={() => void refreshCurrentSection()} className="adm-btn-ghost"><RefreshCw size={15} /><span className="adm-btn-text">Refresh</span></button>
             <button onClick={onViewPortal} className="adm-btn-ghost"><ArrowLeftRight size={15} /><span className="adm-btn-text">Portal</span></button>
@@ -2047,7 +1923,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 setActiveSection(id);
                 setLoadingError('');
                 setSidebarOpen(false);
-                if (id === 'catalogue' || id === 'reorder' || id === 'apollo') {
+                if (id === 'catalogue' || id === 'reorder') {
                   window.scrollTo({ top: 0, behavior: 'instant' });
                 }
               }}
@@ -2117,16 +1993,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
               </SectionErrorBoundary>
             )}
 
-            {/* Apollo — keep mounted after first open so chat survives tab switches. */}
-            <SectionErrorBoundary name="apollo" title="Apollo crashed" resetKey={activeSection}>
-            {apolloEverActive && (
-              <div style={{ display: activeSection === 'apollo' ? 'block' : 'none' }}>
-                <Suspense fallback={<LazySectionFallback label="Loading Apollo…" />}>
-                  <ApolloPanel onShowToast={showToast} />
-                </Suspense>
-              </div>
-            )}
-            </SectionErrorBoundary>
 
             {activeSection === 'product-loader' && (
               <SectionErrorBoundary name="product-loader" title="Product Loader crashed" resetKey={activeSection}>
@@ -2629,7 +2495,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                                 </button>
                               ))}
                             </div>
-                            <OrderWhatsappNotify orderId={order.id} orderStatus={normalizeOrderStatus(order.status)} />
+                            <OrderEmailNotify orderId={order.id} orderStatus={normalizeOrderStatus(order.status)} />
                             {(() => {
                               const promo = orderPromo(order);
                               if (!promo) return null;
@@ -2687,7 +2553,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
               </SectionErrorBoundary>
             )}
 
-            {/* WHATSAPP */}
             {/* EMAIL CRM — contacts + composer + campaign analytics in one place */}
             {activeSection === 'comms' && (
               <SectionErrorBoundary name="comms" title="Email CRM crashed" resetKey={activeSection}>
@@ -2700,47 +2565,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
               </SectionErrorBoundary>
             )}
 
-            {activeSection === 'crm' && (
-              <SectionErrorBoundary name="crm" title="WhatsApp crashed" resetKey={activeSection}>
-              <div className="adm-panel">
-                <div className="adm-section-head">
-                  <div>
-                    <h2 className="adm-section-title">WhatsApp</h2>
-                    <p className="adm-section-note">Pick a template, preview the message, filter your audience, and send.</p>
-                  </div>
-                </div>
-
-                {crmError && (
-                  <div style={{ marginBottom: 12, padding: '10px 14px', background: '#fef2f2', borderRadius: 8, color: '#b91c1c', fontSize: 13, fontWeight: 600 }}>
-                    {crmError}
-                  </div>
-                )}
-
-                <Suspense fallback={<LazySectionFallback label="Loading WhatsApp…" />}>
-                  <WhatsappPanel
-                    summary={crmMeta.summary}
-                    totalFiltered={crmMeta.totalFiltered}
-                    search={crmSearch}
-                    onSearchChange={setCrmSearch}
-                    filters={crmFilters}
-                    onFiltersChange={setCrmFilters}
-                    businessTypeOptions={crmBusinessTypeOptions}
-                    joinStatusOptions={crmJoinStatusOptions}
-                    templates={crmTemplates}
-                    templatesLoading={crmTemplatesLoading}
-                    selectedTemplate={crmSelectedTemplate}
-                    onSelectTemplate={setCrmSelectedTemplate}
-                    onSend={(overrides) => void sendCrmEmail(overrides)}
-                    sending={crmSending}
-                    sentCount={crmSentCount}
-                    lastSentTemplate={crmLastSentTemplate}
-                    onViewContacts={() => setCrmContactsOpen(true)}
-                    onRefresh={() => { void loadCrmCustomers(crmMeta.page || 1); void loadCrmTemplates(); }}
-                  />
-                </Suspense>
-              </div>
-              </SectionErrorBoundary>
-            )}
 
             {/* BANNER EDITOR + POPUP SPECIALS — merged into the Site Content tab */}
 
@@ -3566,24 +3390,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         </div>
       )}
 
-      {crmContactsOpen && (
-        <Suspense fallback={null}>
-          <CrmContactsModal
-            open={crmContactsOpen}
-            onClose={() => setCrmContactsOpen(false)}
-            contacts={crmFilteredCustomers}
-            loading={crmLoading}
-            search={crmSearch}
-            onSearchChange={setCrmSearch}
-            meta={crmMeta}
-            onPageChange={(page) => void loadCrmCustomers(page)}
-            onRefresh={() => void loadCrmCustomers(crmMeta.page || 1)}
-            formatJoinStatus={formatJoinStatus}
-            formatRelativeDate={formatRelativeDate}
-            formatDateTime={formatDateTime}
-          />
-        </Suspense>
-      )}
 
       {fulfillmentSettingsOpen && (
         <Suspense fallback={null}>
