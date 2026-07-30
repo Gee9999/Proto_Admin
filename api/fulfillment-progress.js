@@ -99,7 +99,7 @@ export default async function handler(req, res) {
 
       const base = result?.store ?? result;
 
-      if (Boolean(complete)) {
+      if (complete) {
         try {
           const supabase = getPortalAdminClient();
           await advanceOrderStatusToTarget(supabase, orderId, 'order in progress');
