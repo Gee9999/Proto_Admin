@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "node scripts/apply-category-move-xlsx.mjs --apply-if-pending && node scripts/fix-writing-correction-categories.mjs --apply-if-pending && node scripts/fix-art-supplies-categories.mjs --apply-if-pending && vite build",
+    "lint": "eslint src lib api tests",
     "preview": "vite preview",
     "resize-images": "node scripts/resize-product-images.mjs",
     "test:nutstore-filename": "node scripts/test-nutstore-filename.mjs",

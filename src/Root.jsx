@@ -165,7 +165,6 @@ function AdminGate({ fulfillment = false }) {
 
   const customer = {
     id: session.user.id,
-    role: 'admin',
     name: session.user.user_metadata?.name || email.split('@')[0],
     email,
     role: getAdminRole(email),

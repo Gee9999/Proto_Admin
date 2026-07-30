@@ -3,6 +3,9 @@ import { queryKeys } from '../lib/queryKeys';
 import {
   archiveProduct,
   bulkArchiveProducts,
+  bulkDeleteForeverProducts,
+  bulkRecycleProducts,
+  bulkRestoreRecycledProducts,
   bulkUnarchiveProducts,
   deleteProduct,
   recycleProduct,

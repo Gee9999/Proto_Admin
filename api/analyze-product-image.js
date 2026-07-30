@@ -13,10 +13,7 @@ import { assertImageGenBudgetAllowsSpend } from './_image-gen-budget.js';
 export const config = { api: { bodyParser: { sizeLimit: '15mb' } } };
 
 const MODEL = 'google/gemini-2.5-flash';
-const PRICE_IN_PER_M = 0.075;
-const PRICE_OUT_PER_M = 0.30;
 const IMAGE_TOKEN_ESTIMATE = 350;
-const USD_TO_ZAR_FALLBACK = 18.0;
 
 const CATEGORIES = [
   'Arts Crafts & Stationery',
@@ -31,27 +28,6 @@ const CATEGORIES = [
   'Textiles',
   'Toys Games & Kids',
 ];
-
-let cachedFxRate = null;
-let cachedFxAt = 0;
-
-async function fetchUsdToZarRate() {
-  const now = Date.now();
-  if (cachedFxRate && (now - cachedFxAt) < 6 * 60 * 60 * 1000) return cachedFxRate;
-
-  try {
-    const response = await fetch('https://api.frankfurter.app/latest?from=USD&to=ZAR');
-    if (!response.ok) throw new Error(`FX ${response.status}`);
-    const payload = await response.json();
-    const rate = Number(payload?.rates?.ZAR);
-    if (!Number.isFinite(rate) || rate <= 0) throw new Error('Invalid ZAR rate');
-    cachedFxRate = rate;
-    cachedFxAt = now;
-    return rate;
-  } catch {
-    return cachedFxRate || USD_TO_ZAR_FALLBACK;
-  }
-}
 
 export default async function handler(req, res) {
   if (!(await requireOwner(req, res))) return;

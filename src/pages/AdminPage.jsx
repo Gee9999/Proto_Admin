@@ -1139,12 +1139,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
 
   useEffect(() => { if (activeSection === 'customers') void loadCustomers(); }, [activeSection, customerPage, customerTab, customerSearchDebounced, customerBusinessType]);
   useEffect(() => { setCustomerListExpanded(false); }, [customerTab]);
-  useEffect(() => {
-    if (activeSection !== 'customers') return;
-    void fetchCrmContactsPage({ page: 1, pageSize: 1 })
-      .then((data) => { if (data?.lastSyncedAt) setBrevoLastSync(data.lastSyncedAt); })
-      .catch(() => {});
-  }, [activeSection]);
   // Pricing load lives in PricingPanel.
   useEffect(() => { void reloadTaxonomy(); }, []);
 
@@ -1612,15 +1606,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       await reloadTaxonomy();
       invalidateAdminCache();
       queryClient.invalidateQueries({ queryKey: ['catalog'] });
-      if (json.node?.id) {
-        const parentPath = findNodePath(taxonomyTree, newSubModal.parentId) || [];
-        const newId = json.node.id;
-        setMoveCategoryId(parentPath[0] || newSubModal.parentId);
-        setMoveChild1Id(parentPath.length === 0 ? newId : (parentPath[1] || newSubModal.parentId));
-        setMoveChild2Id(parentPath.length === 1 ? newId : (parentPath.length >= 2 ? newSubModal.parentId : ''));
-        setMoveChild3Id(parentPath.length === 2 ? newId : (parentPath.length >= 3 ? newSubModal.parentId : ''));
-        setMoveChild4Id(parentPath.length >= 3 ? newId : '');
-      }
       setNewSubModal(null);
       reorderPanelRef.current?.applySubcategoryCreated?.(json, newSubModal.parentId);
       showToast(json.created ? 'Subcategory created' : 'Subcategory already exists');
@@ -1778,7 +1763,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     }
     setSaving(person.id);
     try {
-      await approveCustomer(person.id, true, customerCode ? { customerCode } : {});
+      const result = await approveCustomer(person.id, true, customerCode ? { customerCode } : {});
       setApprovalCodes((prev) => {
         const next = { ...prev };
         delete next[person.id];
@@ -1786,9 +1771,11 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       });
       await refreshPendingCount();
       await refreshDashboardStats();
+      // Switching the tab re-fires the customers effect, which loads the
+      // Approved list — a direct loadCustomers() here would read the OLD tab
+      // from this closure and fetch the requests list a second time.
       setCustomerTab('regular');
       setCustomerPage(1);
-      await loadCustomers();
       closeCustomerProfile();
       const who = person.business_name || person.name || 'Customer';
       if (result.welcomeEmail === 'sent') showToast(`${who} approved — confirmation email sent`);
