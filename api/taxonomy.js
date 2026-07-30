@@ -19,6 +19,7 @@ import {
   readTaxonomyForApi,
   renameNodeLabel,
   renameNodeLabelInProducts,
+  resolveSingleNode,
   resolveLabelsFromPathIds,
   saveTaxonomy,
   writeMottaroHiddenIds,
@@ -170,33 +171,66 @@ export default async function handler(req, res) {
 
     if (action === 'rename') {
       const { id, label } = req.body;
+      // Refuse rather than guess when an id is duplicated: renaming the first
+      // match would rename a branch the admin never opened, and relabel ITS
+      // products, while the node they clicked keeps its old name.
+      resolveSingleNode(tree, id);
+
       const { tree: next, oldLabel, ctx } = renameNodeLabel(tree, id, label);
       const newLabel = label.trim();
       // Save the tree FIRST — saveTaxonomy holds the optimistic-lock check.
       // Renaming product rows before it meant a 409 (concurrent editor) left
       // every product on the new label while the tree kept the old node.
       const saved = await saveTaxonomy(next, { expectedUpdatedAt });
-      let renameError = null;
+
+      // From here the tree says the new name and the products still say the
+      // old one. That window must close before returning, in either direction
+      // — a tree and a product set that disagree is precisely the state where
+      // the category renders empty, and the admin cannot even retry because
+      // the UI no longer knows the old label to search for.
       let productsRenamed = 0;
+      let failure = null;
       try {
         productsRenamed = await renameProductsForNode(supabase, ctx, oldLabel, newLabel);
+        const orphans = await countRenameOrphans(supabase, ctx, oldLabel, newLabel);
+        if (orphans > 0) {
+          failure = `${orphans} product(s) kept the old name`;
+        }
       } catch (err) {
-        renameError = err.message || 'Failed to rename product labels';
+        failure = err.message || 'Failed to rename product labels';
       }
-      // Verification pass — anything still carrying the old label under this
-      // scope escaped the rename and would orphan out of the tree.
-      let orphansRemaining = 0;
-      try {
-        orphansRemaining = await countRenameOrphans(supabase, ctx, oldLabel, newLabel);
-      } catch { /* best effort — rename itself already succeeded */ }
+
+      if (failure) {
+        // Put the tree back so the two halves match again. The rename simply
+        // did not happen — better than a category that looks renamed and is
+        // empty. Products already moved to the new label are moved back.
+        let rolledBack = false;
+        try {
+          await renameProductsForNode(supabase, ctx, newLabel, oldLabel);
+          const restored = renameNodeLabel(await loadTaxonomy({ bypassCache: true }), id, oldLabel);
+          await saveTaxonomy(restored.tree, {});
+          rolledBack = true;
+        } catch (rollbackErr) {
+          console.error('taxonomy rename rollback failed:', rollbackErr.message);
+        }
+        return res.status(502).json({
+          error: rolledBack
+            ? `Could not rename the products (${failure}) — nothing was changed, please try again.`
+            : `Rename half-applied (${failure}) AND the rollback failed. The category and its products `
+              + `now disagree: rename "${newLabel}" back to "${oldLabel}" to restore it.`,
+          rolledBack,
+          oldLabel,
+          newLabel,
+        });
+      }
+
       return res.status(200).json({
         ok: true,
         id,
         label: newLabel,
         updatedAt: saved.updatedAt,
         productsRenamed,
-        orphansRemaining,
-        renameError,
+        orphansRemaining: 0,
       });
     }
 
@@ -232,7 +266,9 @@ export default async function handler(req, res) {
     if (action === 'deleteNode') {
       const { id } = req.body;
       if (!id) return res.status(400).json({ error: 'id required' });
-      const ctx = findNodeContext(tree, id);
+      // Same guard as rename, and it matters more here: deleting the first
+      // match would ARCHIVE the products of a branch the admin never opened.
+      const ctx = resolveSingleNode(tree, id);
       if (!ctx) return res.status(404).json({ error: 'Category not found' });
       // Archive the products FIRST — only remove the category from the tree if
       // every product moved to the Archive. If any fail, the category is left

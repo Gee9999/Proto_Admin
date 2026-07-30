@@ -730,12 +730,15 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     setTimeout(() => setToast(null), 4000);
   };
 
-  const reloadTaxonomy = async () => {
+  // `fresh` bypasses the counts endpoint's edge cache. Pass it after a write:
+  // otherwise a rename can read back counts computed up to a minute earlier and
+  // the renamed category shows a stale badge — or none — as if it had failed.
+  const reloadTaxonomy = async ({ fresh = false } = {}) => {
     const tree = await fetchTaxonomy();
     setTaxonomyTree(tree);
     setLiveTaxonomyTree(tree);
     try {
-      const counts = await fetchCategoryProductCounts();
+      const counts = await fetchCategoryProductCounts({ fresh });
       setCategoryProductCounts(counts);
     } catch { /* optional */ }
     return tree;
@@ -1474,20 +1477,19 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     setTaxonomySaving(true);
     try {
       const renameResult = await renameTaxonomyNode(editTaxonomyModal.id, editTaxonomyModal.label.trim());
-      await reloadTaxonomy();
+      await reloadTaxonomy({ fresh: true });
       invalidateAdminCache();
       queryClient.invalidateQueries({ queryKey: ['catalog'] });
       await reorderPanelRef.current?.refresh?.();
       setEditTaxonomyModal(null);
-      if (renameResult?.renameError) {
-        // The tree was renamed but the product-label update failed — products
-        // still carry the old label and would drop out of the renamed node.
-        showToast(`Renamed, but product labels did not update: ${renameResult.renameError}. Reload and try again.`, 'error');
-      } else if (renameResult?.orphansRemaining > 0) {
-        showToast(`Category renamed, but ${renameResult.orphansRemaining} product(s) kept the old label — check Uncategorised`, 'error');
-      } else {
-        showToast('Category updated');
-      }
+      // A rename is now all-or-nothing server-side: a product-label failure
+      // rolls the tree back and returns an error, so reaching here means the
+      // category and every one of its products moved together.
+      showToast(
+        renameResult?.productsRenamed
+          ? `Category updated — ${renameResult.productsRenamed} product(s) renamed`
+          : 'Category updated',
+      );
     } catch (err) {
       if (await handleTaxonomyConflict(err)) {
         setEditTaxonomyModal(null);

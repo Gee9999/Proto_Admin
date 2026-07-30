@@ -1045,7 +1045,14 @@ assert.ok(
   renameBlock.indexOf('saveTaxonomy(next') < renameBlock.indexOf('renameProductsForNode('),
   'rename saves the tree before touching product rows',
 );
-assert.match(renameBlock, /renameError/, 'rename reports product-write failures');
+// A product-write failure no longer just gets REPORTED — reporting still left
+// the tree renamed and the rows on the old label, which is the state where the
+// category renders empty and the admin has no way to retry (the UI no longer
+// knows the old label). The rename is all-or-nothing now: on failure it puts
+// both halves back and returns an error.
+assert.match(renameBlock, /renameProductsForNode\(supabase, ctx, newLabel, oldLabel\)/, 'a failed rename moves the products back');
+assert.match(renameBlock, /renameNodeLabel\(await loadTaxonomy\(\{ bypassCache: true \}\), id, oldLabel\)/, 'a failed rename restores the tree label');
+assert.match(renameBlock, /resolveSingleNode\(tree, id\)/, 'rename refuses an id that matches more than one node');
 assert.match(taxonomyApiSrc2, /pruneSortOrdersForNode/, 'deleteNode prunes orphaned sort orders');
 console.log('✓ Hardening: rename ordering + sort-order pruning');
 
