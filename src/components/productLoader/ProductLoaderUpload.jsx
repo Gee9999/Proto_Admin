@@ -51,6 +51,7 @@ const WARNING_LABELS = {
   image_exists: 'Image already exists',
   low_stock: 'No available stock',
   price_zero: 'Price missing',
+  price_suspect_ex_vat: 'Price looks EX VAT — check Positill (×1.15 lands on .00/.50)',
   needs_category: 'Category required',
   not_in_catalog: 'Positill code not found',
   too_many_variant_images: 'Maximum 4 images per colour',

@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { requireOwner } from './_admin-auth.js';
+import { looksLikeExVatPrice } from '../lib/catalogue-price.mjs';
 import { isSqlConfigured } from './_sql-provider.js';
 import {
   classifyBatchItem,
@@ -121,6 +122,7 @@ export default async function handler(req, res) {
       // match.price is already resolved to the customer-facing VAT-inclusive
       // price. Do not let raw Positill PRICE_A override it for colour children.
       const resolvedPrice = Number(match.price ?? inheritedWebsiteRow?.price ?? 0);
+      if (looksLikeExVatPrice(resolvedPrice)) warnings.push('price_suspect_ex_vat');
       const resolvedAvailable = match.sqlRow?.available
         ?? inheritedWebsiteRow?.available_stock
         ?? inheritedWebsiteRow?.stock_qty
