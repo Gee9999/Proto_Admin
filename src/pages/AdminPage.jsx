@@ -164,6 +164,8 @@ function LazySectionFallback({ label = 'Loading section…' }) {
   );
 }
 
+const COMPACT_CUSTOMER_ROWS = 8;
+
 const ORDER_TAB_DEFS = [
   { key: 'new', label: 'New' },
   { key: 'handed', label: 'Handed Over' },
@@ -512,6 +514,12 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   const [customerPage, setCustomerPage] = useState(1);
   const [customerRows, setCustomerRows] = useState([]);
   const [customerTotal, setCustomerTotal] = useState(0);
+  // Compact by default: the section opens showing a handful of rows per tab
+  // rather than every approved customer / trade request at once.
+  const [customerListExpanded, setCustomerListExpanded] = useState(false);
+  const customersReqSeqRef = useRef(0);
+  const customersCacheRef = useRef(new Map());
+  const customersCacheKeyRef = useRef('');
   const [customerEmailOpen, setCustomerEmailOpen] = useState(false);
   const [composeTarget, setComposeTarget] = useState(null);
   const [addCustomerOpen, setAddCustomerOpen] = useState(false);
@@ -555,6 +563,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   const ordersReqSeqRef = useRef(0);
   const ordersCacheRef = useRef(new Map());
   const ordersCacheKeyRef = useRef('');
+  const orderTabCountsSigRef = useRef('');
   // The sidebar badge behaves like a notification: opening Order Requests
   // marks the current count as SEEN (persisted), and the badge only returns
   // when the count rises above what was seen.
@@ -623,6 +632,20 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
 
   const loadCustomers = async () => {
     if (!CUSTOMER_LIST_TABS.has(customerTab)) return;
+    // Same discipline as loadOrders: sequence the requests so a slow response
+    // can never repaint over a newer one, and paint revisited tabs instantly
+    // from cache while revalidating — the section used to blank on every tab,
+    // page and search change, which is what made it feel choppy.
+    const key = `${customerTab}|${customerPage}|${customerSearchDebounced}|${customerBusinessType}`;
+    const seq = (customersReqSeqRef.current += 1);
+    const cached = customersCacheRef.current.get(key);
+    if (cached) {
+      setCustomerRows(cached.rows);
+      setCustomerTotal(cached.total);
+    } else if (customersCacheKeyRef.current !== key) {
+      setCustomerRows([]);
+    }
+    customersCacheKeyRef.current = key;
     setLoading(true);
     try {
       const data = customerTab === 'proto-active'
@@ -634,14 +657,19 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
           searchQuery: customerSearchDebounced,
           businessType: customerBusinessType,
         });
+      if (seq !== customersReqSeqRef.current) return; // superseded — drop it
+      customersCacheRef.current.set(key, { rows: data.rows, total: data.total });
       setCustomerRows(data.rows);
       setCustomerTotal(data.total);
       if (data.migrationRequired && data.message) showToast(data.message, 'warning');
     } catch (err) {
-      showToast(err.message || 'Failed to load customers', 'error');
-      setCustomerRows([]);
-      setCustomerTotal(0);
-    } finally { setLoading(false); }
+      if (seq === customersReqSeqRef.current) {
+        showToast(err.message || 'Failed to load customers', 'error');
+        if (!cached) { setCustomerRows([]); setCustomerTotal(0); }
+      }
+    } finally {
+      if (seq === customersReqSeqRef.current) setLoading(false);
+    }
   };
 
   const [exportingCustomers, setExportingCustomers] = useState(false);
@@ -815,11 +843,26 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         tab: orderTab,
       });
       if (seq !== ordersReqSeqRef.current) return; // superseded — drop it
-      ordersCacheRef.current.set(key, { rows: data.rows, total: data.total });
-      setOrders(data.rows);
-      setOrderTotal(data.total);
+      // The 30s/focus refresh usually returns exactly what is already on
+      // screen. Replacing state with an identical-but-new array still
+      // re-renders every row AND re-fires the per-row detail effects below
+      // (confirmation status, presale invoices, payment records), which is
+      // what made the Payment and All-orders tabs visibly blink on every
+      // refresh. If nothing changed, change nothing.
+      const sig = JSON.stringify([data.total, data.rows.map((r) => [r.id, r.status, r.updated_at, r.confirmation_sent_at ?? null])]);
+      const prevEntry = ordersCacheRef.current.get(key);
+      const unchanged = prevEntry?.sig === sig && ordersCacheKeyRef.current === key && orders.length === data.rows.length;
+      ordersCacheRef.current.set(key, { rows: data.rows, total: data.total, sig });
+      if (!unchanged) {
+        setOrders(data.rows);
+        setOrderTotal(data.total);
+      }
       if (data.tabCounts) {
-        setOrderTabCounts(data.tabCounts);
+        const countsSig = JSON.stringify(data.tabCounts);
+        if (orderTabCountsSigRef.current !== countsSig) {
+          orderTabCountsSigRef.current = countsSig;
+          setOrderTabCounts(data.tabCounts);
+        }
         const badge = data.tabCounts.unpaid ?? data.tabCounts.new;
         if (badge != null) setNewOrdersCount(badge);
       }
@@ -1095,6 +1138,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   };
 
   useEffect(() => { if (activeSection === 'customers') void loadCustomers(); }, [activeSection, customerPage, customerTab, customerSearchDebounced, customerBusinessType]);
+  useEffect(() => { setCustomerListExpanded(false); }, [customerTab]);
   useEffect(() => {
     if (activeSection !== 'customers') return;
     void fetchCrmContactsPage({ page: 1, pageSize: 1 })
@@ -1147,24 +1191,30 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     };
   }, [activeSection]);
 
+  // Merge fetched per-order detail into a map WITHOUT changing state identity
+  // when nothing is new — a same-content setState here re-renders the whole
+  // order list, and these effects run on every refresh cycle.
+  const mergeMapIfChanged = (setter) => (rows) => setter((prev) => {
+    let changed = false;
+    for (const k of Object.keys(rows || {})) {
+      if (JSON.stringify(prev[k]) !== JSON.stringify(rows[k])) { changed = true; break; }
+    }
+    return changed ? { ...prev, ...rows } : prev;
+  });
+
+  // One effect, not the previous two overlapping copies of it (both fetched
+  // confirmation status on every orders change, one without a section guard).
   useEffect(() => {
     if (activeSection !== 'orders') return;
     const ids = orders.filter((o) => normalizeOrderStatus(o.status) === 'order sent').map((o) => o.id);
     if (!ids.length) return;
-    fetchConfirmationSent(ids)
-      .then((rows) => setConfirmationSent((prev) => ({ ...prev, ...rows })))
-      .catch((err) => showToast(err.message || 'Failed to load confirmation status', 'error'));
-  }, [activeSection, orders]);
-
-  useEffect(() => {
-    const ids = orders.filter((o) => normalizeOrderStatus(o.status) === 'order sent').map((o) => o.id);
-    if (!ids.length) return;
     fetchPresaleInvoices(ids)
-      .then((invoices) => setPresaleInvoices((prev) => ({ ...prev, ...invoices })))
+      .then(mergeMapIfChanged(setPresaleInvoices))
       .catch((err) => showToast(err.message || 'Failed to load presale invoices', 'error'));
     fetchConfirmationSent(ids)
-      .then((rows) => setConfirmationSent((prev) => ({ ...prev, ...rows })))
+      .then(mergeMapIfChanged(setConfirmationSent))
       .catch((err) => showToast(err.message || 'Failed to load confirmation status', 'error'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSection, orderTab, orders]);
 
   useEffect(() => {
@@ -1174,10 +1224,10 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       .map((o) => o.id);
     if (!ids.length) return;
     fetchPaymentRecords(ids)
-      .then((rows) => setPaymentRecords((prev) => ({ ...prev, ...rows })))
+      .then(mergeMapIfChanged(setPaymentRecords))
       .catch((err) => showToast(err.message || 'Failed to load payment records', 'error'));
     fetchConfirmationSent(ids)
-      .then((rows) => setConfirmationSent((prev) => ({ ...prev, ...rows })))
+      .then(mergeMapIfChanged(setConfirmationSent))
       .catch((err) => showToast(err.message || 'Failed to load confirmation status', 'error'));
     // NOTE: confirmationSentIds is intentionally NOT a dependency. It is a
     // useMemo that returns a new Set whenever confirmationSent changes, and this
@@ -1956,6 +2006,18 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   const orderPages = Math.max(1, Math.ceil(orderTotal / ADMIN_PAGE_SIZE));
 
   const customerPages = Math.max(1, Math.ceil(customerTotal / ADMIN_PAGE_SIZE));
+  // Compact view: first rows only, with an explicit Show all / Minimise
+  // toggle. Collapsing also returns to page 1 so the slice is never taken
+  // from the middle of a paginated set.
+  const visibleCustomerRows = customerListExpanded
+    ? customerRows
+    : customerRows.slice(0, COMPACT_CUSTOMER_ROWS);
+  const toggleCustomerList = () => {
+    setCustomerListExpanded((v) => {
+      if (v) setCustomerPage(1);
+      return !v;
+    });
+  };
   const fulfillmentNoteSections = buildOrderNoteSections({ userNotes: fulfillmentNotes });
 
   return (
@@ -2267,7 +2329,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                         No pre-registration contacts in this list yet.
                       </div>
                     )}
-                    {customerRows.map((row) => (
+                    {visibleCustomerRows.map((row) => (
                       <div key={row.id || row.email} className="adm-list-row" style={{ gridTemplateColumns: '80px 1.2fr 110px 90px 1.1fr 100px 80px 100px 120px', alignItems: 'center' }}>
                         <span style={{ fontWeight: 800, fontFamily: 'monospace' }}>{row.account_code}</span>
                         <span style={{ fontWeight: 600, fontSize: 13 }}>{row.name}</span>
@@ -2314,7 +2376,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                     {customerRows.length === 0 && !loading && (
                       <div className="adm-empty" style={{ padding: '24px 0' }}>No pending trade requests.</div>
                     )}
-                    {customerRows.map((person) => (
+                    {visibleCustomerRows.map((person) => (
                       <div key={person.id} className="adm-list-row" style={{ gridTemplateColumns: '1.4fr 1fr 0.9fr 1.3fr 0.8fr 90px 200px', alignItems: 'center' }}>
                         <div>
                           <div style={{ fontWeight: 700, fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -2375,7 +2437,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                     {customerRows.length === 0 && !loading && (
                       <div className="adm-empty" style={{ padding: '24px 0' }}>No approved customers yet.</div>
                     )}
-                    {customerRows.map((person) => (
+                    {visibleCustomerRows.map((person) => (
                       <div key={person.id} className="adm-list-row" style={{ gridTemplateColumns: '80px 1.1fr 1.1fr 1fr 80px 70px 90px' }}>
                         <span style={{ fontWeight: 800, fontFamily: 'monospace', fontSize: 12 }}>{person.customer_code || '—'}</span>
                         <div>
@@ -2407,7 +2469,23 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                     ))}
                   </div>
                 )}
-                <Pager page={customerPage} totalPages={customerPages} onChange={setCustomerPage} />
+                {customerTotal > COMPACT_CUSTOMER_ROWS && (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 2px' }}>
+                    <button
+                      type="button"
+                      className="adm-btn-ghost"
+                      onClick={toggleCustomerList}
+                      style={{ fontWeight: 700, fontSize: 13 }}
+                    >
+                      {customerListExpanded
+                        ? 'Minimise list'
+                        : `Show all ${customerTotal} ${customerTab === 'requests' ? 'trade requests' : 'customers'}`}
+                    </button>
+                  </div>
+                )}
+                {customerListExpanded && (
+                  <Pager page={customerPage} totalPages={customerPages} onChange={setCustomerPage} />
+                )}
               </div>
               </SectionErrorBoundary>
             )}
