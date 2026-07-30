@@ -1198,4 +1198,17 @@ assert.doesNotMatch(
 );
 console.log('✓ Featured products: live across admins, removable, detail loads separately');
 
+// Fulfilment "order flickers away": the first pick tick advances the order's
+// status server-side (pending -> order in progress), and the next 30s/focus
+// list refresh drops it from the tab the admin is working in — the open order
+// vanished mid-fulfilment. The open order must stay pinned on screen with an
+// explanation instead.
+const adminPageForPin = readSrc('src/pages/AdminPage.jsx');
+assert.match(adminPageForPin, /const \[pinnedOrder, setPinnedOrder\] = useState\(null\)/, 'an expanded order that leaves its tab is pinned');
+assert.match(adminPageForPin, /__pinned: true/, 'the pinned row is prepended to the visible list');
+assert.match(adminPageForPin, /if \(loading\) return; \/\/ only judge settled lists/, 'pinning never fires on a mid-refresh blank');
+assert.match(adminPageForPin, /\}, \[orderTab, orderPage, orderSearchDebounced\]\)/, 'a deliberate tab/page/search change clears the pin');
+assert.match(adminPageForPin, /advanced out of this tab/, 'the admin is told why the order moved');
+console.log('✓ Fulfilment: an open order never silently vanishes from its tab');
+
 console.log('\nAll smoke checks passed.');
