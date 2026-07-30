@@ -1168,4 +1168,34 @@ assert.match(readSrc('src/components/productLoader/ProductLoaderFolder.jsx'), /C
 assert.match(readSrc('src/components/productLoader/ProductLoaderSingleImage.jsx'), /CategoryPathSelect/, 'single-image loader uses the full-depth category picker');
 console.log('✓ Product Loader: full-depth subcategory picker + deep-path persistence');
 
+// Featured products — two faults reported together, one shared area.
+//
+// (1) It did not pick up another admin's changes. The app-wide query defaults
+//     are staleTime 60s with no focus refetch and no interval, which suit the
+//     heavy catalogue queries; for a short list of SKUs they mean a tab keeps
+//     showing its own cached copy indefinitely.
+// (2) Products could not be removed. Picks debounce for 2s while a remove
+//     fires immediately, so a queued older payload — still containing the
+//     product — could land last and write it straight back.
+const featuredQueryBlock = featuredPanelSrc.match(/const featuredQuery = useQuery\(\{[\s\S]*?\}\);/)?.[0] || '';
+assert.match(featuredQueryBlock, /staleTime: 0/, 'the featured list is never served stale');
+assert.match(featuredQueryBlock, /refetchOnMount: 'always'/, 'the featured list refetches on mount');
+assert.match(featuredQueryBlock, /refetchOnWindowFocus: true/, "another admin's change appears on focus");
+assert.match(featuredPanelSrc, /const cancelQueuedSaves = useCallback/, 'queued saves can be cancelled');
+assert.match(
+  featuredPanelSrc.match(/const removeFeatured = useCallback[\s\S]*?\}, \[/)?.[0] || '',
+  /cancelQueuedSaves\(\)/,
+  'removing a product drops any debounced save that still contains it',
+);
+assert.match(featuredPanelSrc, /if \(data\.seq !== editSeqRef\.current\) return;/, 'a superseded save never repaints the list');
+// The list itself must not wait on the full-catalogue fetch that only supplies
+// names and images — that gate is what made the section look like it never
+// loaded when the hydrate was slow or failed.
+assert.doesNotMatch(
+  featuredPanelSrc,
+  /featuredQuery\.isLoading \|\| \(featuredItems\.length > 0 && hydrateQuery\.isLoading\)/,
+  'the featured rows render without waiting for product details',
+);
+console.log('✓ Featured products: live across admins, removable, detail loads separately');
+
 console.log('\nAll smoke checks passed.');
