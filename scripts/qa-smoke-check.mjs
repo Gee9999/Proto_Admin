@@ -1211,4 +1211,18 @@ assert.match(adminPageForPin, /\}, \[orderTab, orderPage, orderSearchDebounced\]
 assert.match(adminPageForPin, /advanced out of this tab/, 'the admin is told why the order moved');
 console.log('✓ Fulfilment: an open order never silently vanishes from its tab');
 
+// Payment / All-orders blink + choppy Customer Management: every 30s refresh
+// used to replace identical state with new object identities, re-rendering
+// every row and re-firing the per-row detail fetches; and loadCustomers had
+// no sequencing or cache, so every tab/page/search change blanked the list
+// and slow responses could land out of order.
+assert.match(adminPageForPin, /const unchanged = prevEntry\?\.sig === sig/, 'an identical orders refresh changes nothing on screen');
+assert.match(adminPageForPin, /const mergeMapIfChanged = /, 'per-order detail merges are no-ops when nothing changed');
+assert.doesNotMatch(adminPageForPin, /\.then\(\(rows\) => setConfirmationSent\(\(prev\) => \(\{ \.\.\.prev, \.\.\.rows \}\)\)\)/, 'no unguarded confirmation merges remain');
+assert.match(adminPageForPin, /customersReqSeqRef/, 'customer loads are sequenced');
+assert.match(adminPageForPin, /if \(seq !== customersReqSeqRef\.current\) return; \/\/ superseded/, 'a stale customers response never repaints');
+assert.match(adminPageForPin, /const \[customerListExpanded, setCustomerListExpanded\] = useState\(false\)/, 'customer lists open minimised');
+assert.match(adminPageForPin, /Show all \$\{customerTotal\}/, 'a Show all toggle expands the full list');
+console.log('✓ Orders refresh is render-stable; Customer Management sequenced, cached, minimisable');
+
 console.log('\nAll smoke checks passed.');
