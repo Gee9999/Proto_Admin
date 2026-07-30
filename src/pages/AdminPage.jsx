@@ -164,6 +164,16 @@ function LazySectionFallback({ label = 'Loading section…' }) {
   );
 }
 
+const ORDER_TAB_DEFS = [
+  { key: 'new', label: 'New' },
+  { key: 'handed', label: 'Handed Over' },
+  { key: 'progress', label: 'In Progress' },
+  { key: 'sent', label: 'Order Confirmation' },
+  { key: 'paid', label: 'Payment' },
+  { key: 'all', label: 'All orders', overview: true },
+];
+const ORDER_TAB_LABELS = Object.fromEntries(ORDER_TAB_DEFS.map((t) => [t.key, t.label]));
+
 const ADMIN_PAGE_SIZE = 50;
 const CUSTOMER_SERVICE_SECTIONS = ['orders', 'customers', 'comms'];
 
@@ -522,6 +532,11 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   const [pendingCount, setPendingCount] = useState(0);
   const [newOrdersCount, setNewOrdersCount] = useState(0);
   const [expandedOrderId, setExpandedOrderId] = useState(null);
+  // The order the admin has open, kept renderable after a list refresh drops
+  // it from the current tab (see the pinning effects near loadOrders).
+  const [pinnedOrder, setPinnedOrder] = useState(null);
+  const lastExpandedRowRef = useRef(null);
+  const pinToastForRef = useRef(null);
   // Order Workspace now lives below the order list, revealed on demand. Auto-open
   // when a workspace was deep-linked so the URL still lands on it.
   const [orderWorkspaceOpen, setOrderWorkspaceOpen] = useState(Boolean(initialOrderWorkspaceId));
@@ -1183,6 +1198,43 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     };
   }, [activeSection]);
 
+  // Remember the expanded order's row while it is present in the list, and
+  // unpin the moment it reappears (e.g. the admin switched to the tab it
+  // moved to).
+  useEffect(() => {
+    const row = orders.find((o) => o.id === expandedOrderId);
+    if (row) {
+      lastExpandedRowRef.current = row;
+      setPinnedOrder((prev) => (prev ? null : prev));
+    }
+  }, [orders, expandedOrderId]);
+
+  // An expanded order can vanish mid-fulfilment: the team's first tick
+  // advances its status server-side (pending -> order in progress), and the
+  // next 30s/focus refresh drops it from the tab the admin is looking at.
+  // Losing the panel you are working in with no explanation reads as a bug,
+  // so keep the open order pinned at the top of the list until it is
+  // collapsed or the admin changes tab, and say what happened once.
+  useEffect(() => {
+    if (!expandedOrderId) { setPinnedOrder(null); return; }
+    if (loading) return; // only judge settled lists, never mid-refresh blanks
+    if (orders.some((o) => o.id === expandedOrderId)) return;
+    const remembered = lastExpandedRowRef.current;
+    if (!remembered || remembered.id !== expandedOrderId) return;
+    setPinnedOrder((prev) => (prev?.id === expandedOrderId ? prev : remembered));
+    if (pinToastForRef.current !== expandedOrderId) {
+      pinToastForRef.current = expandedOrderId;
+      showToast(`Order ${remembered.order_number || ''} advanced out of this tab — kept on screen while open`.replace('  ', ' '));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders, expandedOrderId, loading]);
+
+  // A deliberate tab/page/search change is a navigation, not a vanish — drop
+  // the pin and let the new list speak for itself.
+  useEffect(() => {
+    setPinnedOrder(null);
+  }, [orderTab, orderPage, orderSearchDebounced]);
+
   // Load specials on mount
   useEffect(() => {
     fetchSpecials().then((data) => setSpecials(data?.items || [])).catch(() => {});
@@ -1292,7 +1344,10 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     [activeSection],
   );
 
-  const orderRows = orders;
+  const orderRows = useMemo(() => {
+    if (!pinnedOrder || orders.some((o) => o.id === pinnedOrder.id)) return orders;
+    return [{ ...pinnedOrder, __pinned: true }, ...orders];
+  }, [orders, pinnedOrder]);
 
   const openNewProduct = () => {
     const firstCategory = taxonomyTree[0]?.id || categories[0]?.id || '';
@@ -2412,14 +2467,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 {(
                 <>
                 <div className="adm-order-tabs">
-                  {[
-                    { key: 'new', label: 'New' },
-                    { key: 'handed', label: 'Handed Over' },
-                    { key: 'progress', label: 'In Progress' },
-                    { key: 'sent', label: 'Order Confirmation' },
-                    { key: 'paid', label: 'Payment' },
-                    { key: 'all', label: 'All orders', overview: true },
-                  ].map(({ key, label, overview }) => {
+                  {ORDER_TAB_DEFS.map(({ key, label, overview }) => {
                     const count = orderTabCounts?.[key] ?? (key === 'all'
                       ? orderTabCounts?.all ?? orderTotal
                       : 0);
@@ -2472,6 +2520,12 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                     const isPreSale = normalizeOrderStatus(order.status) === 'order sent';
                     return (
                       <div key={order.id}>
+                        {order.__pinned && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px 8px 0 0', color: '#78350f', fontSize: 12, fontWeight: 600 }}>
+                            Picking started, so this order advanced out of the {'\u201C'}{ORDER_TAB_LABELS[orderTab] || orderTab}{'\u201D'} tab.
+                            It stays here while open {'\u2014'} find it under its new status tab afterwards.
+                          </div>
+                        )}
                         <div
                           className={`adm-list-row adm-order-row${focusOrderId === order.id ? ' adm-order-row--focus' : ''}`}
                           style={{ gridTemplateColumns: orderListGridCols, cursor: 'pointer' }}
