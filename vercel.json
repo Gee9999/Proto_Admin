@@ -43,6 +43,9 @@
     "api/bulk-products.js": {
       "maxDuration": 60
     },
+    "api/taxonomy.js": {
+      "maxDuration": 60
+    },
     "api/approve-customers-bulk.js": {
       "maxDuration": 60
     },

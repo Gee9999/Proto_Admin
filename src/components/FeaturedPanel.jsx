@@ -28,6 +28,16 @@ import { formatWebsitePrice } from '../lib/pricing';
 const PICK_SAVE_MS = 2000;
 const ORDER_SAVE_MS = 600;
 
+const LINK_BTN = {
+  background: 'none',
+  border: 0,
+  padding: 0,
+  color: 'inherit',
+  font: 'inherit',
+  textDecoration: 'underline',
+  cursor: 'pointer',
+};
+
 function catalogRowToProduct(row) {
   const images = row.images || [];
   return {
@@ -204,9 +214,17 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
   const orderSaveTimerRef = useRef(null);
   const pendingItemsRef = useRef(null);
 
+  // The app-wide defaults are staleTime 60s, no focus refetch and no interval,
+  // which suit the heavy catalogue queries. They are wrong for this one: when
+  // another admin edits the featured list there is nothing to tell this tab,
+  // so it keeps showing its own cached copy indefinitely. The payload is a
+  // short list of SKUs, so refetching it freely costs nothing.
   const featuredQuery = useQuery({
     queryKey: queryKeys.featuredProducts(),
     queryFn: fetchFeaturedProducts,
+    staleTime: 0,
+    refetchOnMount: 'always',
+    refetchOnWindowFocus: true,
   });
 
   const featuredItems = featuredQuery.data?.items || [];
@@ -279,30 +297,50 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
     };
   }), [featuredItems, catalogBySku]);
 
+  // Every edit gets a number. A save may only apply if it is still the newest
+  // one issued: picks debounce for 2s while a remove fires immediately, so an
+  // older payload could otherwise land last and write the removed product
+  // straight back — which is what made products impossible to remove.
+  const editSeqRef = useRef(0);
+
   const saveMutation = useMutation({
-    mutationFn: (items) => saveFeaturedProducts(
+    mutationFn: ({ items, seq }) => saveFeaturedProducts(
       items,
       queryClient.getQueryData(queryKeys.featuredProducts())?.updatedAt || null,
-    ),
+    ).then((data) => ({ ...data, seq })),
     onSuccess: (data) => {
-      queryClient.setQueryData(queryKeys.featuredProducts(), data);
+      // A response from a superseded edit must not repaint the list.
+      if (data.seq !== editSeqRef.current) return;
+      queryClient.setQueryData(queryKeys.featuredProducts(), { items: data.items, updatedAt: data.updatedAt });
       setSaveMeta({ updatedAt: data.updatedAt });
     },
     onError: (err) => {
       onShowToast?.(err.message || 'Failed to save featured list', 'error');
+      // The optimistic list may no longer reflect the server — resync.
+      queryClient.invalidateQueries({ queryKey: queryKeys.featuredProducts() });
     },
   });
 
+  /** Drop any debounced save that has not fired yet — it is now out of date. */
+  const cancelQueuedSaves = useCallback(() => {
+    if (pickSaveTimerRef.current) clearTimeout(pickSaveTimerRef.current);
+    if (orderSaveTimerRef.current) clearTimeout(orderSaveTimerRef.current);
+    pickSaveTimerRef.current = null;
+    orderSaveTimerRef.current = null;
+    pendingItemsRef.current = null;
+  }, []);
+
   const queueSave = useCallback((items, delayMs) => {
+    cancelQueuedSaves();
+    const seq = (editSeqRef.current += 1);
     pendingItemsRef.current = items;
     const timerRef = delayMs === PICK_SAVE_MS ? pickSaveTimerRef : orderSaveTimerRef;
-    if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       const payload = pendingItemsRef.current;
       pendingItemsRef.current = null;
-      if (payload) saveMutation.mutate(payload);
+      if (payload) saveMutation.mutate({ items: payload, seq });
     }, delayMs);
-  }, [saveMutation]);
+  }, [cancelQueuedSaves, saveMutation]);
 
   useEffect(() => () => {
     if (pickSaveTimerRef.current) clearTimeout(pickSaveTimerRef.current);
@@ -338,13 +376,17 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
   const removeFeatured = useCallback((sku) => {
     const normalized = String(sku || '').trim().toUpperCase();
     if (!window.confirm(`Remove ${normalized} from featured products?`)) return;
+    // A pick from up to 2s ago may still be waiting to save, and its payload
+    // still contains this product. Drop it — this edit supersedes it.
+    cancelQueuedSaves();
+    const seq = (editSeqRef.current += 1);
     const next = featuredItems.filter((item) => item.sku !== normalized);
     queryClient.setQueryData(queryKeys.featuredProducts(), (prev) => ({
       items: next,
       updatedAt: prev?.updatedAt || null,
     }));
-    saveMutation.mutate(next);
-  }, [featuredItems, queryClient, saveMutation]);
+    saveMutation.mutate({ items: next, seq });
+  }, [cancelQueuedSaves, featuredItems, queryClient, saveMutation]);
 
   const handleReorder = useCallback((nextProducts) => {
     const skuOrder = nextProducts.map((p) => p.sku);
@@ -417,15 +459,37 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
 
       {view === 'arrange' && (
         <>
-          {featuredQuery.isLoading || (featuredItems.length > 0 && hydrateQuery.isLoading) ? (
+          {featuredQuery.isLoading ? (
             <p className="adm-section-note"><Loader2 size={14} className="spin" /> Loading featured products…</p>
+          ) : featuredQuery.isError ? (
+            <p className="adm-section-note" style={{ color: '#b91c1c' }}>
+              Could not load the featured list: {featuredQuery.error?.message || 'request failed'}.{' '}
+              <button type="button" style={LINK_BTN} onClick={() => featuredQuery.refetch()}>Try again</button>
+            </p>
           ) : (
-            <FeaturedOrderList
-              products={orderedFeaturedProducts}
-              onReorder={handleReorder}
-              onRemove={removeFeatured}
-              saving={saving}
-            />
+            <>
+              {/* Names, images and stock come from a full-catalogue fetch. The
+                  list itself does not depend on it, so render the rows (and
+                  their Remove buttons) immediately and let the detail fill in
+                  — waiting used to leave the whole section on a spinner, or
+                  showing bare SKUs if that fetch failed, which read as
+                  "featured products don't load". */}
+              {featuredItems.length > 0 && hydrateQuery.isLoading && (
+                <p className="adm-section-note"><Loader2 size={14} className="spin" /> Loading product details…</p>
+              )}
+              {featuredItems.length > 0 && hydrateQuery.isError && (
+                <p className="adm-section-note" style={{ color: '#b45309' }}>
+                  Showing codes only — product details failed to load.{' '}
+                  <button type="button" style={LINK_BTN} onClick={() => hydrateQuery.refetch()}>Retry</button>
+                </p>
+              )}
+              <FeaturedOrderList
+                products={orderedFeaturedProducts}
+                onReorder={handleReorder}
+                onRemove={removeFeatured}
+                saving={saving}
+              />
+            </>
           )}
         </>
       )}

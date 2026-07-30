@@ -1,5 +1,5 @@
 import { codeLookupCandidates, baseCodeToken } from '../lib/code-normalize.mjs';
-import { resolveLoaderCustomerPrice } from '../lib/catalogue-price.mjs';
+import { looksLikeExVatPrice, resolveLoaderCustomerPrice } from '../lib/catalogue-price.mjs';
 import { getProductByCode } from './_sql-provider.js';
 import { toSqlPreview } from './_sql-stmast.js';
 import { parseLoaderFilename } from './_product-loader-filename.js';
@@ -200,11 +200,15 @@ export async function resolveProductLoaderMatch(sb, {
   if (!websiteRow && !sqlRow) warnings.push('not_in_catalog');
   if (websiteRow?.[SLOT_FIELDS[slot - 1]]) warnings.push('image_exists');
   if (!price) warnings.push('price_zero');
+  // The July 2026 import captured EX-VAT prices where the incl-VAT ones
+  // belong, and ~91 products published at the wrong price with nothing
+  // flagging it. Hold anything matching that fingerprint for review.
+  if (looksLikeExVatPrice(price)) warnings.push('price_suspect_ex_vat');
   const available = sqlRow?.available ?? websiteRow?.available_stock ?? websiteRow?.stock_qty;
   if (available != null && Number(available) <= 0) warnings.push('low_stock');
   if (!websiteRow?.category && !sqlRow) warnings.push('needs_category');
 
-  const needsReview = warnings.some((w) => ['price_zero', 'image_exists', 'low_stock', 'needs_category'].includes(w));
+  const needsReview = warnings.some((w) => ['price_zero', 'price_suspect_ex_vat', 'image_exists', 'low_stock', 'needs_category'].includes(w));
 
   return {
     code: effectiveCode,

@@ -47,13 +47,19 @@ export async function fetchTaxonomy({ withCounts = false } = {}) {
   }
 }
 
-export async function fetchCategoryProductCounts({ onlyInStock = false } = {}) {
+export async function fetchCategoryProductCounts({ onlyInStock = false, fresh = false } = {}) {
   const stockParam = onlyInStock ? '&onlyInStock=1' : '';
   // Let the server's 15s SWR edge cache serve this — it's a full website_stock
   // scan, and busting it (a unique ?_=Date.now() + no-store) forced that scan on
   // every dashboard load and every concurrent admin. Counts don't set the edit
   // lock token, so a slightly-cached count is fine.
-  const res = await fetch(`/api/taxonomy?counts=1${stockParam}`);
+  //
+  // EXCEPT straight after a write. s-maxage=15 + stale-while-revalidate=45
+  // means a rename could read back numbers computed up to a minute earlier —
+  // the category shows its old count, or none, and a rename that worked looks
+  // broken. Only that path pays for a fresh scan.
+  const bust = fresh ? `&_=${Date.now()}` : '';
+  const res = await fetch(`/api/taxonomy?counts=1${stockParam}${bust}`, fresh ? { cache: 'no-store' } : undefined);
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || 'Failed to load category counts');
   // Do NOT set _taxonomyUpdatedAt here — see fetchTaxonomy note; the counts

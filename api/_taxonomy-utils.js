@@ -160,6 +160,63 @@ export function findNodeContext(tree, id, parent = null, depth = 0, ancestors = 
   return null;
 }
 
+/**
+ * EVERY node carrying an id, not just the first.
+ *
+ * Ids are supposed to be unique but historically were only checked against
+ * SIBLINGS when a subcategory was added, so a label reused in two branches
+ * ("Opaque" under three bead sizes, "SIZE: 8mm" under several) produced two or
+ * three nodes sharing one id. findNodeContext returns the first of them, so an
+ * edit aimed at one silently lands on another — the node you clicked keeps its
+ * name while a different branch is renamed and ITS products are relabelled.
+ */
+export function findAllNodeContexts(tree, id, parent = null, depth = 0, ancestors = []) {
+  const hits = [];
+  for (const node of tree) {
+    if (node.id === id) hits.push({ node, parent, depth, ancestors: [...ancestors] });
+    if (node.children?.length) {
+      hits.push(...findAllNodeContexts(node.children, id, node, depth + 1, [...ancestors, node]));
+    }
+  }
+  return hits;
+}
+
+/** Human-readable "Beads › Seed Beads › SIZE: 8/0 › Opaque" for a context. */
+export function nodePathLabel(ctx) {
+  return [...(ctx.ancestors || []).map((a) => a.label), ctx.node.label].join(' › ');
+}
+
+/**
+ * Resolve exactly one node, or refuse. Editing the wrong branch silently is
+ * far worse than refusing: the admin can rename the duplicate first and then
+ * come back, but they cannot undo a rename applied to products they never saw.
+ */
+export function resolveSingleNode(tree, id) {
+  const hits = findAllNodeContexts(tree, id);
+  if (!hits.length) return null;
+  if (hits.length > 1) {
+    const err = new Error(
+      `"${hits[0].node.label}" shares its internal id with ${hits.length - 1} other categor${hits.length === 2 ? 'y' : 'ies'} `
+      + `(${hits.map(nodePathLabel).join(' | ')}). Rename one of them to something unique first — `
+      + 'editing now would change the wrong one.',
+    );
+    err.status = 409;
+    err.ambiguousId = id;
+    err.matches = hits.map(nodePathLabel);
+    throw err;
+  }
+  return hits[0];
+}
+
+/** All ids used anywhere in the tree, for global uniqueness checks. */
+export function collectNodeIds(tree, out = new Set()) {
+  for (const node of tree || []) {
+    if (node?.id) out.add(node.id);
+    if (node.children?.length) collectNodeIds(node.children, out);
+  }
+  return out;
+}
+
 export function findSubPathIds(mainNode, targetId) {
   function walk(nodes, path) {
     for (const node of nodes) {
@@ -314,25 +371,41 @@ export function addCategoryNode(tree, label) {
   return { tree: [...tree, node], node, created: true };
 }
 
+/**
+ * A slug that no node anywhere in the tree is already using.
+ *
+ * Ids must be unique across the WHOLE tree, not just among siblings. Every
+ * id-keyed operation — rename, delete, the count badges, browsing by path —
+ * resolves an id to one node, so a second node sharing it makes those
+ * operations land on whichever comes first. Checking siblings only is how the
+ * live tree ended up with "Opaque" three times over, once under each bead
+ * size. The same label in two branches is perfectly legitimate; only the id
+ * has to differ, so disambiguate rather than reject.
+ */
+export function uniqueNodeId(tree, baseId) {
+  const used = collectNodeIds(tree);
+  if (!used.has(baseId)) return baseId;
+  for (let n = 2; n < 1000; n += 1) {
+    const candidate = `${baseId}-${n}`;
+    if (!used.has(candidate)) return candidate;
+  }
+  throw new Error(`Could not allocate a unique id for "${baseId}"`);
+}
+
 export function addSubcategoryNode(tree, parentId, label) {
   const trimmed = String(label || '').trim();
   if (!trimmed) throw new Error('Subcategory name is required');
-  const id = labelToSlug(trimmed);
-  if (!id) throw new Error('Invalid subcategory name');
+  const slug = labelToSlug(trimmed);
+  if (!slug) throw new Error('Invalid subcategory name');
 
   const ctx = findNodeContext(tree, parentId);
   if (!ctx) throw new Error('Parent category not found');
 
   const siblings = ctx.node.children || [];
-  const existing = siblings.find((c) => c.id === id);
-  if (existing) {
-    if (existing.label !== trimmed) {
-      throw new Error(`Slug collision: "${existing.label}" and "${trimmed}" both map to "${id}"`);
-    }
-    return { tree, node: existing, created: false };
-  }
+  const existing = siblings.find((c) => normalizeLabel(c.label) === normalizeLabel(trimmed));
+  if (existing) return { tree, node: existing, created: false };
 
-  const node = { id, label: trimmed, children: [] };
+  const node = { id: uniqueNodeId(tree, slug), label: trimmed, children: [] };
   ctx.node.children = [...siblings, node];
   return { tree: [...tree], node, created: true };
 }
@@ -381,6 +454,20 @@ export function buildNodeProductFilter(ctx) {
 const SCOPE_FETCH_COLS = 'sku,category,subcategory_one,subcategory_two,subcategory_three,subcategory_four,subcategory_extra';
 
 /**
+ * Sort key for every paged scan in this module.
+ *
+ * LIMIT/OFFSET without an ORDER BY has NO stable row order: Postgres re-runs
+ * the scan for each page, and any UPDATE in between rewrites that row at the
+ * end of the heap and shifts every later row back one position — so the next
+ * page starts past a row that was never served. website_stock is written to
+ * continuously by the Positill stock sync, so this is not theoretical: a scan
+ * that needs more than one page (a main category, or any full-table pass)
+ * silently skips products. `sku` is UNIQUE and never changes, so ordering by
+ * it makes the pages deterministic.
+ */
+const PAGE_SORT_COLUMN = 'sku';
+
+/**
  * Fetch rows belonging to a node scope with whitespace/case-tolerant matching.
  * Pass 1 narrows server-side with a contains-ilike on the deepest column
  * (catches padded values like " Fasteners"); pass 2 verifies the full
@@ -404,6 +491,7 @@ export async function fetchRowsMatchingNodeScope(supabase, table, { column, filt
       .from(table)
       .select(SCOPE_FETCH_COLS)
       .ilike(column, pattern)
+      .order(PAGE_SORT_COLUMN, { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw error;
     const batch = data || [];
@@ -593,6 +681,7 @@ export async function collectMotarroSkusUnderNode(supabase, tree, nodeId) {
     const { data, error } = await supabase
       .from('website_stock')
       .select(MOTTARO_SCAN_COLS)
+      .order(PAGE_SORT_COLUMN, { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw error;
     const batch = data || [];
@@ -679,6 +768,7 @@ export async function buildCategoryProductCounts(supabase, tree, { onlyInStock =
     const { data, error } = await supabase
       .from('website_stock')
       .select(COUNT_ROW_COLS)
+      .order(PAGE_SORT_COLUMN, { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw error;
     const batch = data || [];
