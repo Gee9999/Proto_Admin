@@ -29,6 +29,12 @@ function fakeStock(rows) {
     from() {
       return {
         select() { return this; },
+        // Paged scans order by sku so pages stay stable while the stock sync
+        // writes to the table — see api/_taxonomy-utils.js PAGE_SORT_COLUMN.
+        order(column) {
+          const sorted = [...rows].sort((a, b) => String(a[column]).localeCompare(String(b[column])));
+          return { ...this, range: (from, to) => Promise.resolve({ data: sorted.slice(from, to + 1), error: null }) };
+        },
         range(from, to) {
           return Promise.resolve({ data: rows.slice(from, to + 1), error: null });
         },

@@ -381,6 +381,20 @@ export function buildNodeProductFilter(ctx) {
 const SCOPE_FETCH_COLS = 'sku,category,subcategory_one,subcategory_two,subcategory_three,subcategory_four,subcategory_extra';
 
 /**
+ * Sort key for every paged scan in this module.
+ *
+ * LIMIT/OFFSET without an ORDER BY has NO stable row order: Postgres re-runs
+ * the scan for each page, and any UPDATE in between rewrites that row at the
+ * end of the heap and shifts every later row back one position — so the next
+ * page starts past a row that was never served. website_stock is written to
+ * continuously by the Positill stock sync, so this is not theoretical: a scan
+ * that needs more than one page (a main category, or any full-table pass)
+ * silently skips products. `sku` is UNIQUE and never changes, so ordering by
+ * it makes the pages deterministic.
+ */
+const PAGE_SORT_COLUMN = 'sku';
+
+/**
  * Fetch rows belonging to a node scope with whitespace/case-tolerant matching.
  * Pass 1 narrows server-side with a contains-ilike on the deepest column
  * (catches padded values like " Fasteners"); pass 2 verifies the full
@@ -404,6 +418,7 @@ export async function fetchRowsMatchingNodeScope(supabase, table, { column, filt
       .from(table)
       .select(SCOPE_FETCH_COLS)
       .ilike(column, pattern)
+      .order(PAGE_SORT_COLUMN, { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw error;
     const batch = data || [];
@@ -593,6 +608,7 @@ export async function collectMotarroSkusUnderNode(supabase, tree, nodeId) {
     const { data, error } = await supabase
       .from('website_stock')
       .select(MOTTARO_SCAN_COLS)
+      .order(PAGE_SORT_COLUMN, { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw error;
     const batch = data || [];
@@ -679,6 +695,7 @@ export async function buildCategoryProductCounts(supabase, tree, { onlyInStock =
     const { data, error } = await supabase
       .from('website_stock')
       .select(COUNT_ROW_COLS)
+      .order(PAGE_SORT_COLUMN, { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw error;
     const batch = data || [];
