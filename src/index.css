@@ -8812,3 +8812,201 @@ html, body { background: #f5f5f5; color: #111827; }
   border-top: 1px solid #e5e7eb;
   background: #fff;
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   RESPONSIVE LAYER — consolidated, authoritative
+   ──────────────────────────────────────────────────────────────────────
+   Appended last on purpose: the shell rules (.adm-shell/.adm-layout/
+   .adm-sidebar/.adm-main) are each declared twice earlier in this file,
+   so anything that must win is stated here rather than chased upstream.
+
+   Breakpoints (the whole app uses these four, nothing else):
+     --  ≤1024px  tablet
+     --  ≤ 900px  mobile: sidebar becomes a drawer
+     --  ≤ 720px  phone:  data rows become cards
+     --  ≤ 400px  small phone
+   ══════════════════════════════════════════════════════════════════════ */
+
+/* ── 1. Stop grid tracks being sized by their widest child ──
+   A CSS grid track defaults to min-content, so one 1055px-wide table row
+   stretched .adm-main to 1083px inside a 390px viewport — and .adm-panel's
+   overflow-x:clip then made the overflowing columns unreachable rather than
+   merely scrollable. minmax(0,1fr) is what keeps a grid child shrinkable. */
+.adm-layout { grid-template-columns: minmax(0, 1fr); }
+@media (min-width: 901px) {
+  .adm-layout { grid-template-columns: 210px minmax(0, 1fr); }
+}
+.adm-main { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.adm-main > *,
+.adm-panel > * { min-width: 0; }
+.adm-panel { overflow-x: visible; }
+
+/* ── 2. Never let the document itself scroll sideways ── */
+html, body { max-width: 100%; overflow-x: hidden; }
+
+/* ── 3. Above the card breakpoint a wide table scrolls inside its own box ──
+   .adm-list is declared `overflow: hidden` (to clip its border-radius), so
+   once rule 1 stopped the page from widening, any table wider than the panel
+   was silently CLIPPED instead — the Actions column lost its buttons at
+   1280px. Scrolling in-container is the correct fallback at these widths. */
+@media (min-width: 721px) {
+  .adm-list { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+
+/* ══════════════ TABLET ≤1024px ══════════════ */
+@media (max-width: 1024px) {
+  .adm-layout { grid-template-columns: 200px minmax(0, 1fr); }
+}
+
+/* ══════════════ MOBILE ≤900px ══════════════ */
+@media (max-width: 900px) {
+  .adm-layout { grid-template-columns: minmax(0, 1fr); }
+
+  /* Stats: one compact scrollable strip instead of a 2x2 block that pushed
+     the actual content ~330px down the page on a phone. */
+  .adm-stats-bar {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scroll-snap-type: x proximity;
+    -webkit-overflow-scrolling: touch;
+    padding: 10px 12px;
+    scrollbar-width: none;
+  }
+  .adm-stats-bar::-webkit-scrollbar { display: none; }
+  .adm-stat {
+    flex: 0 0 auto;
+    min-width: 104px;
+    scroll-snap-align: start;
+    border-right: none;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .adm-stat-value { font-size: 19px; }
+  .adm-stat-label { font-size: 10px; }
+
+  /* Toolbar controls go full width and stack. */
+  .adm-toolbar { display: grid; grid-template-columns: 1fr !important; gap: 8px; }
+  .adm-toolbar > * { width: 100%; min-width: 0; }
+
+  /* Section head: title above actions, actions full width and reachable. */
+  .adm-section-head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .adm-section-head > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+  .adm-section-head > div:last-child > button { flex: 1 1 auto; justify-content: center; }
+}
+
+/* ══════════════ PHONE ≤720px — rows become cards ══════════════
+   .adm-list-head / .adm-list-row carry their column template as an INLINE
+   style (9 fixed columns, ~1055px), and an inline style can only be beaten
+   by !important. That is what these declarations are for — without them the
+   grid cannot be restacked from CSS at all. */
+@media (max-width: 720px) {
+  /* Default for every list at phone width: scroll in-container, never clip.
+     This is also the graceful fallback if :has() is unsupported — the card
+     rules below simply don't apply and the list stays a scrollable table. */
+  .adm-list { border-radius: 12px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .adm-list:has([data-label]) { overflow: visible; }
+
+  /* Only lists whose cells carry data-label become cards — an unlabelled row
+     would stack into a column of bare values with no captions, which is worse
+     than scrolling. Every other list keeps the in-container scroll below. */
+  .adm-list:not(:has([data-label])) { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+  .adm-list:has([data-label]) .adm-list-head { display: none !important; }
+
+  .adm-list:has([data-label]) .adm-list-row {
+    grid-template-columns: 1fr !important;
+    min-width: 0 !important;
+    gap: 0 !important;
+    padding: 0 !important;
+    border-top: none;
+    margin: 0 0 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #fff;
+    overflow: hidden;
+  }
+  .adm-list:has([data-label]) .adm-list-row:last-child { margin-bottom: 0; }
+
+  /* Each cell becomes a labelled row inside the card. The label comes from
+     data-label; cells without one still render, just without a caption. */
+  .adm-list:has([data-label]) .adm-list-row > * {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 44px;
+    padding: 9px 14px;
+    border-top: 1px solid #f3f4f6;
+    font-size: 14px;
+    text-align: right;
+    word-break: break-word;
+  }
+  .adm-list:has([data-label]) .adm-list-row > *:first-child {
+    border-top: none;
+    background: #f9fafb;
+    font-weight: 800;
+    font-size: 15px;
+  }
+  .adm-list:has([data-label]) .adm-list-row > *[data-label]::before {
+    content: attr(data-label);
+    flex: 0 0 auto;
+    color: #6b7280;
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    text-align: left;
+  }
+  /* An actions cell is a button row, not a label/value pair. */
+  .adm-list:has([data-label]) .adm-list-row > [data-cell="actions"] {
+    justify-content: stretch;
+    gap: 8px;
+    background: #fdfdfd;
+  }
+  .adm-list:has([data-label]) .adm-list-row > [data-cell="actions"] > * { flex: 1 1 auto; justify-content: center; }
+  .adm-list:has([data-label]) .adm-list-row > [data-cell="actions"]::before { display: none; }
+
+  /* Any remaining wide element scrolls inside its own box rather than
+     escaping the viewport. */
+  .adm-table-scroll, .adm-panel table { display: block; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+}
+
+/* ══════════════ TOUCH TARGETS ══════════════
+   Apple/Google both put the reliable tap target at ~44px. Measured before
+   this rule: .adm-icon-btn 32px, .adm-btn-ghost/.adm-btn-red 35px. */
+@media (hover: none), (pointer: coarse) {
+  .adm-btn-ghost,
+  .adm-btn-red,
+  .adm-btn-dark,
+  .adm-tab,
+  .adm-nav-btn {
+    min-height: 44px;
+  }
+  /* .adm-icon-btn sets an explicit 36px width/height, which a min-height
+     cannot beat — the fixed values have to be replaced outright. */
+  .adm-icon-btn {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+    min-width: 44px;
+  }
+  .adm-field-input,
+  .adm-search-input,
+  .adm-tiny-input,
+  select.adm-field-input {
+    min-height: 44px;
+    /* <16px triggers iOS Safari's auto-zoom on focus. */
+    font-size: 16px;
+  }
+  .adm-nav-btn { padding-top: 13px; padding-bottom: 13px; }
+}
+
+/* ══════════════ SMALL PHONE ≤400px ══════════════ */
+@media (max-width: 400px) {
+  .adm-section-title { font-size: 18px; }
+  .adm-panel { padding: 12px 10px; }
+  .adm-list:has([data-label]) .adm-list-row > * { padding: 9px 12px; }
+  .adm-stat { min-width: 96px; }
+}

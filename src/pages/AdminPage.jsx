@@ -2327,11 +2327,12 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                     )}
                     {visibleCustomerRows.map((row) => (
                       <div key={row.id || row.email} className="adm-list-row" style={{ gridTemplateColumns: '80px 1.2fr 110px 90px 1.1fr 100px 80px 100px 120px', alignItems: 'center' }}>
-                        <span style={{ fontWeight: 800, fontFamily: 'monospace' }}>{row.account_code}</span>
-                        <span style={{ fontWeight: 600, fontSize: 13 }}>{row.name}</span>
+                        <span data-label="Code" style={{ fontWeight: 800, fontFamily: 'monospace' }}>{row.account_code}</span>
+                        <span data-label="Business" style={{ fontWeight: 600, fontSize: 13 }}>{row.name}</span>
                         <input
                           type="text"
                           className="adm-tiny-input"
+                          data-label="Contact"
                           defaultValue={row.contact_name || ''}
                           placeholder="Contact name"
                           disabled={protoNameSaving === `${row.id}-contact_name`}
@@ -2343,6 +2344,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                         <input
                           type="text"
                           className="adm-tiny-input"
+                          data-label="First name"
                           defaultValue={row.first_name || ''}
                           placeholder="First name"
                           disabled={protoNameSaving === `${row.id}-first_name`}
@@ -2351,11 +2353,11 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                           style={{ width: '100%', fontSize: 12, fontWeight: 600, borderColor: row.first_name ? undefined : '#fca5a5' }}
                           aria-label={`First name for ${row.email}`}
                         />
-                        <span style={{ fontSize: 12 }}>{row.email}</span>
-                        <span style={{ fontSize: 12 }}>R{Number(row.sales_last_12_months || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}</span>
-                        <span style={{ fontSize: 12 }}>{row.invoice_count ?? '—'}</span>
-                        <span style={{ fontSize: 11, color: '#6b7280' }}>{row.last_purchase_date ? new Date(row.last_purchase_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</span>
-                        <div style={{ display: 'flex', gap: 5 }}>
+                        <span data-label="Email" style={{ fontSize: 12 }}>{row.email}</span>
+                        <span data-label="12mo Sales" style={{ fontSize: 12 }}>R{Number(row.sales_last_12_months || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}</span>
+                        <span data-label="Invoices" style={{ fontSize: 12 }}>{row.invoice_count ?? '—'}</span>
+                        <span data-label="Last purchase" style={{ fontSize: 11, color: '#6b7280' }}>{row.last_purchase_date ? new Date(row.last_purchase_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</span>
+                        <div data-cell="actions" style={{ display: 'flex', gap: 5 }}>
                           <button type="button" className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }} onClick={() => openCustomerProfile(row, 'proto-active')}>Edit</button>
                           <button type="button" className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 7px', color: '#c40000' }} disabled={saving === `del-proto-${row.id}`} onClick={() => void removeProtoActiveCustomer(row)}>
                             <X size={13} />
