@@ -241,7 +241,7 @@ export default function CommsPanel({ onCompose, onShowToast }) {
               const hasEmail = isSendableEmail(email);
               return (
                 <div key={c.id || email} className="adm-list-row" style={{ gridTemplateColumns: '36px 1.3fr 1fr 1.3fr 1fr 0.9fr 110px' }}>
-                  <span>
+                  <span data-label="Select">
                     <input
                       type="checkbox"
                       checked={selected.has(email)}
@@ -251,12 +251,12 @@ export default function CommsPanel({ onCompose, onShowToast }) {
                       style={{ accentColor: '#dc2626' }}
                     />
                   </span>
-                  <div style={{ fontSize: 13, fontWeight: 600 }}>{contactBusiness(c)}</div>
-                  <div style={{ fontSize: 13 }}>{contactPerson(c)}</div>
-                  <div style={{ fontSize: 12, wordBreak: 'break-all', color: hasEmail ? undefined : '#94a3b8' }}>{email || '— no email —'}</div>
-                  <div className="adm-muted" style={{ fontSize: 12 }}>{c.business_type || '—'}</div>
-                  <div className="adm-muted" style={{ fontSize: 12 }}>{contactLocation(c)}</div>
-                  <div className="adm-muted" style={{ fontSize: 12 }} title={c.last_email_type ? `Last: ${c.last_email_type}` : ''}>{formatWhen(c.last_email_at)}</div>
+                  <div data-label="Business" style={{ fontSize: 13, fontWeight: 600 }}>{contactBusiness(c)}</div>
+                  <div data-label="Contact" style={{ fontSize: 13 }}>{contactPerson(c)}</div>
+                  <div data-label="Email" style={{ fontSize: 12, wordBreak: 'break-all', color: hasEmail ? undefined : '#94a3b8' }}>{email || '— no email —'}</div>
+                  <div data-label="Type" className="adm-muted" style={{ fontSize: 12 }}>{c.business_type || '—'}</div>
+                  <div data-label="Location" className="adm-muted" style={{ fontSize: 12 }}>{contactLocation(c)}</div>
+                  <div data-label="Last emailed" className="adm-muted" style={{ fontSize: 12 }} title={c.last_email_type ? `Last: ${c.last_email_type}` : ''}>{formatWhen(c.last_email_at)}</div>
                 </div>
               );
             })}

@@ -9010,3 +9010,95 @@ html, body { max-width: 100%; overflow-x: hidden; }
   .adm-list:has([data-label]) .adm-list-row > * { padding: 9px 12px; }
   .adm-stat { min-width: 96px; }
 }
+
+/* ══════════════════════════════════════════════════════════════════════
+   RESPONSIVE LAYER 2 — controls, tabs, and the two lists that cannot
+   become generic label/value cards.
+   ══════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 900px) {
+  /* .adm-search--inline pushes itself right with margin-left:auto, which on a
+     phone reads as a randomly indented search box floating mid-row. */
+  .adm-search--inline { margin-left: 0; }
+  .adm-search,
+  .adm-search--inline { width: 100%; }
+
+  /* Tabs: an even grid instead of flex-wrap, which was leaving one tab
+     stranded on its own second line. */
+  .adm-customer-tabs {
+    display: grid;
+    /* 96px lets three tabs sit on one row at 390px instead of leaving the
+       third stranded on a line of its own. */
+    grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .adm-customer-tabs .adm-tab {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+    padding: 11px 10px;
+  }
+
+  /* Action rows above a list: equal-width buttons on one grid rather than
+     a half/half pair with a full-width button orphaned underneath. */
+  .adm-section-head > div:last-child {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 8px;
+  }
+  .adm-section-head > div:last-child > button { width: 100%; }
+  /* With an odd count the last button would sit at half width beside a gap;
+     it is also the primary action, so give it the full row. */
+  .adm-section-head > div:last-child > button:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ══════════════ PHONE ≤720px ══════════════ */
+@media (max-width: 720px) {
+  /* Product Manager rows are 32px 96px 2fr 140px 140px — about 500px before
+     the title gets any room. Label/value cards suit it badly (a thumbnail has
+     no useful caption), so it gets a purpose-built three-column layout:
+     checkbox and thumbnail on the left, title beside them, stock and actions
+     wrapping onto their own full-width lines underneath. */
+  .pm-list { overflow: visible !important; }
+  .pm-list .adm-list-head { display: none !important; }
+  .pm-list .adm-list-row {
+    grid-template-columns: 26px 64px minmax(0, 1fr) !important;
+    /* An earlier mobile rule pins .adm-list-row to min-width:520px so the
+       table stays scrollable; that would push this layout 130px past a
+       390px screen. */
+    min-width: 0 !important;
+    gap: 10px !important;
+    align-items: start;
+    padding: 12px !important;
+    margin-bottom: 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    background: #fff;
+  }
+  /* Stock and Actions leave the right-hand columns and become full rows. */
+  .pm-list .adm-list-row > *:nth-child(4),
+  .pm-list .adm-list-row > *:nth-child(5) {
+    grid-column: 2 / -1;
+    width: 100%;
+  }
+  .pm-list .adm-list-row > *:nth-child(5) {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding-top: 4px;
+  }
+  .pm-list .adm-product-thumb { width: 64px; height: 64px; object-fit: contain; }
+
+  /* An order row expands on tap; its cells are label/value like the rest, but
+     the status cell holds controls, so it must not be squeezed to one line. */
+  .adm-order-row > [data-label="Status"] { display: block; text-align: left; }
+  .adm-order-row > [data-label="Status"]::before { display: block; margin-bottom: 6px; }
+
+  /* Checkbox cells read as a bare tick with a caption; keep them left-aligned
+     and comfortably tappable. */
+  .adm-list-row > [data-label="Select"] { justify-content: flex-start; }
+  .adm-list-row input[type="checkbox"] { width: 20px; height: 20px; }
+}

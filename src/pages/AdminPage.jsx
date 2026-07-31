@@ -2376,7 +2376,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                     )}
                     {visibleCustomerRows.map((person) => (
                       <div key={person.id} className="adm-list-row" style={{ gridTemplateColumns: '1.4fr 1fr 0.9fr 1.3fr 0.8fr 90px 200px', alignItems: 'center' }}>
-                        <div>
+                        <div data-label="Business">
                           <div style={{ fontWeight: 700, fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             {person.business_name || person.name || 'Unknown'}
                             {person.accept_whatsapp === true && (
@@ -2387,14 +2387,14 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                           </div>
                           <div className="adm-muted" style={{ fontSize: 11 }}>{person.name}{person.business_type ? ` · ${person.business_type}` : ''}</div>
                         </div>
-                        <div style={{ fontSize: 12 }}>{[person.city, person.province, person.country].filter(Boolean).join(', ') || '—'}</div>
-                        <div style={{ fontSize: 11, color: '#6b7280' }}>{new Date(person.created_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
-                        <div>
+                        <div data-label="Location" style={{ fontSize: 12 }}>{[person.city, person.province, person.country].filter(Boolean).join(', ') || '—'}</div>
+                        <div data-label="Applied" style={{ fontSize: 11, color: '#6b7280' }}>{new Date(person.created_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                        <div data-label="Contact">
                           <div style={{ fontSize: 12 }}>{person.email}</div>
                           <div className="adm-muted" style={{ fontSize: 11 }}>{person.phone || '—'}</div>
                         </div>
-                        <div><WhatsappOptIn value={person.accept_whatsapp} /></div>
-                        <div>
+                        <div data-label="WhatsApp"><WhatsappOptIn value={person.accept_whatsapp} /></div>
+                        <div data-label="Code">
                           <input
                             type="text"
                             className="adm-tiny-input"
@@ -2410,7 +2410,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                             aria-label={`Customer code for ${person.email}`}
                           />
                         </div>
-                        <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                        <div data-cell="actions" style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                           <button onClick={() => void openCustomerProfile(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }}>Edit</button>
                           <button
                             onClick={() => void approveRequest(person)}
@@ -2437,8 +2437,8 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                     )}
                     {visibleCustomerRows.map((person) => (
                       <div key={person.id} className="adm-list-row" style={{ gridTemplateColumns: '80px 1.1fr 1.1fr 1fr 80px 70px 90px' }}>
-                        <span style={{ fontWeight: 800, fontFamily: 'monospace', fontSize: 12 }}>{person.customer_code || '—'}</span>
-                        <div>
+                        <span data-label="Code" style={{ fontWeight: 800, fontFamily: 'monospace', fontSize: 12 }}>{person.customer_code || '—'}</span>
+                        <div data-label="Name">
                           <span style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             {person.name || person.business_name || 'Unnamed'}
                             {person.accept_whatsapp === true && (
@@ -2453,11 +2453,11 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                             </div>
                           )}
                         </div>
-                        <span style={{ fontSize: 13 }}>{person.email}</span>
-                        <span style={{ fontSize: 13 }}>{person.phone || '—'}</span>
-                        <span><WhatsappOptIn value={person.accept_whatsapp} /></span>
-                        <span>{person.orderCount}</span>
-                        <div style={{ display: 'flex', gap: 5 }}>
+                        <span data-label="Email" style={{ fontSize: 13 }}>{person.email}</span>
+                        <span data-label="Phone" style={{ fontSize: 13 }}>{person.phone || '—'}</span>
+                        <span data-label="WhatsApp"><WhatsappOptIn value={person.accept_whatsapp} /></span>
+                        <span data-label="Orders">{person.orderCount}</span>
+                        <div data-cell="actions" style={{ display: 'flex', gap: 5 }}>
                           <button onClick={() => void openCustomerProfile(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }}>Edit</button>
                           <button onClick={() => void removeCustomer(person)} className="adm-btn-ghost adm-btn-sm" disabled={saving === `del-${person.id}`} style={{ color: '#c40000', padding: '4px 8px' }}>
                             {saving === `del-${person.id}` ? '…' : <X size={14} />}
@@ -2608,18 +2608,18 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                           data-order-id={order.id}
                           onClick={() => setExpandedOrderId(isExpanded ? null : order.id)}
                         >
-                          <div>
+                          <div data-label="Order">
                             <div style={{ fontWeight: 800, fontSize: 13 }}>{displayOrderNumber(order)}</div>
                           </div>
-                          <div>
+                          <div data-label="Customer">
                             <div style={{ fontWeight: 600, fontSize: 13 }}>{order.customers?.name || 'Unknown'}</div>
                             <div className="adm-muted" style={{ fontSize: 11 }}>{order.customers?.email || ''}</div>
                           </div>
-                          <div>
+                          <div data-label="Date">
                             <div style={{ fontSize: 13, fontWeight: 600 }}>{dateStr}</div>
                             <div className="adm-muted" style={{ fontSize: 11 }}>{timeStr}</div>
                           </div>
-                          <div>
+                          <div data-label="Amount">
                             <div style={{ fontSize: 13, fontWeight: 700 }}>{formatRandAmount(orderAmountExVat(order))}</div>
                             <div className="adm-muted" style={{ fontSize: 11 }}>ex VAT</div>
                             {(() => {
@@ -2632,7 +2632,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                               );
                             })()}
                           </div>
-                          <div onClick={(e) => e.stopPropagation()} className="adm-presale-col">
+                          <div data-label="Status" onClick={(e) => e.stopPropagation()} className="adm-presale-col">
                             {orderTab === 'sent' && isPreSale ? (
                               renderOrderConfirmationActions(order)
                             ) : orderTab === 'paid' ? (
@@ -2641,7 +2641,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                               <OrderWorkflowBadge order={order} />
                             )}
                           </div>
-                          <div style={{ display: 'flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                          <div data-cell="actions" style={{ display: 'flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
                             <button onClick={() => window.open(`/fulfillment?id=${order.id}`, '_blank')} className="adm-icon-btn" title="Fulfil order (opens in new tab)" style={{ color: '#15803d' }}><ClipboardList size={14} /></button>
                             <button onClick={() => void downloadOrderFile(order)} disabled={saving === `download-${order.id}`} className="adm-icon-btn" title="Download order PDF">{saving === `download-${order.id}` ? <Loader2 size={14} className="spin" /> : <FileDown size={14} />}</button>
                             <button onClick={() => void deleteOrder(order)} className="adm-icon-btn" style={{ color: '#c40000' }} disabled={saving === `del-order-${order.id}`} title="Delete order">
