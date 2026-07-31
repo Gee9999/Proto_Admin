@@ -20,7 +20,12 @@ export async function deleteCustomer(id) {
     body: JSON.stringify({ id }),
   });
   const json = await res.json();
-  if (!res.ok) throw new Error(json.error || 'Failed to delete customer');
+  if (!res.ok) {
+    const err = new Error(json.error || 'Failed to delete customer');
+    err.code = json.code;
+    err.orderCount = json.orderCount;
+    throw err;
+  }
 }
 
 export async function approveCustomer(id, approved = true, { customerCode } = {}) {
