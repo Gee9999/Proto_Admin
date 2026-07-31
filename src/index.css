@@ -8941,7 +8941,42 @@ html, body { max-width: 100%; overflow-x: hidden; }
     border-top: 1px solid #f3f4f6;
     font-size: 14px;
     text-align: right;
-    word-break: break-word;
+    /* break-word only splits a word that cannot fit on its own line; the old
+       word-break:break-word would chop mid-word wherever it ran out of room. */
+    overflow-wrap: break-word;
+  }
+
+  /* A cell holding more than one element (a name plus badges plus a contact
+     sub-line, say) cannot use the label-left / value-right row: space-between
+     distributes each piece and the name is squeezed into a column one
+     character wide. Those stack the label above the value instead. */
+  .adm-list:has([data-label]) .adm-list-row > [data-label]:has(> * + *) {
+    display: block;
+    text-align: left;
+  }
+  .adm-list:has([data-label]) .adm-list-row > [data-label]:has(> * + *)::before {
+    display: block;
+    margin-bottom: 5px;
+  }
+
+  /* Same for an editable cell: a full-width input squashed beside its caption
+     leaves a few characters visible. Stack it and let it use the row. */
+  .adm-list:has([data-label]) .adm-list-row > [data-label]:has(input, select, textarea) {
+    display: block;
+    text-align: left;
+  }
+  .adm-list:has([data-label]) .adm-list-row > [data-label]:has(input, select, textarea)::before {
+    display: block;
+    margin-bottom: 5px;
+  }
+  .adm-list:has([data-label]) .adm-list-row > [data-label] input[type="text"],
+  .adm-list:has([data-label]) .adm-list-row > [data-label] select {
+    width: 100% !important;
+  }
+  /* A checkbox is the exception — it should stay inline with its caption. */
+  .adm-list:has([data-label]) .adm-list-row > [data-label]:has(> input[type="checkbox"]) {
+    display: flex;
+    text-align: right;
   }
   .adm-list:has([data-label]) .adm-list-row > *:first-child {
     border-top: none;
