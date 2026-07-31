@@ -1800,7 +1800,16 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       closeCustomerProfile();
       showToast('Customer removed');
     } catch (err) {
-      showToast(err.message || 'Delete failed', 'error');
+      if (err.code === 'has_orders') {
+        const who = person.business_name || person.name || person.email;
+        const n = err.orderCount || 0;
+        showToast(
+          `${who} has ${n === 1 ? 'an order' : `${n} orders`} on record, so the account can't be deleted. It stays listed with portal access off until you approve it again.`,
+          'error',
+        );
+      } else {
+        showToast(err.message || 'Delete failed', 'error');
+      }
     } finally { setSaving(''); }
   };
 

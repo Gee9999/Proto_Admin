@@ -266,7 +266,9 @@ export default async function handler(req, res) {
     if (countError) return res.status(400).json({ error: countError.message });
     if ((orderCount || 0) > 0) {
       return res.status(400).json({
-        error: 'Cannot delete a customer with existing orders. Deactivate them instead (set is_approved to false via PATCH).',
+        code: 'has_orders',
+        orderCount,
+        error: 'This customer has orders on record, so the account cannot be deleted.',
       });
     }
 
