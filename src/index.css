@@ -3220,6 +3220,8 @@ body.adm-is-reorder-dragging .adm-reorder-card--dragging {
 /* ── Mobile sidebar backdrop ── */
 .adm-sidebar-backdrop {
   display: none;
+  border: 0;
+  padding: 0;
 }
 
 /* ══════════════════════════════════════════
@@ -7399,11 +7401,51 @@ html, body { background: #f5f5f5; color: #111827; }
   cursor: pointer; text-decoration: underline;
 }
 .adm-login-link:hover { color: #b91c1c; }
+.adm-login-link:focus-visible { color: #991b1b; }
 .adm-login-form { display: flex; flex-direction: column; gap: 14px; }
 .adm-login-submit { width: 100%; justify-content: center; margin-top: 4px; }
 .adm-login-foot {
   margin: 20px 0 0; text-align: center; font-size: 12px; color: #94a3b8;
   display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+
+/* Keyboard users must always be able to see where admin actions will land. */
+.adm-shell :where(a, button, input, select, textarea, [tabindex]):focus-visible,
+.adm-login-page :where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 3px;
+}
+
+.adm-skip-link {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  z-index: 10001;
+  padding: 10px 14px;
+  color: #fff;
+  background: #111827;
+  border-radius: 4px;
+  font-weight: 700;
+  transform: translateY(-160%);
+  transition: transform 0.15s ease;
+}
+
+.adm-skip-link:focus {
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .adm-shell *,
+  .adm-shell *::before,
+  .adm-shell *::after,
+  .adm-login-page *,
+  .adm-login-page *::before,
+  .adm-login-page *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
 
 /* Image Intake panel */
@@ -7442,6 +7484,49 @@ html, body { background: #f5f5f5; color: #111827; }
   border: 1px solid #fecaca;
   border-radius: 8px;
   padding: 8px 10px;
+}
+
+.adm-pricing-preflight {
+  margin: 0 16px 16px;
+  padding: 16px;
+  border: 2px solid #f59e0b;
+  background: #fffbeb;
+  display: grid;
+  gap: 14px;
+}
+
+.adm-pricing-preflight h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  color: #78350f;
+}
+
+.adm-pricing-preflight p {
+  margin: 0;
+  color: #92400e;
+  font-size: 13px;
+}
+
+.adm-pricing-preflight-list {
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid #fcd34d;
+  background: #fff;
+}
+
+.adm-pricing-preflight-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.5fr) minmax(180px, 1.5fr) minmax(180px, 1fr);
+  gap: 12px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #fef3c7;
+  font-size: 12px;
+}
+
+.adm-pricing-preflight-row:last-child { border-bottom: 0; }
+
+@media (max-width: 700px) {
+  .adm-pricing-preflight-row { grid-template-columns: 1fr; gap: 3px; }
 }
 
 .adm-banner-preview-wrap {

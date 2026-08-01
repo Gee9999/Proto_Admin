@@ -7,6 +7,7 @@ import { getPortalAdminClient, readOrderNotifyLog, SITE_CONFIG_BUCKET } from './
 import { isOrderNotifyComplete } from './_order-notify-core.js';
 import { ordersHasConfirmationSentAt } from './_order-confirmation-sent.js';
 import { parseOrderTab, parsePositiveInt } from './_admin-query-params.js';
+import { isOrderTrashEnabled, normalizeOrderTrashReason } from '../lib/order-trash.mjs';
 
 function getAdminClient() {
   return createClient(
@@ -219,63 +220,15 @@ async function fetchAdminOrdersPage(supabase, {
   return { rows: error ? [] : (data || []), total: count || 0, page, pageSize };
 }
 
-async function listAllStorageFiles(supabase, prefix) {
-  const paths = [];
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase.storage.from(SITE_CONFIG_BUCKET).list(prefix, { limit: 1000, offset });
-    if (error || !data?.length) break;
-    for (const entry of data) {
-      if (!entry?.name || entry.name.startsWith('.')) continue;
-      const childPath = prefix ? `${prefix}/${entry.name}` : entry.name;
-      const looksLikeFile = entry.metadata != null || /\.[a-z0-9]+$/i.test(entry.name);
-      if (looksLikeFile) {
-        paths.push(childPath);
-        continue;
-      }
-      const nested = await listAllStorageFiles(supabase, childPath);
-      paths.push(...nested);
-    }
-    if (data.length < 1000) break;
-    offset += 1000;
-  }
-  return paths;
-}
-
-async function purgeOrderSiteConfigFiles() {
-  const supabase = getPortalAdminClient();
-  const prefixes = ['fulfillment/progress', 'orders/confirmation', 'orders/notify'];
-  const files = [];
-  for (const prefix of prefixes) {
-    // Guard: never purge from an empty prefix (whole bucket) or the backups tree.
-    if (!prefix || prefix === 'backups' || prefix.startsWith('backups/')) continue;
-    const listed = await listAllStorageFiles(supabase, prefix);
-    // Only delete paths strictly under the prefix we listed — a listing quirk
-    // (or future prefix edit) must never widen the blast radius to the rest
-    // of the site-config bucket (sort orders, specials, backups, …).
-    const safe = listed.filter((p) => p.startsWith(`${prefix}/`) && !p.startsWith('backups/'));
-    const skipped = listed.filter((p) => !safe.includes(p));
-    if (skipped.length) {
-      console.warn(`purgeOrderSiteConfigFiles: skipping ${skipped.length} out-of-prefix path(s):`, skipped.slice(0, 20));
-    }
-    files.push(...safe);
-  }
-  if (!files.length) return 0;
-  const chunkSize = 100;
-  for (let i = 0; i < files.length; i += chunkSize) {
-    const chunk = files.slice(i, i + chunkSize);
-    const { error } = await supabase.storage.from(SITE_CONFIG_BUCKET).remove(chunk);
-    if (error) throw error;
-  }
-  return files.length;
-}
-
 export default async function handler(req, res) {
   const auth = await requireAdminOrOrderToken(req, res);
   if (!auth) return;
   const supabase = getAdminClient();
 
   if (req.method === 'GET') {
+    const capabilities = {
+      orderTrash: auth.type === 'admin' && isOrderTrashEnabled(),
+    };
     const {
       limit = '',
       customerId = '',
@@ -293,7 +246,7 @@ export default async function handler(req, res) {
         .eq('id', auth.orderId)
         .maybeSingle();
       if (error) return res.status(400).json({ error: error.message });
-      return res.status(200).json({ rows: data ? [data] : [] });
+      return res.status(200).json({ rows: data ? [data] : [], capabilities });
     }
 
     if (id) {
@@ -303,7 +256,7 @@ export default async function handler(req, res) {
         .eq('id', id)
         .maybeSingle();
       if (error) return res.status(400).json({ error: error.message });
-      return res.status(200).json({ rows: data ? [data] : [] });
+      return res.status(200).json({ rows: data ? [data] : [], capabilities });
     }
 
     if (customerId) {
@@ -315,7 +268,7 @@ export default async function handler(req, res) {
         .order('created_at', { ascending: false })
         .limit(lim);
       if (error) return res.status(400).json({ error: error.message });
-      return res.status(200).json({ rows: data || [] });
+      return res.status(200).json({ rows: data || [], capabilities });
     }
 
     let pageNum;
@@ -350,6 +303,7 @@ export default async function handler(req, res) {
           page: pageNum,
           pageSize: size,
           tabCounts,
+          capabilities,
         });
       }
 
@@ -362,14 +316,27 @@ export default async function handler(req, res) {
         legacyIds,
         useItemsSearch,
       });
-      return res.status(200).json({ ...result, tabCounts });
+      return res.status(200).json({ ...result, tabCounts, capabilities });
     } catch (err) {
       return res.status(400).json({ error: err.message });
     }
   }
 
   if (req.method === 'PATCH') {
-    const { id, notes, advanceWorkflow, senderUserId, senderName, status, ...raw } = req.body || {};
+    const { id, notes, advanceWorkflow, senderUserId, senderName, status, restoreTrashId, ...raw } = req.body || {};
+    if (restoreTrashId) {
+      if (auth.type !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+      if (!isOrderTrashEnabled()) {
+        return res.status(409).json({ error: 'Recoverable order trash is not enabled. No data was changed.' });
+      }
+      const actor = auth.user?.email || 'unknown-admin';
+      const { data: restoredOrderId, error: restoreError } = await supabase.rpc('restore_admin_order', {
+        p_trash_id: String(restoreTrashId),
+        p_actor: actor,
+      });
+      if (restoreError) return res.status(400).json({ error: restoreError.message });
+      return res.status(200).json({ ok: true, restoredOrderId });
+    }
     if (!id) return res.status(400).json({ error: 'id required' });
     if (!assertOrderScope(auth, id, res)) return;
 
@@ -494,34 +461,28 @@ export default async function handler(req, res) {
     if (auth.type !== 'admin') {
       return res.status(403).json({ error: 'Admin access required' });
     }
-    const { id, all, confirm } = req.body || {};
+    const { id, all, reason } = req.body || {};
     if (all) {
-      if (confirm !== 'DELETE ALL ORDERS') {
-        return res.status(400).json({ error: 'confirm must be DELETE ALL ORDERS' });
-      }
-      const { count, error: countError } = await supabase
-        .from('orders')
-        .select('*', { count: 'exact', head: true });
-      if (countError) return res.status(400).json({ error: countError.message });
-      const { error } = await supabase.from('orders').delete().not('id', 'is', null);
-      if (error) return res.status(400).json({ error: error.message });
-      let progressFilesRemoved = 0;
-      try {
-        progressFilesRemoved = await purgeOrderSiteConfigFiles();
-      } catch (err) {
-        console.error('admin-orders: progress cleanup failed:', err?.message || err);
-      }
-      return res.status(200).json({
-        ok: true,
-        deleted: count || 0,
-        progressFilesRemoved,
-        tabCounts: { all: 0, new: 0, handed: 0, progress: 0, sent: 0, paid: 0, unpaid: 0 },
-      });
+      return res.status(409).json({ error: 'Bulk order deletion is disabled. Archive individual duplicates with an audit reason.' });
     }
     if (!id) return res.status(400).json({ error: 'id required' });
-    const { error } = await supabase.from('orders').delete().eq('id', id);
+    if (!isOrderTrashEnabled()) {
+      return res.status(409).json({ error: 'Recoverable order trash is not enabled. No data was changed.' });
+    }
+    let cleanReason;
+    try {
+      cleanReason = normalizeOrderTrashReason(reason);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+    const actor = auth.user?.email || 'unknown-admin';
+    const { data: trashId, error } = await supabase.rpc('trash_admin_order', {
+      p_order_id: String(id),
+      p_actor: actor,
+      p_reason: cleanReason,
+    });
     if (error) return res.status(400).json({ error: error.message });
-    return res.status(200).json({ ok: true });
+    return res.status(200).json({ ok: true, trashed: true, trashId });
   }
 
   return res.status(405).end();

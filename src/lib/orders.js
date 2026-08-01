@@ -19,6 +19,7 @@ export async function fetchOrdersPage({
     page: json.page || page,
     pageSize: json.pageSize || pageSize,
     tabCounts: json.tabCounts || null,
+    orderTrashEnabled: json.capabilities?.orderTrash === true,
   };
 }
 
@@ -44,23 +45,23 @@ export async function advanceOrderWorkflow(id, advanceWorkflow, { senderUserId, 
   return json.row;
 }
 
-export async function deleteOrderAdmin(id) {
+export async function deleteOrderAdmin(id, reason) {
   const res = await fetch('/api/admin-orders', {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id }),
+    body: JSON.stringify({ id, reason }),
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || 'Failed to delete order');
 }
 
-export async function deleteAllOrdersAdmin() {
+export async function restoreOrderAdmin(trashId) {
   const res = await fetch('/api/admin-orders', {
-    method: 'DELETE',
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ all: true, confirm: 'DELETE ALL ORDERS' }),
+    body: JSON.stringify({ restoreTrashId: trashId }),
   });
   const json = await res.json();
-  if (!res.ok) throw new Error(json.error || 'Failed to delete all orders');
+  if (!res.ok) throw new Error(json.error || 'Failed to restore order');
   return json;
 }
