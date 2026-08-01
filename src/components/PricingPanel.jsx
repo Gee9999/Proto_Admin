@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { fetchReorderProducts, updateProduct } from '../lib/products';
 import { subcategoryOptionsFromTree } from '../lib/taxonomyAdmin';
 import { saveSpecials } from '../lib/specials';
 import { ADMIN_REFRESH_EVENT } from '../lib/adminRefresh';
+import { buildPricingPreflight } from '../lib/pricingPreflight';
 
 // Pricing — bulk-adjust selected products by a percentage and stamp them
 // onto This Week's Specials. Extracted from AdminPage so state, load and
@@ -22,6 +23,8 @@ export default function PricingPanel({
   const [delta, setDelta] = useState('-10');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [reviewedSignature, setReviewedSignature] = useState('');
+  const [confirmation, setConfirmation] = useState('');
 
   const toast = useCallback((message, type = 'success') => {
     onShowToast?.(message, type);
@@ -61,27 +64,45 @@ export default function PricingPanel({
     ? products
     : products.filter((p) => p.categoryPath?.[1] === subcategory);
 
+  const preflight = useMemo(
+    () => buildPricingPreflight(products, selectedIds, delta),
+    [products, selectedIds, delta],
+  );
+  const preflightSignature = JSON.stringify([preflight.percent, preflight.rows.map((row) => [row.id, row.oldPrice, row.newPrice])]);
+  const reviewIsCurrent = reviewedSignature === preflightSignature;
+  const selectedVisibleCount = visible.filter((product) => selectedIds.includes(product.id)).length;
+
   const toggleSelectAll = () => {
-    if (selectedIds.length === products.length) return setSelectedIds([]);
-    setSelectedIds(products.map((p) => p.id));
+    const visibleIds = new Set(visible.map((product) => product.id));
+    setReviewedSignature('');
+    setConfirmation('');
+    if (selectedVisibleCount === visible.length) {
+      setSelectedIds((current) => current.filter((id) => !visibleIds.has(id)));
+      return;
+    }
+    setSelectedIds((current) => [...new Set([...current, ...visibleIds])]);
   };
 
   const applyPricing = async () => {
-    const pct = Number(delta || 0);
-    if (!Number.isFinite(pct) || pct === 0) {
-      toast('Enter a non-zero percentage', 'error');
+    if (preflight.blocked) {
+      toast(preflight.blockers[0], 'error');
       return;
     }
-    if (!selectedIds.length) {
-      toast('Select at least one product', 'error');
+    if (!reviewIsCurrent) {
+      toast('Review the exact before-and-after prices before applying', 'error');
+      return;
+    }
+    if (preflight.highRisk && confirmation.trim() !== preflight.confirmationPhrase) {
+      toast('Type the confirmation phrase exactly before applying this high-impact change', 'error');
       return;
     }
     setSaving(true);
     try {
-      const allSelected = products.filter((p) => selectedIds.includes(p.id));
+      const selectedById = new Map(products.map((product) => [product.id, product]));
+      const allSelected = preflight.rows.map((row) => ({ ...selectedById.get(row.id), nextPrice: row.newPrice }));
       // allSettled so one failed save doesn't mask the ones that succeeded.
       const outcomes = await Promise.allSettled(allSelected.map((p) => updateProduct(p.id, {
-        price: Number(((p.price || 0) * (1 + pct / 100)).toFixed(2)),
+        price: p.nextPrice,
       })));
       const failedCount = outcomes.filter((o) => o.status === 'rejected').length;
       const selected = allSelected.filter((_, i) => outcomes[i].status === 'fulfilled');
@@ -109,6 +130,9 @@ export default function PricingPanel({
         onSpecialsChange?.(nextSpecials);
       }
       await load(category);
+      setReviewedSignature('');
+      setConfirmation('');
+      setSelectedIds([]);
       if (failedCount > 0) {
         toast(`Updated ${selected.length} price(s), ${failedCount} failed — reload and retry the rest`, 'error');
       } else {
@@ -131,6 +155,7 @@ export default function PricingPanel({
       </div>
       <div className="adm-toolbar" style={{ gridTemplateColumns: '1fr 1fr auto auto' }}>
         <select
+          aria-label="Pricing category"
           value={category}
           onChange={(e) => { setCategory(e.target.value); setSubcategory('all'); setSelectedIds([]); }}
           className="adm-select"
@@ -138,6 +163,7 @@ export default function PricingPanel({
           {mainCategories.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
         </select>
         <select
+          aria-label="Pricing subcategory"
           value={subcategory}
           onChange={(e) => { setSubcategory(e.target.value); setSelectedIds([]); }}
           className="adm-select"
@@ -153,25 +179,71 @@ export default function PricingPanel({
           className="adm-btn-ghost"
           disabled={loading}
         >
-          {selectedIds.length === products.length ? 'Clear all' : 'Select all'}
+          {visible.length > 0 && selectedVisibleCount === visible.length ? 'Clear visible' : 'Select visible'}
         </button>
         <div style={{ display: 'flex', gap: 8 }}>
           <input
+            aria-label="Percentage price adjustment"
+            inputMode="decimal"
             value={delta}
-            onChange={(e) => setDelta(e.target.value)}
+            onChange={(e) => { setDelta(e.target.value); setReviewedSignature(''); setConfirmation(''); }}
             className="adm-tiny-input"
             placeholder="-10"
           />
           <button
             type="button"
-            onClick={() => void applyPricing()}
+            onClick={() => {
+              if (preflight.blocked) {
+                toast(preflight.blockers[0], 'error');
+                return;
+              }
+              if (!reviewIsCurrent) {
+                setReviewedSignature(preflightSignature);
+                setConfirmation('');
+                return;
+              }
+              void applyPricing();
+            }}
             className="adm-btn-red"
             disabled={saving}
           >
-            {saving ? 'Applying…' : 'Apply %'}
+            {saving ? 'Applying…' : reviewIsCurrent ? 'Apply reviewed prices' : 'Review changes'}
           </button>
         </div>
       </div>
+      {reviewIsCurrent && !preflight.blocked && (
+        <section className="adm-pricing-preflight" aria-labelledby="pricing-preflight-title">
+          <div>
+            <h3 id="pricing-preflight-title">Price change preflight</h3>
+            <p>
+              {preflight.rows.length} product{preflight.rows.length === 1 ? '' : 's'} · {preflight.percent}% ·{' '}
+              R{preflight.oldTotal.toFixed(2)} → R{preflight.newTotal.toFixed(2)}{' '}
+              ({preflight.difference >= 0 ? '+' : ''}R{preflight.difference.toFixed(2)})
+            </p>
+          </div>
+          <div className="adm-pricing-preflight-list" role="list" aria-label="Proposed product price changes">
+            {preflight.rows.map((row) => (
+              <div key={row.id} className="adm-pricing-preflight-row" role="listitem">
+                <strong>{row.code}</strong>
+                <span>{row.name}</span>
+                <span>R{row.oldPrice.toFixed(2)} → <strong>R{row.newPrice.toFixed(2)}</strong></span>
+              </div>
+            ))}
+          </div>
+          {preflight.highRisk && (
+            <label className="adm-field">
+              <span className="adm-field-label">High-impact change — type <strong>{preflight.confirmationPhrase}</strong></span>
+              <input
+                className="adm-field-input"
+                value={confirmation}
+                onChange={(event) => setConfirmation(event.target.value)}
+                autoComplete="off"
+                spellCheck="false"
+              />
+            </label>
+          )}
+        </section>
+      )}
       <div className="adm-checkbox-list">
         {visible.map((product) => (
           <label
@@ -181,9 +253,13 @@ export default function PricingPanel({
             <input
               type="checkbox"
               checked={selectedIds.includes(product.id)}
-              onChange={(e) => setSelectedIds((prev) => (
-                e.target.checked ? [...prev, product.id] : prev.filter((id) => id !== product.id)
-              ))}
+              onChange={(e) => {
+                setReviewedSignature('');
+                setConfirmation('');
+                setSelectedIds((prev) => (
+                  e.target.checked ? [...prev, product.id] : prev.filter((id) => id !== product.id)
+                ));
+              }}
             />
             <span style={{ fontWeight: 700 }}>{product.name}</span>
             <small className="adm-muted">
