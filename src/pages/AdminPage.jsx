@@ -123,6 +123,9 @@ const PricingPanel = lazyRetry(() => import('../components/PricingPanel'));
 const ReorderPanel = lazyRetry(() => import('../components/ReorderPanel'));
 const OrdersWorkspacePanel = lazyRetry(() => import('../components/OrdersWorkspacePanel'));
 const BackendHealthPanel = lazyRetry(() => import('../components/BackendHealthPanel'));
+const HermesPanel = lazyRetry(() => import('../components/HermesPanel'));
+const ProductIntelligencePanel = lazyRetry(() => import('../components/ProductIntelligencePanel'));
+const BuyingPanel = lazyRetry(() => import('../components/BuyingPanel'));
 
 function orderWorkspaceIdFromPath() {
   const match = window.location.pathname.match(/^\/(?:apollo\/)?orders\/workspace\/([^/?#]+)/i);
@@ -1149,13 +1152,16 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     const section = params.get('section');
     const tab = params.get('orderTab');
     const focus = params.get('focusOrder');
-    if (section) setActiveSection(section);
+    // Deep links must respect the same role allowlist as the visible sidebar.
+    // Without this check, a restricted user could open a hidden section with
+    // `?section=...` even though the navigation correctly omitted it.
+    if (section && allowedSectionIds.includes(section)) setActiveSection(section);
     if (tab) setOrderTab(tab);
     if (focus) setFocusOrderId(focus);
     if (section || tab || focus) {
       window.history.replaceState({}, '', window.location.pathname);
     }
-  }, []);
+  }, [allowedSectionIds]);
 
   useEffect(() => {
     if (!focusOrderId || activeSection !== 'orders' || !orders.length) return;
@@ -2094,6 +2100,30 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
               />
               </div>
             </SectionErrorBoundary>
+
+            {activeSection === 'hermes' && (
+              <SectionErrorBoundary name="hermes" title="Hermes crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Loading Hermes…" />}>
+                  <HermesPanel onSelectSection={setActiveSection} />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
+
+            {activeSection === 'product-intelligence' && (
+              <SectionErrorBoundary name="product-intelligence" title="Product Intelligence crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Loading Product Intelligence…" />}>
+                  <ProductIntelligencePanel />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
+
+            {activeSection === 'buying' && (
+              <SectionErrorBoundary name="buying" title="Buying crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Loading Buying…" />}>
+                  <BuyingPanel onOpenProductIntelligence={() => setActiveSection('product-intelligence')} />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
 
             {/* Archived products — own top-level tab, same engine scoped to the archive. */}
             {activeSection === 'archive' && (

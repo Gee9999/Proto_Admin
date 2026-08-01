@@ -1,12 +1,15 @@
 import {
   Archive,
   BarChart2,
+  Bot,
+  ClipboardList,
   Grip,
   ImagePlus,
   Layout,
   Mail,
   PackagePlus,
   ScanLine,
+  Search,
   ShoppingBag,
   SlidersHorizontal,
   Sparkles,
@@ -22,6 +25,9 @@ import { importWithRetry } from '../lib/lazyRetry';
 
 const NAV_ITEMS = [
   { id: 'orders', label: 'Order Requests', icon: ShoppingBag },
+  { id: 'hermes', label: 'Hermes', icon: Bot },
+  { id: 'product-intelligence', label: 'Product Intelligence', icon: Search },
+  { id: 'buying', label: 'Buying', icon: ClipboardList },
   { id: 'product-loader', label: 'Product Loader', icon: ScanLine },
   { id: 'image-replace', label: 'Image Replace', icon: ImagePlus },
   { id: 'catalogue', label: 'Product Manager', icon: PackagePlus },
@@ -37,6 +43,9 @@ const NAV_ITEMS = [
 ];
 
 const CHUNK_PREFETCH = {
+  hermes: () => import('./HermesPanel'),
+  'product-intelligence': () => import('./ProductIntelligencePanel'),
+  buying: () => import('./BuyingPanel'),
   analytics: () => import('./AnalyticsHub'),
   'product-loader': () => import('./ProductLoaderPanel'),
   'image-replace': () => import('./BulkImageReplacePanel'),
