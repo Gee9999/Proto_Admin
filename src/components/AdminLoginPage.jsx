@@ -59,6 +59,7 @@ export default function AdminLoginPage({ forbidden = false, onSignedIn }) {
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 autoComplete="email"
+                autoFocus
                 required
                 disabled={busy}
                 placeholder="you@proto.co.za"
@@ -78,7 +79,7 @@ export default function AdminLoginPage({ forbidden = false, onSignedIn }) {
                 />
               </label>
             )}
-            <button type="submit" className="adm-btn-red adm-login-submit" disabled={busy}>
+            <button type="submit" className="adm-btn-red adm-login-submit" disabled={busy} aria-busy={busy}>
               {busy ? <Loader2 size={16} className="spin" /> : mode === 'forgot' ? <Mail size={16} /> : <LogIn size={16} />}
               {busy ? (mode === 'forgot' ? 'Sending…' : 'Signing in…') : mode === 'forgot' ? 'Send reset link' : 'Sign in'}
             </button>
