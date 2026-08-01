@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ImagePlus, Loader2, PackagePlus, Trash2, UploadCloud } from 'lucide-react';
 import CategoryPathSelect from './CategoryPathSelect';
 import { publishNewProduct, uploadProductImageSlot } from '../../lib/productLoaderApi';
+import SellingUnitField from '../SellingUnitField';
 
 const SLOTS = [1, 2, 3, 4];
 const emptyImages = () => SLOTS.map((slot) => ({ slot, url: '', name: '', uploading: false, error: '' }));
@@ -18,6 +19,8 @@ export default function ProductLoaderNewProduct({ taxonomyTree = [], publishedBy
   const [price, setPrice] = useState('');
   const [barcode, setBarcode] = useState('');
   const [description, setDescription] = useState('');
+  const [unitsOfIssue, setUnitsOfIssue] = useState('EACH');
+  const [packDescription, setPackDescription] = useState('');
   const [stockQty, setStockQty] = useState('');
   const [categoryPathIds, setCategoryPathIds] = useState([]);
   const [images, setImages] = useState(emptyImages);
@@ -72,6 +75,7 @@ export default function ProductLoaderNewProduct({ taxonomyTree = [], publishedBy
 
   const reset = () => {
     setCode(''); setTitle(''); setPrice(''); setBarcode(''); setDescription('');
+    setUnitsOfIssue('EACH'); setPackDescription('');
     setStockQty(''); setCategoryPathIds([]); setImages(emptyImages()); setError('');
     Object.values(fileRefs.current).forEach((el) => { if (el) el.value = ''; });
   };
@@ -89,6 +93,8 @@ export default function ProductLoaderNewProduct({ taxonomyTree = [], publishedBy
         price,
         barcode,
         description,
+        unitsOfIssue,
+        packDescription,
         stockQty,
         images: images.filter((i) => i.url).map((i) => ({ slot: i.slot, url: i.url })),
         categoryPathIds,
@@ -128,12 +134,21 @@ export default function ProductLoaderNewProduct({ taxonomyTree = [], publishedBy
           <input className="adm-field-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Product name shown on the site" />
         </label>
         <label className="adm-field">
-          <span className="adm-field-label">Price (ZAR) *</span>
+          <span className="adm-field-label">Website price incl. VAT (ZAR) *</span>
           <input className="adm-field-input" type="number" min="0" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.00" />
         </label>
         <label className="adm-field">
           <span className="adm-field-label">Opening stock qty</span>
           <input className="adm-field-input" type="number" min="0" step="1" value={stockQty} onChange={(e) => setStockQty(e.target.value)} placeholder="0" />
+        </label>
+        <SellingUnitField
+          value={unitsOfIssue}
+          onChange={setUnitsOfIssue}
+          id="new-product-selling-unit-options"
+        />
+        <label className="adm-field">
+          <span className="adm-field-label">Pack description</span>
+          <input className="adm-field-input" value={packDescription} onChange={(e) => setPackDescription(e.target.value)} placeholder="Optional carton or packaging detail" />
         </label>
       </div>
 

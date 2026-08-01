@@ -3,6 +3,7 @@ import { catalogueDescription, catalogueDisplayTitle } from '../lib/product-load
 import { requireOwner } from './_admin-auth.js';
 import { logProductLoaderAudit } from './_product-loader-audit.js';
 import { downloadNutstoreFile, isNutstoreConfigured, nutstoreSetupMessage } from './_nutstore-webdav.js';
+import { normalizeUnitsOfIssue } from '../lib/selling-unit.mjs';
 
 export const config = { api: { bodyParser: { sizeLimit: '4mb' } } };
 
@@ -75,10 +76,15 @@ async function publishOne(sb, item, { overwriteImage }) {
   const now = new Date().toISOString();
   const { title, description } = resolveCatalogTextFields(item);
   const price = Number(item.price ?? item.sqlRow?.price ?? 0);
+  const unitsOfIssue = normalizeUnitsOfIssue(
+    item.unitsOfIssue || existing?.units_of_issue || 'EACH',
+  );
 
   const patch = {
     title,
     price,
+    units_of_issue: unitsOfIssue,
+    pack_description: String(item.packDescription || existing?.pack_description || '').trim(),
     category,
     subcategory_one: subcategoryOne,
     subcategory_two: item.subcategoryTwo || item.subcategory_two || null,
@@ -121,6 +127,7 @@ async function publishOne(sb, item, { overwriteImage }) {
       outcome: 'published',
       title,
       price,
+      unitsOfIssue,
       category,
       subcategoryOne,
       imageUrl,
@@ -155,6 +162,8 @@ function buildArchivePayload(item, { sku, imageUrl, filename, now }) {
     title,
     original_description: description,
     price: Number(item.price ?? item.sqlRow?.price ?? 0),
+    units_of_issue: normalizeUnitsOfIssue(item.unitsOfIssue || 'EACH'),
+    pack_description: String(item.packDescription || '').trim(),
     category,
     subcategory_one: subcategoryOne,
     subcategory_two: item.subcategoryTwo || item.subcategory_two || null,

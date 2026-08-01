@@ -54,4 +54,19 @@ describe('catalogue safety checks', () => {
       submitted: { price: 10 },
     })).toMatchObject({ blocked: true, code: 'canonical_price_invalid' });
   });
+
+  it('converts a loader ERP price once while preserving a valid website price', () => {
+    expect(canonicalPublishValues({
+      product: { sell_price: 25.65, stock_qty: 10, available_stock: 8 },
+      submitted: { price: 25.65 },
+      priceBasis: 'erp_ex_vat',
+    })).toMatchObject({ price: 29.5, priceSource: 'products.sell_price_ex_vat_converted' });
+
+    expect(canonicalPublishValues({
+      product: { sell_price: 25.65, stock_qty: 10, available_stock: 8 },
+      existing: { price: 29.5 },
+      submitted: { price: 25.65 },
+      priceBasis: 'erp_ex_vat',
+    })).toMatchObject({ price: 29.5, priceSource: 'website_stock.price_incl_vat' });
+  });
 });

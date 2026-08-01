@@ -88,6 +88,7 @@ export async function uploadProductImageSlot({ file, sku, slot }) {
  */
 export async function publishNewProduct({
   code, title, price, barcode, description, stockQty, availableStock,
+  unitsOfIssue = 'EACH', packDescription = '',
   images = [], categoryPathIds = [], taxonomyTree = [], publishedBy = '',
 }) {
   const sku = String(code || '').trim().toUpperCase();
@@ -114,6 +115,8 @@ export async function publishNewProduct({
       price: numericPrice,
       barcode: String(barcode || '').trim() || sku,
       description: String(description || '').trim(),
+      unitsOfIssue,
+      packDescription: String(packDescription || '').trim(),
       images: cleanImages,
       imageUrl: cleanImages.find((i) => i.slot === 1)?.url || cleanImages[0].url,
       imageSlot: 1,
@@ -173,6 +176,8 @@ export async function archiveLoaderImageItem(item) {
       sqlRow: item.sqlRow || null,
       websiteRow: item.websiteRow || null,
       filename: item.filename,
+      unitsOfIssue: item.unitsOfIssue || 'EACH',
+      packDescription: item.packDescription || '',
     }),
   });
   await readApiJson(res, { fallback: 'Archive failed' });
@@ -276,6 +281,8 @@ export async function publishLoaderColourVariant(rows, options) {
       categoryConfidence: item.websiteRow ? 1 : 0.5,
       publishMode: 'colour_variant',
       filename: items.map((row) => row.filename).join(', '),
+      unitsOfIssue: item.unitsOfIssue || 'EACH',
+      packDescription: item.packDescription || '',
     }),
   });
   const json = await readApiJson(publishRes, { fallback: 'Colour variant publish failed' });
@@ -364,6 +371,8 @@ export async function publishLoaderImageItem(item, {
       categoryConfidence: item.websiteRow ? 1 : 0.5,
       publishMode: 'direct',
       filename: filename || item.filename,
+      unitsOfIssue: item.unitsOfIssue || 'EACH',
+      packDescription: item.packDescription || '',
     }),
   });
   await readApiJson(publishRes, { fallback: 'Publish failed' });

@@ -12,6 +12,7 @@ describe('looksLikeExVatPrice', () => {
     expect(looksLikeExVatPrice(16.09)).toBe(true); // → 18.50 key charm octopus
     expect(looksLikeExVatPrice(18.26)).toBe(true); // → 21.00 XGIFT
     expect(looksLikeExVatPrice(25.65)).toBe(true); // → 29.50 3D toy dragon
+    expect(looksLikeExVatPrice(19.57)).toBe(true); // → 22.50 coin purse (cent-rounded input)
     expect(looksLikeExVatPrice(43.04)).toBe(true); // → 49.50 sting ray
     expect(looksLikeExVatPrice(51.74)).toBe(true); // → 59.50 fidget ball
     expect(looksLikeExVatPrice(73.91)).toBe(true); // → 85.00 fidget egg

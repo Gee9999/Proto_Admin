@@ -4,6 +4,7 @@ import { getProductByCode } from './_sql-provider.js';
 import { toSqlPreview } from './_sql-stmast.js';
 import { parseLoaderFilename } from './_product-loader-filename.js';
 import { fetchProductLookupMap, findProductBySku } from './_sku-match.js';
+import { normalizeUnitsOfIssue } from '../lib/selling-unit.mjs';
 
 export { parseLoaderFilename } from './_product-loader-filename.js';
 
@@ -11,6 +12,7 @@ export const SLOT_FIELDS = ['image_url_one', 'image_url_two', 'image_url_three',
 export const WEBSITE_STOCK_COLS =
   'sku, title, price, original_description, category, subcategory_one, subcategory_two, '
   + 'subcategory_three, subcategory_four, '
+  + 'units_of_issue, pack_description, '
   + 'image_url_one, image_url_two, image_url_three, image_url_four, barcode, updated_at, stock_qty, available_stock';
 
 function slugPattern(term) {
@@ -176,7 +178,7 @@ export async function resolveProductLoaderMatch(sb, {
     sqlRow?.code || websiteRow?.barcode || effectiveCode || '',
   ).trim().toUpperCase();
   const productLookup = productCode
-    ? await fetchProductLookupMap(sb, [productCode], 'sku, sell_price').catch(() => new Map())
+    ? await fetchProductLookupMap(sb, [productCode], 'sku, sell_price, units_of_issue').catch(() => new Map())
     : new Map();
   const productRow = findProductBySku(productLookup, productCode);
   const rawPositillPrice = Number(sqlRow?.price) || 0;
@@ -218,6 +220,10 @@ export async function resolveProductLoaderMatch(sb, {
     priceSource: resolvedPrice.source,
     erpPriceExVat: rawPositillPrice || null,
     productSellPrice: productRow?.sell_price != null ? Number(productRow.sell_price) : null,
+    unitsOfIssue: normalizeUnitsOfIssue(
+      websiteRow?.units_of_issue || productRow?.units_of_issue || 'EACH',
+    ),
+    packDescription: String(websiteRow?.pack_description || '').trim(),
     imageSlot: slot,
     sqlRow,
     websiteRow,

@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { requireAdminKey } from './_admin-auth.js';
 import { logProductLoaderAudit } from './_product-loader-audit.js';
 import { NUTSTORE_ARCHIVED_BY } from './nutstore-process.js';
+import { normalizeUnitsOfIssue } from '../lib/selling-unit.mjs';
 
 const ARCHIVE_DEFAULT_CATEGORY = 'Uncategorised';
 const ARCHIVE_DEFAULT_SUB = 'General';
@@ -49,6 +50,8 @@ export default async function handler(req, res) {
     title,
     original_description: String(body.description || '').trim() || title,
     price: Number(body.price ?? body.sqlRow?.price ?? 0) || 0,
+    units_of_issue: normalizeUnitsOfIssue(body.unitsOfIssue || 'EACH'),
+    pack_description: String(body.packDescription || '').trim(),
     category: String(body.category || '').trim() || ARCHIVE_DEFAULT_CATEGORY,
     subcategory_one: String(body.subcategoryOne || '').trim() || ARCHIVE_DEFAULT_SUB,
     subcategory_two: body.subcategoryTwo || null,
