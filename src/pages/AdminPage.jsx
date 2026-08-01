@@ -62,8 +62,10 @@ import {
   fetchDistinctCategories,
   invalidateAdminCache,
   invalidateProductCache,
+  fetchProductAvailability,
   setLiveTaxonomyTree,
   setNewArrival,
+  setProductAvailability,
   setToOrder,
   updateProduct,
   uploadDormantImage,
@@ -296,6 +298,13 @@ const emptyForm = {
   stockOnHand: '1',
   isNewArrival: false,
   toOrder: false,
+  availabilityLoading: false,
+  availabilitySchemaReady: null,
+  incomingStatus: 'none',
+  incomingQty: '',
+  incomingEta: '',
+  shipmentRef: '',
+  allowPreorder: false,
   categoryId: categories[0]?.id || '',
   childIds: categories[0]?.children?.[0]?.id ? [categories[0].children[0].id] : [],
 };
@@ -457,6 +466,13 @@ function productToForm(product, tree = categories) {
     stockOnHand: product.stockOnHand != null ? String(product.stockOnHand) : '',
     isNewArrival: !!product.isNew,
     toOrder: !!product.toOrder,
+    availabilityLoading: false,
+    availabilitySchemaReady: null,
+    incomingStatus: 'none',
+    incomingQty: '',
+    incomingEta: '',
+    shipmentRef: '',
+    allowPreorder: false,
     ...categoryFormFromPath(product.categoryPath, tree),
   };
 }
@@ -1421,11 +1437,34 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
 
   const openEditProduct = (product) => {
     setEditingProduct(product);
-    setProductForm(productToForm(product, taxonomyTree));
+    setProductForm({ ...productToForm(product, taxonomyTree), availabilityLoading: true });
     setEditorError('');
     setEditorImageUploading(false);
     setEditorImageDragOver('');
     setEditorOpen(true);
+    if (!product.archivedBy) {
+      void fetchProductAvailability(product.id)
+        .then((result) => {
+          setProductForm((current) => {
+            if (current.code !== (product.code || '')) return current;
+            const availability = result?.availability || {};
+            return {
+              ...current,
+              availabilityLoading: false,
+              availabilitySchemaReady: result?.schemaReady === true,
+              incomingStatus: availability.incomingStatus || 'none',
+              incomingQty: availability.incomingQty > 0 ? String(availability.incomingQty) : '',
+              incomingEta: availability.incomingEta || '',
+              shipmentRef: availability.shipmentRef || '',
+              allowPreorder: !!availability.allowPreorder,
+            };
+          });
+        })
+        .catch((error) => {
+          setProductForm((current) => ({ ...current, availabilityLoading: false }));
+          setEditorError(error.message || 'Could not load incoming-stock status');
+        });
+    }
   };
 
   const closeEditor = () => {
@@ -1568,6 +1607,15 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         }
         if (!!productForm.toOrder !== !!editingProduct.toOrder) {
           await setToOrder(editingProduct.id, productForm.toOrder);
+        }
+        if (productForm.availabilitySchemaReady) {
+          await setProductAvailability(editingProduct.id, {
+            incomingStatus: productForm.incomingStatus,
+            incomingQty: productForm.incomingQty,
+            incomingEta: productForm.incomingEta,
+            shipmentRef: productForm.shipmentRef,
+            allowPreorder: productForm.allowPreorder,
+          });
         }
       }
       closeEditor();
@@ -3497,8 +3545,70 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                     </label>
                     <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
                       <input type="checkbox" checked={!!productForm.toOrder} onChange={(e) => setProductForm((p) => ({ ...p, toOrder: e.target.checked }))} />
-                      <span><strong>To order</strong> — customers can order this even at zero stock</span>
+                      <span><strong>Made / sourced to order</strong> — customers can order this at zero stock and will see an extra-lead-time disclaimer</span>
                     </label>
+
+                    <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: 12, display: 'grid', gap: 10 }}>
+                      <div>
+                        <strong style={{ fontSize: 13 }}>Incoming container stock</strong>
+                        <p className="adm-muted" style={{ margin: '3px 0 0', fontSize: 12 }}>
+                          Separate from made-to-order. ERP stock remains the exact stock-on-hand source.
+                        </p>
+                      </div>
+                      {productForm.availabilityLoading ? (
+                        <span className="adm-muted" style={{ fontSize: 12 }}>Loading availability…</span>
+                      ) : productForm.availabilitySchemaReady === false ? (
+                        <span style={{ fontSize: 12, color: '#b45309', fontWeight: 700 }}>Migration 059 is required before incoming stock can be saved.</span>
+                      ) : (
+                        <>
+                          <select
+                            className="adm-field-input"
+                            value={productForm.incomingStatus}
+                            onChange={(e) => setProductForm((p) => ({
+                              ...p,
+                              incomingStatus: e.target.value,
+                              ...(e.target.value === 'none' ? {
+                                incomingQty: '', incomingEta: '', shipmentRef: '', allowPreorder: false,
+                              } : {}),
+                            }))}
+                            aria-label="Incoming stock status"
+                          >
+                            <option value="none">No incoming stock</option>
+                            <option value="on_the_way">On the way</option>
+                            <option value="customs">In customs</option>
+                            <option value="landed_awaiting_grv">Landed — awaiting GRV</option>
+                            <option value="partially_received">Partially received</option>
+                          </select>
+                          {productForm.incomingStatus !== 'none' && (
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 }}>
+                              <label style={{ display: 'grid', gap: 5, fontSize: 12, fontWeight: 700 }}>
+                                Expected quantity
+                                <input className="adm-field-input" type="number" min="0.001" step="0.001" value={productForm.incomingQty} onChange={(e) => setProductForm((p) => ({ ...p, incomingQty: e.target.value }))} />
+                              </label>
+                              <label style={{ display: 'grid', gap: 5, fontSize: 12, fontWeight: 700 }}>
+                                ETA
+                                <input className="adm-field-input" type="date" value={productForm.incomingEta} onChange={(e) => setProductForm((p) => ({ ...p, incomingEta: e.target.value }))} />
+                              </label>
+                              <label style={{ display: 'grid', gap: 5, fontSize: 12, fontWeight: 700, gridColumn: '1 / -1' }}>
+                                Container / shipment reference
+                                <input className="adm-field-input" type="text" maxLength="120" value={productForm.shipmentRef} onChange={(e) => setProductForm((p) => ({ ...p, shipmentRef: e.target.value }))} placeholder="Optional internal reference" />
+                              </label>
+                            </div>
+                          )}
+                          {['on_the_way', 'customs'].includes(productForm.incomingStatus) && (
+                            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13 }}>
+                              <input type="checkbox" checked={!!productForm.allowPreorder} onChange={(e) => setProductForm((p) => ({ ...p, allowPreorder: e.target.checked }))} />
+                              <span>Allow customers to pre-order before the shipment lands</span>
+                            </label>
+                          )}
+                          {['landed_awaiting_grv', 'partially_received'].includes(productForm.incomingStatus) && (
+                            <span style={{ fontSize: 12, color: '#245aa7', fontWeight: 700 }}>
+                              Customers can order this while receiving is completed; the quote confirms final quantity.
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </div>
                   </div>
                 </AdminField>
               )}

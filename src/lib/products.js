@@ -579,6 +579,27 @@ export async function setToOrder(sku, toOrder) {
   invalidateAdminCache();
 }
 
+/** Load the private incoming-stock state used by Admin and the storefront APIs. */
+export async function fetchProductAvailability(sku) {
+  return stockAction({ action: 'getProductAvailability', sku });
+}
+
+/** Save incoming-container state. This is deliberately separate from To order. */
+export async function setProductAvailability(sku, availability) {
+  const json = await stockAction({
+    action: 'setProductAvailability',
+    sku,
+    incomingStatus: availability?.incomingStatus || 'none',
+    incomingQty: Number(availability?.incomingQty || 0),
+    incomingEta: availability?.incomingEta || '',
+    shipmentRef: availability?.shipmentRef || '',
+    allowPreorder: !!availability?.allowPreorder,
+  });
+  invalidateProductCache();
+  invalidateAdminCache();
+  return json;
+}
+
 export async function recycleProduct(sku, { fromArchive = false } = {}) {
   if (fromArchive) {
     await stockAction({ action: 'recycleFromArchive', sku, archivedBy: RECYCLE_ARCHIVED_BY });
