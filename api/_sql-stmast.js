@@ -33,7 +33,7 @@ assertReadOnlySql(STMAST_QUERY);
 
 function normalizeRow(row) {
   if (!row) return null;
-  return {
+  const normalized = {
     CODE: row.CODE ?? row.code,
     DESCR: row.DESCR ?? row.descr ?? row.title ?? row.description,
     PRICE_A: row.PRICE_A ?? row.price_a ?? row.price,
@@ -41,6 +41,7 @@ function normalizeRow(row) {
     BOOKED: row.BOOKED ?? row.booked,
     DEPT: row.DEPT ?? row.dept,
   };
+  return String(normalized.CODE || '').trim() ? normalized : null;
 }
 
 /** Normalize bridge/cache/raw rows into a consistent preview shape for the UI. */
@@ -78,7 +79,11 @@ async function fetchViaBridge(sku) {
   if (!res.ok) {
     throw new Error(json.error || json.message || `SQL bridge failed (${res.status})`);
   }
-  return normalizeRow(json.row || json);
+  // The bridge uses `{ row: null }` for an exact CODE miss. Do not fall back
+  // to normalising the response envelope itself: that creates a blank,
+  // zero-valued product which looks like a real Positill row to callers.
+  const row = Object.prototype.hasOwnProperty.call(json, 'row') ? json.row : json;
+  return normalizeRow(row);
 }
 
 async function fetchViaMssql(sku) {

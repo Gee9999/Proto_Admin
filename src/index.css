@@ -3990,7 +3990,7 @@ html, body { background: #f5f5f5; color: #111827; }
 }
 
 /* Hermes / Product Intelligence / Buying foundation */
-.intelligence-panel { display: grid; gap: 20px; }
+.intelligence-panel { display: grid; align-content: start; gap: 20px; }
 .intelligence-panel__head { margin-bottom: 0; }
 .intelligence-eyebrow {
   display: flex;
@@ -4025,7 +4025,7 @@ html, body { background: #f5f5f5; color: #111827; }
   background: #f9fafb;
   padding: 14px 16px;
 }
-.intelligence-callout { align-items: flex-start; flex-direction: column; gap: 4px; }
+.intelligence-callout { align-items: flex-start; flex-direction: column; justify-content: flex-start; gap: 4px; }
 .intelligence-callout strong,
 .buying-foundation-banner strong { color: #111827; font-size: 14px; }
 .intelligence-callout span,

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { buildProductIntelligence } from '../../api/_product-intelligence.js';
+import { fetchStmastRow } from '../../api/_sql-stmast.js';
 
 function stockClientWith({ sku = null, barcode = null } = {}) {
   return {
@@ -116,6 +117,30 @@ describe('product intelligence — read-only combined contract', () => {
     });
 
     expect(result.status).toEqual({ website: 'not_found', erp: 'not_found', degraded: true });
+  });
+
+  it('treats the SQL bridge row-null envelope as an exact CODE miss', async () => {
+    const previousUrl = process.env.STOCK_SQL_BRIDGE_URL;
+    const previousFetch = globalThis.fetch;
+    process.env.STOCK_SQL_BRIDGE_URL = 'https://bridge.example.test';
+    globalThis.fetch = async () => new Response(JSON.stringify({ row: null }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    try {
+      await expect(fetchStmastRow('MISSING-TEST-999')).resolves.toBeNull();
+    } finally {
+      globalThis.fetch = previousFetch;
+      if (previousUrl === undefined) delete process.env.STOCK_SQL_BRIDGE_URL;
+      else process.env.STOCK_SQL_BRIDGE_URL = previousUrl;
+    }
+  });
+
+  it('keeps the Hermes foundation grid content-sized', () => {
+    const css = readFileSync('src/index.css', 'utf8');
+    expect(css).toMatch(/\.intelligence-panel\s*\{[^}]*align-content:\s*start/);
+    expect(css).toMatch(/\.intelligence-callout\s*\{[^}]*justify-content:\s*flex-start/);
   });
 
   it('keeps the route admin-authenticated and GET-only', () => {
