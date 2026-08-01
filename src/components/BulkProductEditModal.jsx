@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Image, Loader2, Plus, X } from 'lucide-react';
 import { setLiveTaxonomyTree, updateProduct } from '../lib/products';
+import SellingUnitField from './SellingUnitField';
 import {
   childrenOfTree,
   createSubcategory,
@@ -51,6 +52,7 @@ function productToRow(product, tree) {
     image: product.image || product.images?.[0] || '',
     description: product.description || '',
     packDescription: product.packDescription || '',
+    unitsOfIssue: product.unitsOfIssue || 'EACH',
     code: product.code || product.barcode || '',
     categoryId: path[0] || tree[0]?.id || '',
     childIds: path.slice(1).filter(Boolean),
@@ -65,6 +67,7 @@ function rowSnapshot(row) {
   return {
     description: row.description,
     packDescription: row.packDescription,
+    unitsOfIssue: row.unitsOfIssue,
     code: row.code,
     sku: row.sku,
     categoryPath: categoryPathFromRow(row),
@@ -75,6 +78,7 @@ function buildPayload(original, row) {
   const payload = {};
   if (row.description !== original.description) payload.description = row.description;
   if (row.packDescription !== original.packDescription) payload.packDescription = row.packDescription;
+  if (row.unitsOfIssue !== original.unitsOfIssue) payload.unitsOfIssue = row.unitsOfIssue;
   if (row.code !== original.code) payload.code = row.code;
   if (row.sku !== original.sku) payload.newWebsiteSku = row.sku;
 
@@ -426,6 +430,13 @@ export default function BulkProductEditModal({
                       placeholder="Pack size, carton qty…"
                     />
                   </label>
+                  <div className="pm-bulk-field pm-bulk-field--wide">
+                    <SellingUnitField
+                      value={row.unitsOfIssue}
+                      onChange={(unitsOfIssue) => patchRow(index, { unitsOfIssue })}
+                      id={`bulk-selling-unit-options-${index}`}
+                    />
+                  </div>
                   <label className="pm-bulk-field pm-bulk-field--full">
                     <span>Description</span>
                     <textarea

@@ -374,6 +374,8 @@ export default function ProductLoaderNutstore({
         displayCode: item.displayCode,
         title: catalogueDisplayTitle(item),
         price: item.price ?? item.sqlRow?.price ?? 0,
+        unitsOfIssue: item.unitsOfIssue || 'EACH',
+        packDescription: item.packDescription || '',
         description: catalogueDescription(item),
         category: item.websiteRow?.category || (action === 'publish' ? labels.category : labels.category || ''),
         subcategoryOne: item.websiteRow?.subcategory_one || (action === 'publish' ? labels.subcategoryOne : labels.subcategoryOne || ''),

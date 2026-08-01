@@ -493,6 +493,8 @@ export async function createProduct(payload) {
     subcategory_four,
     subcategory_extra,
     price: Number(payload.price) || 0,
+    units_of_issue: payload.unitsOfIssue || 'EACH',
+    pack_description: payload.packDescription || '',
   };
 
   await stockAction({ action: 'create', row });
@@ -514,6 +516,7 @@ export async function updateProduct(sku, payload) {
   if (payload.code !== undefined) body.barcode = String(payload.code).trim();
   if (payload.description !== undefined) body.description = payload.description;
   if (payload.packDescription !== undefined) body.packDescription = payload.packDescription;
+  if (payload.unitsOfIssue !== undefined) body.unitsOfIssue = payload.unitsOfIssue;
   if (payload.name !== undefined) body.title = payload.name;
   if (payload.price !== undefined) body.price = Number(payload.price) || 0;
   // Send node ids, not client-resolved labels — the server resolves them

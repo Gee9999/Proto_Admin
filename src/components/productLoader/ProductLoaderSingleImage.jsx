@@ -13,6 +13,7 @@ import { archiveLoaderImageItem, lookupFilenames, logPublishFailure, publishLoad
 import { catalogueDisplayTitle, loaderCodeLabel } from '../../lib/productLoaderDisplay.js';
 import LoaderCodeEllipsis from './LoaderCodeEllipsis.jsx';
 import CategoryPathSelect from './CategoryPathSelect';
+import SellingUnitField from '../SellingUnitField';
 
 function findNode(tree, id) {
   for (const n of tree) {
@@ -43,6 +44,7 @@ export default function ProductLoaderSingleImage({
   const [archiving, setArchiving] = useState(false);
   const [error, setError] = useState('');
   const [descriptionDraft, setDescriptionDraft] = useState('');
+  const [unitsOfIssueDraft, setUnitsOfIssueDraft] = useState('EACH');
 
   const clear = () => {
     if (preview) {
@@ -52,6 +54,7 @@ export default function ProductLoaderSingleImage({
     setItem(null);
     setError('');
     setDescriptionDraft('');
+    setUnitsOfIssueDraft('EACH');
   };
 
   const handleSelect = async (fileList) => {
@@ -69,6 +72,7 @@ export default function ProductLoaderSingleImage({
       setItem({ ...row, file });
       setPreview(URL.createObjectURL(file));
       setDescriptionDraft(catalogueDisplayTitle(row) || '');
+      setUnitsOfIssueDraft(row.unitsOfIssue || 'EACH');
       if (row.canPublish) {
         onShowToast?.(`Matched ${row.code}`, 'success');
       } else {
@@ -101,7 +105,11 @@ export default function ProductLoaderSingleImage({
     setProcessing(true);
     setError('');
     try {
-      await publishLoaderImageItem({ ...item, descriptionOverride: descriptionDraft.trim() }, {
+      await publishLoaderImageItem({
+        ...item,
+        descriptionOverride: descriptionDraft.trim(),
+        unitsOfIssue: unitsOfIssueDraft,
+      }, {
         taxonomyTree,
         findNode,
         defaultCategoryPathIds: batchDefaultPathIds,
@@ -179,6 +187,13 @@ export default function ProductLoaderSingleImage({
                 <div><dt>SOH</dt><dd>{soh}</dd></div>
                 <div><dt>Slot</dt><dd>{item.imageSlot}</dd></div>
               </dl>
+              <div style={{ marginTop: 10 }}>
+                <SellingUnitField
+                  value={unitsOfIssueDraft}
+                  onChange={setUnitsOfIssueDraft}
+                  id="single-loader-selling-unit-options"
+                />
+              </div>
               {item.parseError && <p className="pl-error">Invalid filename — {item.parseError}</p>}
               {item.group === 'not_found' && !item.parseError && (
                 <p className="pl-error">Product not found in Positill or website catalogue — you can still send it to Archive and fix the code later.</p>

@@ -5,6 +5,7 @@ import { logProductLoaderAudit } from './_product-loader-audit.js';
 import { labelsToDbFields } from './_taxonomy-utils.js';
 import { fetchProductLookupMap, findProductBySku } from './_sku-match.js';
 import { canonicalPublishValues } from '../lib/catalogue-safety.mjs';
+import { normalizeUnitsOfIssue } from '../lib/selling-unit.mjs';
 
 function getStockClient() {
   return createClient(
@@ -46,6 +47,8 @@ export default async function handler(req, res) {
     websiteRow,
     images,
     requireNew = false,
+    unitsOfIssue,
+    packDescription,
   } = req.body || {};
 
   // Normalize the SKU the SAME way upload-product-image sanitizes its storage
@@ -113,7 +116,7 @@ export default async function handler(req, res) {
     const productMap = await fetchProductLookupMap(
       sb,
       [erpBarcode],
-      'sku, sell_price, stock_qty, available_stock',
+      'sku, sell_price, stock_qty, available_stock, units_of_issue',
     );
     canonicalProduct = findProductBySku(productMap, erpBarcode);
   } catch (error) {
@@ -152,6 +155,9 @@ export default async function handler(req, res) {
     ? String(title || '').trim()
     : catalogueDisplayTitle(catalogItem);
   const resolvedDescription = catalogueDescription(catalogItem);
+  const resolvedUnitsOfIssue = normalizeUnitsOfIssue(
+    unitsOfIssue || existing?.units_of_issue || canonicalProduct?.units_of_issue || 'EACH',
+  );
 
   // When the caller supplies a full category path (the loader's cascading
   // picker), persist EVERY level via labelsToDbFields — including
@@ -177,12 +183,14 @@ export default async function handler(req, res) {
     price: safeValues.price,
     stock_qty: safeValues.stockQty,
     available_stock: safeValues.availableStock,
+    units_of_issue: resolvedUnitsOfIssue,
     ...catFields,
     ...imageFields,
     updated_at: now,
   };
 
   if (resolvedDescription) patch.original_description = resolvedDescription;
+  if (packDescription !== undefined) patch.pack_description = String(packDescription || '').trim();
   let action;
   let writeError;
 
@@ -197,6 +205,8 @@ export default async function handler(req, res) {
       barcode: erpBarcode,
       title: patch.title,
       price: patch.price,
+      units_of_issue: patch.units_of_issue,
+      pack_description: patch.pack_description || '',
       ...catFields,
       original_description: patch.original_description || '',
       stock_qty: patch.stock_qty ?? 0,
@@ -249,6 +259,8 @@ export default async function handler(req, res) {
       outcome: 'published',
       title: patch.title,
       price: patch.price,
+      unitsOfIssue: patch.units_of_issue,
+      packDescription: patch.pack_description ?? existing?.pack_description ?? '',
       category: patch.category,
       subcategoryOne: patch.subcategory_one,
       imageUrl: imageUrlPrimary,

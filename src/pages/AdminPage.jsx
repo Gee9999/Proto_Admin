@@ -109,6 +109,7 @@ import { queryClient } from '../lib/queryClient';
 import { queryKeys } from '../lib/queryKeys';
 import { dispatchAdminRefresh } from '../lib/adminRefresh';
 import { lazyRetry } from '../lib/lazyRetry';
+import SellingUnitField from '../components/SellingUnitField';
 
 // Section panels — lazy-loaded so the initial admin bundle only ships the
 // default section (Product Manager). Each lazy chunk is fetched on demand
@@ -286,6 +287,7 @@ const emptyForm = {
   name: '',
   description: '',
   packDescription: '',
+  unitsOfIssue: 'EACH',
   image: '',
   secondaryImage: '',
   imageThree: '',
@@ -446,6 +448,7 @@ function productToForm(product, tree = categories) {
     name: product.name || '',
     description: product.description || '',
     packDescription: product.packDescription || '',
+    unitsOfIssue: product.unitsOfIssue || 'EACH',
     image: product.image || product.images?.[0] || '',
     secondaryImage: product.secondaryImage || product.images?.[1] || '',
     imageThree: product.imageThree || product.images?.[2] || '',
@@ -495,7 +498,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   const [savingProfile, setSavingProfile] = useState(false);
 
   const [contentEditProduct, setContentEditProduct] = useState(null);
-  const [contentEditForm, setContentEditForm] = useState({ image: '', description: '', packDescription: '', code: '' });
+  const [contentEditForm, setContentEditForm] = useState({ image: '', description: '', packDescription: '', unitsOfIssue: 'EACH', code: '' });
   const [contentEditSaving, setContentEditSaving] = useState(false);
   const [contentEditError, setContentEditError] = useState('');
   const [imageUploading, setImageUploading] = useState(false);
@@ -1456,6 +1459,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       image: product.image || '',
       description: product.description || '',
       packDescription: product.packDescription || '',
+      unitsOfIssue: product.unitsOfIssue || 'EACH',
       code: product.code || product.barcode || '',
     });
     setContentEditError('');
@@ -1472,6 +1476,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         image: contentEditForm.image.trim(),
         description: contentEditForm.description,
         packDescription: contentEditForm.packDescription,
+        unitsOfIssue: contentEditForm.unitsOfIssue,
         code: contentEditForm.code?.trim() || '',
       });
       // Update local lists so image/description reflects the change without a full reload
@@ -1479,6 +1484,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         image: contentEditForm.image.trim(),
         description: contentEditForm.description,
         packDescription: contentEditForm.packDescription,
+        unitsOfIssue: contentEditForm.unitsOfIssue,
         code: contentEditForm.code?.trim() || '',
         barcode: contentEditForm.code.trim(),
       };
@@ -1536,6 +1542,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       name: productForm.name.trim(),
       description: productForm.description,
       packDescription: productForm.packDescription,
+      unitsOfIssue: productForm.unitsOfIssue,
       image: productForm.image.trim(),
       secondaryImage: productForm.secondaryImage.trim(),
       imageThree: productForm.imageThree.trim(),
@@ -3143,6 +3150,14 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
               />
             </label>
 
+            <div style={{ marginBottom: 20 }}>
+              <SellingUnitField
+                value={contentEditForm.unitsOfIssue}
+                onChange={(unitsOfIssue) => setContentEditForm((form) => ({ ...form, unitsOfIssue }))}
+                id="content-edit-selling-unit-options"
+              />
+            </div>
+
             {contentEditError && (
               <div style={{ marginBottom: 12, padding: '8px 12px', background: '#fef2f2', borderRadius: 6, color: '#c40000', fontSize: 13 }}>
                 {contentEditError}
@@ -3362,6 +3377,11 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
               <AdminField label="Pack Description" full>
                 <textarea value={productForm.packDescription} onChange={(e) => setProductForm((p) => ({ ...p, packDescription: e.target.value }))} className="adm-field-input" rows={2} style={{ resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }} placeholder="Pack / carton description…" />
               </AdminField>
+              <SellingUnitField
+                value={productForm.unitsOfIssue}
+                onChange={(unitsOfIssue) => setProductForm((product) => ({ ...product, unitsOfIssue }))}
+                id="product-editor-selling-unit-options"
+              />
 
               <AdminField label="Product images (up to 4)" full>
                 <p className="adm-muted" style={{ fontSize: 12, margin: '0 0 10px' }}>

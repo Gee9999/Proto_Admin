@@ -6,6 +6,7 @@ import { labelsToDbFields, loadTaxonomy, resolveLabelsFromPathIds } from './_tax
 import { parseExtraLabels } from '../lib/taxonomy-match.mjs';
 import { deriveMotarroPathFromLabels, isMotarroProduct, motarroPathSnapshot } from './_mottaro-category.js';
 import { buildMoveTagPatch, tableHasMoveTagColumns } from './_move-tag.js';
+import { normalizeUnitsOfIssue } from '../lib/selling-unit.mjs';
 
 const CATEGORY_COLS = ['category', 'subcategory_one', 'subcategory_two', 'subcategory_three', 'subcategory_four'];
 
@@ -47,6 +48,7 @@ export default async function handler(req, res) {
     image,
     description,
     packDescription,
+    unitsOfIssue,
     title,
     name,
     price,
@@ -75,6 +77,7 @@ export default async function handler(req, res) {
   if (code !== undefined) patch.barcode = String(code).trim();
   if (description !== undefined) patch.original_description = String(description).trim();
   if (packDescription !== undefined) patch.pack_description = String(packDescription).trim();
+  if (unitsOfIssue !== undefined) patch.units_of_issue = normalizeUnitsOfIssue(unitsOfIssue);
   if (title !== undefined) patch.title = String(title).trim();
   if (name !== undefined) patch.title = String(name).trim();
   if (price !== undefined) patch.price = Number(price) || 0;

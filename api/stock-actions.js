@@ -6,6 +6,7 @@ import { collectImageUrlsFromRow, removeStagingObjects } from './_staging-storag
 import { reorderStagedImageSlots } from './_stage-dormant.js';
 import { isExactlyZeroStock } from './_catalog-adapt.js';
 import { detachSkuFromGroup } from './_group-cascade.js';
+import { normalizeUnitsOfIssue } from '../lib/selling-unit.mjs';
 
 // maxDuration for this route is set in vercel.json (functions."api/stock-actions.js").
 const PAGE_SIZE = 1000;
@@ -106,8 +107,10 @@ export default async function handler(req, res) {
         'sku', 'barcode', 'title', 'original_description', 'price', 'category',
         'subcategory_one', 'subcategory_two', 'subcategory_three', 'subcategory_four', 'subcategory_extra',
         'image_url_one', 'image_url_two', 'image_url_three', 'image_url_four',
+        'units_of_issue', 'pack_description',
       ]);
       const clean = Object.fromEntries(Object.entries(row).filter(([k]) => ALLOWED.has(k)));
+      clean.units_of_issue = normalizeUnitsOfIssue(clean.units_of_issue || 'EACH');
       // subcategory_one is NOT NULL — default to the shallow-row convention
       // (duplicate the category) so non-UI callers can't trip the constraint.
       if (!String(clean.subcategory_one || '').trim()) clean.subcategory_one = clean.category;
