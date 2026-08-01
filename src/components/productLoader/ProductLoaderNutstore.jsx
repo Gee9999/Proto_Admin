@@ -482,7 +482,7 @@ export default function ProductLoaderNutstore({
                 <th>File</th>
                 <th>Code</th>
                 <th>Description</th>
-                <th>Price</th>
+                <th>Incl. VAT</th>
                 <th>SOH</th>
                 <th>Status</th>
               </tr>

@@ -134,7 +134,7 @@ export default function ProductLoaderNewProduct({ taxonomyTree = [], publishedBy
           <input className="adm-field-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="Product name shown on the site" />
         </label>
         <label className="adm-field">
-          <span className="adm-field-label">Price (ZAR) *</span>
+          <span className="adm-field-label">Website price incl. VAT (ZAR) *</span>
           <input className="adm-field-input" type="number" min="0" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="0.00" />
         </label>
         <label className="adm-field">

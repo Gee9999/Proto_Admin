@@ -183,7 +183,8 @@ export default function ProductLoaderSingleImage({
                 <div><dt>SKU</dt><dd><LoaderCodeEllipsis value={loaderCodeLabel(item)} /></dd></div>
                 <div><dt>Department</dt><dd>{item.department || item.sqlRow?.dept || '—'}</dd></div>
                 <div><dt>Category</dt><dd>{item.category || item.websiteRow?.category || '—'}</dd></div>
-                <div><dt>Price</dt><dd>R{Number(item.price ?? 0).toFixed(2)}</dd></div>
+                <div><dt>Website incl. VAT</dt><dd>R{Number(item.price ?? 0).toFixed(2)}</dd></div>
+                <div><dt>ERP ex VAT</dt><dd>{item.erpPriceExVat != null ? `R${Number(item.erpPriceExVat).toFixed(2)}` : '—'}</dd></div>
                 <div><dt>SOH</dt><dd>{soh}</dd></div>
                 <div><dt>Slot</dt><dd>{item.imageSlot}</dd></div>
               </dl>

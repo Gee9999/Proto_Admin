@@ -75,31 +75,42 @@ describe('Product Loader colour variants', () => {
     expect(assigned.filter((row) => row.tooManyVariantImages)).toHaveLength(1);
   });
 
-  it('passes Positill PRICE_A through unchanged — it is already VAT-inclusive', () => {
-    // The double-VAT hotfix: PRICE_A is Proto's customer-facing price with VAT
-    // already in it. Multiplying by 1.15 here double-charged the catalogue.
-    expect(customerPriceFromPositill(43.04)).toBe(43.04);
+  it('converts Positill PRICE_A from ex VAT to the website price grid', () => {
+    expect(customerPriceFromPositill(43.04)).toBe(49.5);
+    expect(customerPriceFromPositill(25.65)).toBe(29.5);
+    expect(customerPriceFromPositill(19.57)).toBe(22.5);
     expect(customerPriceFromPositill(0)).toBe(0);
     expect(customerPriceFromPositill(-5)).toBe(0);
   });
 
-  it('uses the synchronised customer price before raw ERP or website values', () => {
+  it('preserves an established website price before converting ERP values', () => {
     expect(resolveLoaderCustomerPrice({
-      productSellPrice: 49.5,
-      websitePrice: 43.04,
+      productSellPrice: 43.04,
+      websitePrice: 49.5,
       positillPrice: 43.04,
     })).toEqual({
       price: 49.5,
-      source: 'products.sell_price',
+      source: 'website_stock.price_incl_vat',
     });
   });
 
-  it('falls back to raw PRICE_A (no VAT markup) when no customer price exists yet', () => {
+  it('converts raw PRICE_A when no established website price exists yet', () => {
     expect(resolveLoaderCustomerPrice({
       positillPrice: 43.04,
     })).toEqual({
-      price: 43.04,
-      source: 'positill.price_a_incl_vat',
+      price: 49.5,
+      source: 'positill.price_a_ex_vat_converted',
+    });
+  });
+
+  it('repairs an established loader price carrying the ex-VAT fingerprint', () => {
+    expect(resolveLoaderCustomerPrice({
+      productSellPrice: 19.57,
+      websitePrice: 19.57,
+      positillPrice: 19.57,
+    })).toEqual({
+      price: 22.5,
+      source: 'website_stock.price_ex_vat_repaired',
     });
   });
 });

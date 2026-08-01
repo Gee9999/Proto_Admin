@@ -129,7 +129,13 @@ export default async function handler(req, res) {
   const safeValues = canonicalPublishValues({
     product: canonicalProduct,
     existing,
-    submitted: { price, stockQty, availableStock },
+    submitted: {
+      price,
+      stockQty,
+      availableStock,
+      erpPriceExVat: sqlRow?.price,
+    },
+    priceBasis: requireNew ? 'vat_inclusive' : 'erp_ex_vat',
   });
   if (safeValues.blocked) {
     return res.status(422).json({
@@ -261,6 +267,7 @@ export default async function handler(req, res) {
       price: patch.price,
       unitsOfIssue: patch.units_of_issue,
       packDescription: patch.pack_description ?? existing?.pack_description ?? '',
+      priceSource: safeValues.priceSource || (requireNew ? 'manual_incl_vat' : null),
       category: patch.category,
       subcategoryOne: patch.subcategory_one,
       imageUrl: imageUrlPrimary,
