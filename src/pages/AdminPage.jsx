@@ -88,7 +88,7 @@ import { buildOrderNoteSections, createEmailOrderItems, generateOrderPdfBase64, 
 import { displayOrderNumber, buildFulfillmentUrl } from '../lib/orderNumber';
 import { fetchPresaleInvoices, uploadPresaleInvoice } from '../lib/presaleInvoice';
 import { fetchConfirmationSent, markConfirmationSent, fetchPaymentRecords, uploadPop, setPaymentStatus } from '../lib/orderPayment';
-import { deleteOrderAdmin, deleteAllOrdersAdmin, fetchOrdersPage, updateOrderAdmin, advanceOrderWorkflow } from '../lib/orders';
+import { deleteOrderAdmin, fetchOrdersPage, updateOrderAdmin, advanceOrderWorkflow } from '../lib/orders';
 import { orderMatchesTab, normalizeOrderStatus, getWorkflowAdvanceOptions, isOrderConfirmationSent } from '../lib/orderStatus';
 import OrderWorkflowBadge from '../components/OrderWorkflowBadge';
 import { fetchFulfillmentUsers, loadActiveUserId } from '../lib/fulfillmentUsers';
@@ -1859,41 +1859,24 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   };
 
   const deleteOrder = async (order) => {
-    if (!window.confirm(`Delete order ${order.order_number || order.id}? This cannot be undone.`)) return;
+    const reason = window.prompt(`Move order ${order.order_number || order.id} to recoverable trash?\n\nEnter the reason (at least 8 characters):`);
+    if (reason === null) return;
+    if (reason.trim().length < 8) {
+      showToast('Provide a deletion reason of at least 8 characters — nothing changed', 'error');
+      return;
+    }
     setSaving(`del-order-${order.id}`);
     try {
-      await deleteOrderAdmin(order.id);
+      await deleteOrderAdmin(order.id, reason);
       setOrders((prev) => prev.filter((o) => o.id !== order.id));
       // Keep the top stats bar in sync — drop the count immediately, then
       // reconcile with the server in the background.
       setStatsOrderTotal((n) => Math.max(0, n - 1));
       void refreshDashboardStats();
-    } finally { setSaving(''); }
-  };
-
-  const clearAllOrders = async () => {
-    if (!window.confirm('Delete ALL orders? This cannot be undone.')) return;
-    const typed = window.prompt('Type DELETE ALL ORDERS to confirm:');
-    if (typed !== 'DELETE ALL ORDERS') {
-      showToast('Confirmation text did not match — nothing deleted', 'error');
-      return;
-    }
-    setSaving('clear-all-orders');
-    try {
-      const json = await deleteAllOrdersAdmin();
-      setOrders([]);
-      setOrderTotal(0);
-      setExpandedOrderId(null);
-      setStatsOrderTotal(0);
-      setOrderTabCounts(json.tabCounts || { all: 0, new: 0, handed: 0, progress: 0, sent: 0, paid: 0 });
-      void refreshDashboardStats();
-      await loadOrders();
-      showToast(`Deleted ${json.deleted || 0} orders`, 'success');
+      showToast('Order moved to recoverable trash', 'success');
     } catch (err) {
-      showToast(err.message || 'Failed to delete all orders', 'error');
-    } finally {
-      setSaving('');
-    }
+      showToast(err.message || 'Could not move order to trash', 'error');
+    } finally { setSaving(''); }
   };
 
   const updateOrder = async (order, patch) => {
@@ -2018,9 +2001,10 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
 
   return (
     <div className="adm-shell">
+      <a className="adm-skip-link" href="#admin-main">Skip to main content</a>
       {/* Fixed top loading indicator — doesn't disturb layout */}
       {(loadingProgress !== null || loading) && (
-        <div className="adm-top-progress">
+        <div className="adm-top-progress" role="progressbar" aria-label="Loading admin data" aria-valuemin="0" aria-valuemax="100" aria-valuenow={loadingProgress ?? 60}>
           <div className="adm-top-progress-fill" style={{ width: loadingProgress !== null ? `${loadingProgress}%` : '60%' }} />
         </div>
       )}
@@ -2058,8 +2042,8 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         </div>
 
         <div className="adm-layout">
-          {sidebarOpen && <div className="adm-sidebar-backdrop" onClick={() => setSidebarOpen(false)} />}
-          <aside className={`adm-sidebar${sidebarOpen ? ' adm-sidebar--open' : ''}`}>
+          {sidebarOpen && <button type="button" className="adm-sidebar-backdrop" onClick={() => setSidebarOpen(false)} aria-label="Close navigation menu" />}
+          <aside className={`adm-sidebar${sidebarOpen ? ' adm-sidebar--open' : ''}`} aria-label="Admin navigation">
             <GroupedSidebar
           allowedSectionIds={allowedSectionIds}
               activeSection={activeSection}
@@ -2081,7 +2065,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
             />
           </aside>
 
-          <main className="adm-main">
+          <main id="admin-main" className="adm-main" tabIndex="-1">
             {loadingError && (
               <div style={{ margin: '12px 0', padding: '10px 16px', background: '#fef2f2', borderRadius: 8, color: '#c40000', fontSize: 13, fontWeight: 600 }}>
                 Error: {loadingError}
@@ -2526,17 +2510,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                       <span className="adm-btn-text">Order Workspace</span>
                       {orderWorkspaceOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                     </button>
-                    <ActionMenu
-                      items={[
-                        {
-                          label: saving === 'clear-all-orders' ? 'Deleting…' : 'Delete all orders',
-                          icon: saving === 'clear-all-orders' ? <Loader2 size={14} className="spin" /> : <Trash2 size={14} />,
-                          danger: true,
-                          disabled: loading || saving === 'clear-all-orders',
-                          onClick: () => void clearAllOrders(),
-                        },
-                      ]}
-                    />
                   </div>
                 </div>
 
@@ -2644,7 +2617,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                           <div data-cell="actions" style={{ display: 'flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
                             <button onClick={() => window.open(`/fulfillment?id=${order.id}`, '_blank')} className="adm-icon-btn" title="Fulfil order (opens in new tab)" style={{ color: '#15803d' }}><ClipboardList size={14} /></button>
                             <button onClick={() => void downloadOrderFile(order)} disabled={saving === `download-${order.id}`} className="adm-icon-btn" title="Download order PDF">{saving === `download-${order.id}` ? <Loader2 size={14} className="spin" /> : <FileDown size={14} />}</button>
-                            <button onClick={() => void deleteOrder(order)} className="adm-icon-btn" style={{ color: '#c40000' }} disabled={saving === `del-order-${order.id}`} title="Delete order">
+                            <button onClick={() => void deleteOrder(order)} className="adm-icon-btn" style={{ color: '#c40000' }} disabled={saving === `del-order-${order.id}`} title="Move order to recoverable trash">
                               {saving === `del-order-${order.id}` ? '…' : <Trash2 size={14} />}
                             </button>
                           </div>
