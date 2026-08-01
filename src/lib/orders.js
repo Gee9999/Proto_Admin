@@ -19,6 +19,7 @@ export async function fetchOrdersPage({
     page: json.page || page,
     pageSize: json.pageSize || pageSize,
     tabCounts: json.tabCounts || null,
+    orderTrashEnabled: json.capabilities?.orderTrash === true,
   };
 }
 

@@ -52,6 +52,16 @@ begin
     raise exception 'Order not found';
   end if;
 
+  -- Do not cascade-delete notification history or detach an in-flight
+  -- delivery job. Those records are operational evidence and restoring them
+  -- could replay a queued notification. They must be reconciled separately
+  -- before an order is eligible for recoverable trash.
+  if exists (select 1 from public.order_notification_jobs where order_id::text = p_order_id)
+    or exists (select 1 from public.order_notification_events where order_id::text = p_order_id)
+    or exists (select 1 from public.order_delivery_jobs where order_id::text = p_order_id) then
+    raise exception 'Order has linked delivery or notification records and cannot be moved to trash';
+  end if;
+
   insert into public.admin_order_trash (order_id, order_snapshot, deleted_by, deletion_reason)
   values (p_order_id, v_snapshot, coalesce(nullif(trim(p_actor), ''), 'unknown-admin'), trim(p_reason))
   returning id into v_trash_id;
@@ -72,6 +82,7 @@ as $$
 declare
   v_order_id text;
   v_snapshot jsonb;
+  v_order public.orders%rowtype;
 begin
   select order_id, order_snapshot into v_order_id, v_snapshot
   from public.admin_order_trash
@@ -86,8 +97,67 @@ begin
     raise exception 'An active order with this id already exists';
   end if;
 
-  insert into public.orders
-  select * from jsonb_populate_record(null::public.orders, v_snapshot);
+  v_order := jsonb_populate_record(null::public.orders, v_snapshot);
+
+  -- Keep this list explicit. `orders.items_search` is a stored generated
+  -- column and PostgreSQL rejects attempts to restore a snapshot value into
+  -- it. New nullable/defaulted columns can also be added later without making
+  -- older trash snapshots unrestorable.
+  insert into public.orders (
+    id,
+    customer_id,
+    items,
+    total_ex_vat,
+    status,
+    created_at,
+    order_number,
+    viewed_at,
+    original_items,
+    final_items,
+    order_match,
+    order_change_notes,
+    replacement_map,
+    paid_at,
+    delivered_at,
+    handed_over_at,
+    order_in_progress_at,
+    order_sent_at,
+    payment_received_at,
+    delivery_method,
+    customer_notes,
+    confirmation_sent_at,
+    promo_code,
+    discount_pct,
+    discount_amount,
+    client_ref
+  ) values (
+    v_order.id,
+    v_order.customer_id,
+    v_order.items,
+    v_order.total_ex_vat,
+    v_order.status,
+    v_order.created_at,
+    v_order.order_number,
+    v_order.viewed_at,
+    v_order.original_items,
+    v_order.final_items,
+    v_order.order_match,
+    v_order.order_change_notes,
+    v_order.replacement_map,
+    v_order.paid_at,
+    v_order.delivered_at,
+    v_order.handed_over_at,
+    v_order.order_in_progress_at,
+    v_order.order_sent_at,
+    v_order.payment_received_at,
+    v_order.delivery_method,
+    v_order.customer_notes,
+    v_order.confirmation_sent_at,
+    v_order.promo_code,
+    v_order.discount_pct,
+    v_order.discount_amount,
+    v_order.client_ref
+  );
 
   update public.admin_order_trash
   set restored_at = now(), restored_by = coalesce(nullif(trim(p_actor), ''), 'unknown-admin')

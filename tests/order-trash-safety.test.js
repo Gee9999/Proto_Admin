@@ -28,4 +28,32 @@ describe('recoverable order trash gate', () => {
     expect(migration).toContain('security invoker');
     expect(migration).not.toContain('security definer');
   });
+
+  it('restores only writable order columns and lets Postgres regenerate search text', () => {
+    const migration = fs.readFileSync(new URL('../migrations/056_recoverable_order_trash.sql', import.meta.url), 'utf8');
+    const insertColumns = migration.match(/insert into public\.orders \(([^)]+)\) values/s)?.[1] || '';
+    expect(insertColumns).toContain('client_ref');
+    expect(insertColumns).not.toContain('items_search');
+    expect(migration).not.toContain('select * from jsonb_populate_record');
+  });
+
+  it('refuses to discard delivery or notification audit records', () => {
+    const migration = fs.readFileSync(new URL('../migrations/056_recoverable_order_trash.sql', import.meta.url), 'utf8');
+    const guardAt = migration.indexOf('Order has linked delivery or notification records');
+    const deleteAt = migration.indexOf('delete from public.orders');
+    expect(migration).toContain('public.order_notification_jobs');
+    expect(migration).toContain('public.order_notification_events');
+    expect(migration).toContain('public.order_delivery_jobs');
+    expect(guardAt).toBeGreaterThan(-1);
+    expect(deleteAt).toBeGreaterThan(guardAt);
+  });
+
+  it('only exposes the trash action when the server capability is enabled', () => {
+    const api = fs.readFileSync(new URL('../api/admin-orders.js', import.meta.url), 'utf8');
+    const client = fs.readFileSync(new URL('../src/lib/orders.js', import.meta.url), 'utf8');
+    const page = fs.readFileSync(new URL('../src/pages/AdminPage.jsx', import.meta.url), 'utf8');
+    expect(api).toContain("orderTrash: auth.type === 'admin' && isOrderTrashEnabled()");
+    expect(client).toContain('orderTrashEnabled: json.capabilities?.orderTrash === true');
+    expect(page).toContain('{orderTrashEnabled && (');
+  });
 });

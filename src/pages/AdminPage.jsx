@@ -575,6 +575,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   const [orderPage, setOrderPage] = useState(1);
   const [orderTotal, setOrderTotal] = useState(0);
   const [orderTabCounts, setOrderTabCounts] = useState(null);
+  const [orderTrashEnabled, setOrderTrashEnabled] = useState(false);
   const [orderSearchDebounced, setOrderSearchDebounced] = useState('');
   const [focusOrderId, setFocusOrderId] = useState('');
   const [orderSearch, setOrderSearch] = useState('');
@@ -843,6 +844,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         tab: orderTab,
       });
       if (seq !== ordersReqSeqRef.current) return; // superseded — drop it
+      setOrderTrashEnabled(data.orderTrashEnabled);
       // The 30s/focus refresh usually returns exactly what is already on
       // screen. Replacing state with an identical-but-new array still
       // re-renders every row AND re-fires the per-row detail effects below
@@ -2617,9 +2619,11 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                           <div data-cell="actions" style={{ display: 'flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
                             <button onClick={() => window.open(`/fulfillment?id=${order.id}`, '_blank')} className="adm-icon-btn" title="Fulfil order (opens in new tab)" style={{ color: '#15803d' }}><ClipboardList size={14} /></button>
                             <button onClick={() => void downloadOrderFile(order)} disabled={saving === `download-${order.id}`} className="adm-icon-btn" title="Download order PDF">{saving === `download-${order.id}` ? <Loader2 size={14} className="spin" /> : <FileDown size={14} />}</button>
-                            <button onClick={() => void deleteOrder(order)} className="adm-icon-btn" style={{ color: '#c40000' }} disabled={saving === `del-order-${order.id}`} title="Move order to recoverable trash">
-                              {saving === `del-order-${order.id}` ? '…' : <Trash2 size={14} />}
-                            </button>
+                            {orderTrashEnabled && (
+                              <button onClick={() => void deleteOrder(order)} className="adm-icon-btn" style={{ color: '#c40000' }} disabled={saving === `del-order-${order.id}`} title="Move order to recoverable trash">
+                                {saving === `del-order-${order.id}` ? '…' : <Trash2 size={14} />}
+                              </button>
+                            )}
                           </div>
                           <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                             <span className="adm-muted" style={{ fontSize: 18, lineHeight: 1 }}>{isExpanded ? '↑' : '↓'}</span>

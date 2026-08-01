@@ -11,6 +11,11 @@ Order deletion is intentionally fail-closed in this branch. The previous permane
 5. Set `ORDER_TRASH_ENABLED=true` in a Vercel preview only.
 6. Test moving and restoring a synthetic preview order, then obtain separate production approval.
 
+Orders with linked notification or delivery records are deliberately ineligible
+for trash. This preserves the audit trail and prevents restored queue rows from
+being replayed. Reconcile those records under a separate approved procedure;
+do not remove them merely to make an order trashable.
+
 Until the migration and flag are both present, the API returns `409` instead of permanently deleting an order. “Delete all orders” is no longer supported.
 
 ## Rollback

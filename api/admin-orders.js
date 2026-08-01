@@ -226,6 +226,9 @@ export default async function handler(req, res) {
   const supabase = getAdminClient();
 
   if (req.method === 'GET') {
+    const capabilities = {
+      orderTrash: auth.type === 'admin' && isOrderTrashEnabled(),
+    };
     const {
       limit = '',
       customerId = '',
@@ -243,7 +246,7 @@ export default async function handler(req, res) {
         .eq('id', auth.orderId)
         .maybeSingle();
       if (error) return res.status(400).json({ error: error.message });
-      return res.status(200).json({ rows: data ? [data] : [] });
+      return res.status(200).json({ rows: data ? [data] : [], capabilities });
     }
 
     if (id) {
@@ -253,7 +256,7 @@ export default async function handler(req, res) {
         .eq('id', id)
         .maybeSingle();
       if (error) return res.status(400).json({ error: error.message });
-      return res.status(200).json({ rows: data ? [data] : [] });
+      return res.status(200).json({ rows: data ? [data] : [], capabilities });
     }
 
     if (customerId) {
@@ -265,7 +268,7 @@ export default async function handler(req, res) {
         .order('created_at', { ascending: false })
         .limit(lim);
       if (error) return res.status(400).json({ error: error.message });
-      return res.status(200).json({ rows: data || [] });
+      return res.status(200).json({ rows: data || [], capabilities });
     }
 
     let pageNum;
@@ -300,6 +303,7 @@ export default async function handler(req, res) {
           page: pageNum,
           pageSize: size,
           tabCounts,
+          capabilities,
         });
       }
 
@@ -312,7 +316,7 @@ export default async function handler(req, res) {
         legacyIds,
         useItemsSearch,
       });
-      return res.status(200).json({ ...result, tabCounts });
+      return res.status(200).json({ ...result, tabCounts, capabilities });
     } catch (err) {
       return res.status(400).json({ error: err.message });
     }
