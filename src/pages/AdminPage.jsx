@@ -110,6 +110,7 @@ import { queryKeys } from '../lib/queryKeys';
 import { dispatchAdminRefresh } from '../lib/adminRefresh';
 import { lazyRetry } from '../lib/lazyRetry';
 import SellingUnitField from '../components/SellingUnitField';
+import { businessSearchUrl, traderVerificationSummary } from '../lib/traderVerification';
 
 // Section panels — lazy-loaded so the initial admin bundle only ships the
 // default section (Product Manager). Each lazy chunk is fetched on demand
@@ -2781,6 +2782,38 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 <TenThousandClubBadge customer={profileCustomer} />
                 <LastEmailBadge customer={profileCustomer} />
               </h2>
+
+              {profileSource !== 'proto-active' && !profileCustomer.is_approved && (() => {
+                const verification = traderVerificationSummary(profileCustomer);
+                return (
+                  <section className={`adm-trader-review adm-trader-review--${verification.tone}`} aria-label="Trader verification recommendation">
+                    <div className="adm-trader-review-head">
+                      <div>
+                        <span className="adm-trader-review-kicker">Application evidence</span>
+                        <h3>{verification.recommendation}</h3>
+                      </div>
+                      <div className="adm-trader-review-score" aria-label={`${verification.confidence} percent evidence confidence`}>
+                        {verification.confidence}<span>%</span>
+                      </div>
+                    </div>
+                    <p className="adm-trader-review-note">Recommendation only — a staff member makes the final decision.</p>
+                    <div className="adm-trader-evidence-list">
+                      {verification.evidence.map((item) => (
+                        <div className={`adm-trader-evidence adm-trader-evidence--${item.tone}`} key={item.label}>
+                          <CheckCircle size={15} aria-hidden="true" />
+                          <div><strong>{item.label}</strong><span>{item.detail}</span></div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="adm-trader-research">
+                      <div><strong>Internet &amp; social check</strong><span>Not run automatically in this preview.</span></div>
+                      <a className="adm-btn-ghost adm-btn-sm" href={businessSearchUrl(profileCustomer)} target="_blank" rel="noreferrer">
+                        <Search size={13} /> Research business
+                      </a>
+                    </div>
+                  </section>
+                );
+              })()}
 
               {profileEditing ? (
                 <div style={{ display: 'grid', gap: 12, marginTop: 4 }}>
