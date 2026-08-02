@@ -29,25 +29,33 @@ function safeEqual(a, b) {
   return timingSafeEqual(bufA, bufB);
 }
 
-/** WATI event name → our status ladder rung. Unlisted events are ignored. */
-const STATUS_EVENTS = {
-  sentmessage: 'sent',
-  messagesent: 'sent',
-  templatemessagesent: 'sent',
-  sessionmessagesent: 'sent',
-  deliveredmessage: 'delivered',
-  messagedelivered: 'delivered',
-  readmessage: 'read',
-  messageread: 'read',
-  failedmessage: 'failed',
-  messagefailed: 'failed',
-  templatemessagefailed: 'failed',
-  undeliveredmessage: 'failed',
-};
-
 const INBOUND_EVENTS = new Set([
   'message', 'newcontactmessagereceived', 'messagereceived', 'replymessage', 'sessionmessagereceived',
 ]);
+
+/**
+ * WATI event name → our status ladder rung.
+ *
+ * Matched on keywords rather than an exact list, because WATI's event names do
+ * not follow one convention: the dashboard emits `sentMessageDELIVERED` and
+ * `sentMessageREAD` alongside `templateMessageSent` and `templateMessageFAILED`,
+ * and the docs additionally mention `deliveredMessage` / `readMessage`. An exact
+ * map silently dropped the first two — which meant delivery and read rates that
+ * sat at zero forever with no error anywhere.
+ *
+ * Precedence matters: `sentMessageDELIVERED` contains both "sent" and
+ * "deliver", so the more specific rungs are tested first. Inbound events are
+ * resolved before this is ever called.
+ */
+export function statusForEvent(rawName) {
+  const n = String(rawName || '').toLowerCase().replace(/[^a-z]/g, '');
+  if (!n) return null;
+  if (/undeliver|fail|reject|error/.test(n)) return 'failed';
+  if (/read/.test(n)) return 'read';
+  if (/deliver/.test(n)) return 'delivered';
+  if (/sent|send/.test(n)) return 'sent';
+  return null;
+}
 
 function eventName(p) {
   return String(p.eventType || p.event || p.type || '').trim().toLowerCase();
@@ -146,12 +154,15 @@ export default async function handler(req, res) {
   try {
     const at = extractTimestamp(payload);
 
-    if (STATUS_EVENTS[name]) {
+    // Inbound is resolved first — keyword status matching is deliberately loose,
+    // so an inbound name must never fall through to it.
+    const status = INBOUND_EVENTS.has(name) ? null : statusForEvent(name);
+
+    if (status) {
       if (!waMessageId) {
         await finishWebhookEvent(db, eventRow.id, 'status event without message id');
         return res.status(200).json({ ok: true, ignored: 'no_message_id' });
       }
-      const status = STATUS_EVENTS[name];
       const errText = status === 'failed'
         ? String(payload.failureReason || payload.info || payload.error || 'WATI reported failure')
         : null;

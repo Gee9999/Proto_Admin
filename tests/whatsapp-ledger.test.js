@@ -93,7 +93,10 @@ test('the webhook secret is compared in constant time, header-first, and fails c
     'unset secret must fail closed, not accept unauthenticated writes to the ledger',
   );
   // Raw payload is stored before parsing so a wrong shape guess is recoverable.
-  assert.ok(webhook.indexOf('storeWebhookEvent') < webhook.indexOf('STATUS_EVENTS[name]'));
+  assert.ok(
+    webhook.indexOf('storeWebhookEvent') < webhook.indexOf('statusForEvent(name)'),
+    'the raw event must be persisted before any parsing decision',
+  );
 });
 
 test('broadcasts queue rather than sending inside the request', () => {
@@ -154,4 +157,34 @@ test('order notifications stay email-only', () => {
   // alerts, which were removed for a separate reason.
   const notifyCore = read('../api/_order-notify-core.js');
   assert.ok(!/wa-broadcast|_wati-client|sendTemplate/.test(notifyCore));
+});
+
+test('WATI dashboard event names map to the right ladder rung', async () => {
+  const { statusForEvent } = await import('../api/wa-webhook.js');
+
+  // The six events actually configured in the WATI dashboard (2026-08-02).
+  // sentMessageDELIVERED / sentMessageREAD are the ones an exact-match table
+  // silently dropped — delivery and read rates stayed at 0 with no error.
+  assert.equal(statusForEvent('sentMessageDELIVERED'), 'delivered');
+  assert.equal(statusForEvent('sentMessageREAD'), 'read');
+  assert.equal(statusForEvent('templateMessageSent'), 'sent');
+  assert.equal(statusForEvent('sessionMessageSent'), 'sent');
+  assert.equal(statusForEvent('templateMessageFAILED'), 'failed');
+
+  // Doc-style aliases must keep working too.
+  assert.equal(statusForEvent('deliveredMessage'), 'delivered');
+  assert.equal(statusForEvent('readMessage'), 'read');
+  assert.equal(statusForEvent('undeliveredMessage'), 'failed');
+
+  // "sent" appears inside the delivered/read/failed names — precedence must
+  // resolve to the MORE specific rung, or everything collapses to 'sent'.
+  assert.notEqual(statusForEvent('sentMessageDELIVERED'), 'sent');
+  assert.notEqual(statusForEvent('sentMessageREAD'), 'sent');
+
+  // Inbound names must not resolve to a status at all.
+  assert.equal(statusForEvent('unknownFutureEvent'), null);
+  assert.equal(statusForEvent(''), null);
+  for (const inbound of ['message', 'newContactMessageReceived', 'messageReceived']) {
+    assert.equal(statusForEvent(inbound), null, `${inbound} must not be read as a status event`);
+  }
 });
