@@ -2948,7 +2948,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                   <DrawerField icon={User} label="Contact person" value={profileCustomer.contact_name || profileCustomer.name} />
                   <DrawerField icon={Mail} label="Email" value={profileCustomer.email} />
                   {profileSource !== 'proto-active' && <DrawerField icon={Phone} label="Phone" value={profileCustomer.phone} />}
-                  {profileSource !== 'proto-active' && <DrawerField icon={Store} label="Business type" value={profileCustomer.business_type} />}
+                  {profileSource !== 'proto-active' && !profileCustomer.product_categories?.length && <DrawerField icon={Store} label="Business type" value={profileCustomer.business_type} />}
+                  {profileSource !== 'proto-active' && <DrawerField icon={Store} label="How they trade" value={Array.isArray(profileCustomer.sales_channels) ? profileCustomer.sales_channels.join(', ') : profileCustomer.sales_channels} />}
+                  {profileSource !== 'proto-active' && <DrawerField icon={Store} label="What they sell" value={Array.isArray(profileCustomer.product_categories) ? profileCustomer.product_categories.join(', ') : profileCustomer.product_categories} />}
                   {profileSource !== 'proto-active' && <DrawerField icon={Store} label="Business description" value={profileCustomer.business_description} />}
                   {profileSource !== 'proto-active' && <DrawerField icon={Store} label="Monthly spend" value={profileCustomer.monthly_spend} />}
                   {profileSource !== 'proto-active' && <DrawerField icon={Globe} label="Website / social" value={profileCustomer.website} />}

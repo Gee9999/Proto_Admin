@@ -1,5 +1,10 @@
 function has(value) {
+  if (Array.isArray(value)) return value.some((item) => String(item || '').trim());
   return String(value || '').trim().length > 0;
+}
+
+function listText(value) {
+  return Array.isArray(value) ? value.filter(has).join(', ') : String(value || '').trim();
 }
 
 export function traderVerificationSummary(customer = {}) {
@@ -17,7 +22,12 @@ export function traderVerificationSummary(customer = {}) {
     evidence.push({ tone: 'neutral', label: 'Proto history not linked', detail: 'No old code was supplied. Check the email or phone in SQL.' });
   }
 
-  if (has(customer.business_type)) {
+  if (has(customer.sales_channels)) {
+    evidence.push({ tone: 'positive', label: 'How they trade', detail: listText(customer.sales_channels) });
+  }
+  if (has(customer.product_categories)) {
+    evidence.push({ tone: 'positive', label: 'What they sell', detail: listText(customer.product_categories) });
+  } else if (has(customer.business_type)) {
     evidence.push({ tone: 'positive', label: 'Business category supplied', detail: customer.business_type });
   }
   if (has(customer.business_description)) {
@@ -38,7 +48,8 @@ export function traderVerificationSummary(customer = {}) {
     evidence.push({ tone: 'positive', label: 'Contact details supplied', detail: 'Email and phone are present.' });
   }
 
-  const hasBusinessEvidence = has(customer.business_type)
+  const hasStructuredClassification = has(customer.sales_channels) && has(customer.product_categories);
+  const hasBusinessEvidence = (hasStructuredClassification || has(customer.business_type))
     && (has(customer.business_description) || has(customer.website) || has(customer.vat_number) || has(customer.company_address));
   const recommendation = hasHistory
     ? 'Likely existing Proto customer'

@@ -92,7 +92,7 @@ export default async function handler(req, res) {
     const ALLOWED_PATCH_FIELDS = new Set([
       'is_approved', 'tier', 'name', 'email', 'phone', 'business_name',
       'business_type', 'company_address', 'delivery_address', 'vat_number',
-      'business_description', 'monthly_spend', 'website',
+      'business_description', 'sales_channels', 'product_categories', 'monthly_spend', 'website',
       'country', 'province', 'city', 'accept_whatsapp', 'customer_code',
       'sales_last_12_months', 'invoice_count', 'last_purchase_date',
       'contact_name', 'first_name', 'tags',
