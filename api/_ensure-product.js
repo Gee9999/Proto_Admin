@@ -1,4 +1,5 @@
 import { findProductBySku, fetchProductLookupMap } from './_sku-match.js';
+import { cataloguePublicationBlockers, duplicateLiveCatalogueSku } from '../lib/catalogue-safety.mjs';
 
 function readNum(value, fallback = 0) {
   if (value === null || value === undefined || value === '') return fallback;
@@ -36,6 +37,30 @@ export async function ensureProductFromCatalogueRow(supabase, row) {
   const { error } = await supabase.from('products').insert(payload);
   if (error) throw error;
   return { ok: true, sku: payload.sku, created: true, existing: false };
+}
+
+export async function verifyCatalogueRowForPublication(supabase, row, { excludeSku = '' } = {}) {
+  const sku = String(row?.sku || '').trim();
+  const barcode = String(row?.barcode || row?.product_sku || row?.sku || '').trim();
+  const lookup = await fetchProductLookupMap(
+    supabase,
+    [barcode],
+    'sku, sell_price, stock_qty, available_stock',
+  );
+  const product = findProductBySku(lookup, barcode);
+
+  let duplicateLiveSku = '';
+  if (barcode) {
+    const { data, error } = await supabase
+      .from('website_stock')
+      .select('sku, barcode')
+      .eq('barcode', barcode);
+    if (error) throw error;
+    duplicateLiveSku = duplicateLiveCatalogueSku(data, barcode, excludeSku || sku);
+  }
+
+  const blockers = cataloguePublicationBlockers({ row, product, duplicateLiveSku });
+  return { ok: blockers.length === 0, product, blockers, duplicateLiveSku };
 }
 
 /** Format a failed sync step as "step: message" for a syncWarnings entry. */
@@ -102,7 +127,13 @@ export async function restoreArchivedToLive(supabase, sku, { keepLiveWhenOos = t
     throw new Error('New product preview — use Approval → Set live');
   }
 
-  await ensureProductFromCatalogueRow(supabase, archived);
+  const verification = await verifyCatalogueRowForPublication(supabase, archived, { excludeSku: cleanSku });
+  if (!verification.ok) {
+    const error = new Error(verification.blockers.map((blocker) => blocker.message).join(' '));
+    error.code = verification.blockers[0]?.code || 'publication_blocked';
+    error.status = 422;
+    throw error;
+  }
 
   const { error: unErr } = await supabase.rpc('unarchive_product', { p_sku: cleanSku });
   if (unErr) throw unErr;

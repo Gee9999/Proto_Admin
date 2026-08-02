@@ -3,7 +3,7 @@ import { fetchReorderProducts, updateProduct } from '../lib/products';
 import { subcategoryOptionsFromTree } from '../lib/taxonomyAdmin';
 import { saveSpecials } from '../lib/specials';
 import { ADMIN_REFRESH_EVENT } from '../lib/adminRefresh';
-import { buildPricingPreflight } from '../lib/pricingPreflight';
+import { buildPricingPreflight, PRICING_SELECTION_MAX } from '../lib/pricingPreflight';
 
 // Pricing — bulk-adjust selected products by a percentage and stamp them
 // onto This Week's Specials. Extracted from AdminPage so state, load and
@@ -25,6 +25,7 @@ export default function PricingPanel({
   const [saving, setSaving] = useState(false);
   const [reviewedSignature, setReviewedSignature] = useState('');
   const [confirmation, setConfirmation] = useState('');
+  const [addToSpecials, setAddToSpecials] = useState(false);
 
   const toast = useCallback((message, type = 'success') => {
     onShowToast?.(message, type);
@@ -80,7 +81,13 @@ export default function PricingPanel({
       setSelectedIds((current) => current.filter((id) => !visibleIds.has(id)));
       return;
     }
-    setSelectedIds((current) => [...new Set([...current, ...visibleIds])]);
+    setSelectedIds((current) => {
+      const next = [...new Set([...current, ...visibleIds])];
+      if (next.length > PRICING_SELECTION_MAX) {
+        toast(`Selected the first ${PRICING_SELECTION_MAX} products. Refine the category to price the remainder safely.`, 'warning');
+      }
+      return next.slice(0, PRICING_SELECTION_MAX);
+    });
   };
 
   const applyPricing = async () => {
@@ -107,10 +114,10 @@ export default function PricingPanel({
       const failedCount = outcomes.filter((o) => o.status === 'rejected').length;
       const selected = allSelected.filter((_, i) => outcomes[i].status === 'fulfilled');
 
-      // Add newly-repriced items to This Week's Specials (capped at 10).
+      // Specials are a separate merchandising decision and stay off by default.
       const nextSpecials = [...(specials || [])];
       const seen = new Set(nextSpecials.map((s) => s.productId));
-      for (const product of selected) {
+      for (const product of addToSpecials ? selected : []) {
         if (seen.has(product.id)) continue;
         if (nextSpecials.length >= 10) break;
         nextSpecials.push({
@@ -125,7 +132,7 @@ export default function PricingPanel({
         });
         seen.add(product.id);
       }
-      if (nextSpecials.length !== (specials || []).length) {
+      if (addToSpecials && nextSpecials.length !== (specials || []).length) {
         await saveSpecials(nextSpecials);
         onSpecialsChange?.(nextSpecials);
       }
@@ -133,10 +140,11 @@ export default function PricingPanel({
       setReviewedSignature('');
       setConfirmation('');
       setSelectedIds([]);
+      setAddToSpecials(false);
       if (failedCount > 0) {
         toast(`Updated ${selected.length} price(s), ${failedCount} failed — reload and retry the rest`, 'error');
       } else {
-        toast(`Updated ${selected.length} product price(s) — added to This Week's Specials`);
+        toast(`Updated ${selected.length} product price(s)${addToSpecials ? ' — added eligible items to This Week\'s Specials' : ''}`);
       }
     } catch (err) {
       toast(err.message || 'Pricing update failed', 'error');
@@ -157,7 +165,7 @@ export default function PricingPanel({
         <select
           aria-label="Pricing category"
           value={category}
-          onChange={(e) => { setCategory(e.target.value); setSubcategory('all'); setSelectedIds([]); }}
+          onChange={(e) => { setCategory(e.target.value); setSubcategory('all'); setSelectedIds([]); setAddToSpecials(false); }}
           className="adm-select"
         >
           {mainCategories.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
@@ -165,7 +173,7 @@ export default function PricingPanel({
         <select
           aria-label="Pricing subcategory"
           value={subcategory}
-          onChange={(e) => { setSubcategory(e.target.value); setSelectedIds([]); }}
+          onChange={(e) => { setSubcategory(e.target.value); setSelectedIds([]); setAddToSpecials(false); }}
           className="adm-select"
         >
           <option value="all">All subcategories</option>
@@ -230,6 +238,14 @@ export default function PricingPanel({
               </div>
             ))}
           </div>
+          <label className="adm-field" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={addToSpecials}
+              onChange={(event) => setAddToSpecials(event.target.checked)}
+            />
+            <span>Add successfully repriced products to This Week&apos;s Specials (optional; maximum 10)</span>
+          </label>
           {preflight.highRisk && (
             <label className="adm-field">
               <span className="adm-field-label">High-impact change — type <strong>{preflight.confirmationPhrase}</strong></span>
@@ -256,9 +272,14 @@ export default function PricingPanel({
               onChange={(e) => {
                 setReviewedSignature('');
                 setConfirmation('');
-                setSelectedIds((prev) => (
-                  e.target.checked ? [...prev, product.id] : prev.filter((id) => id !== product.id)
-                ));
+                setSelectedIds((prev) => {
+                  if (!e.target.checked) return prev.filter((id) => id !== product.id);
+                  if (prev.length >= PRICING_SELECTION_MAX) {
+                    toast(`Maximum ${PRICING_SELECTION_MAX} products per pricing run`, 'error');
+                    return prev;
+                  }
+                  return [...prev, product.id];
+                });
               }}
             />
             <span style={{ fontWeight: 700 }}>{product.name}</span>

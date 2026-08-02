@@ -12,6 +12,7 @@ const WEBSITE_FIELDS = [
   'subcategory_three',
   'subcategory_four',
   'image_url_one',
+  'updated_at',
 ].join(', ');
 
 function numberOrNull(value) {
@@ -38,6 +39,7 @@ function websiteProduct(row) {
       row.subcategory_four,
     ].map((part) => String(part || '').trim()).filter(Boolean),
     imageUrl: String(row.image_url_one || '').trim() || null,
+    updatedAt: row.updated_at || null,
   };
 }
 
@@ -78,6 +80,7 @@ async function exactWebsiteLookup(stockClient, code) {
  * when the office bridge or its cache is temporarily unavailable.
  */
 export async function buildProductIntelligence({ code, stockClient, resolveErp }) {
+  const generatedAt = new Date().toISOString();
   const [websiteOutcome, erpOutcome] = await Promise.allSettled([
     stockClient
       ? exactWebsiteLookup(stockClient, code)
@@ -103,7 +106,7 @@ export async function buildProductIntelligence({ code, stockClient, resolveErp }
 
   return {
     schemaVersion: 'proto.product-intelligence.v1',
-    generatedAt: new Date().toISOString(),
+    generatedAt,
     readOnly: true,
     code,
     website: websiteProduct(websiteRow),
@@ -111,6 +114,10 @@ export async function buildProductIntelligence({ code, stockClient, resolveErp }
     sources: {
       website: websiteRow ? 'website_stock' : null,
       erp: dataSource,
+    },
+    sourceMeta: {
+      website: websiteRow ? { measuredAt: websiteRow.updated_at || null } : null,
+      erp: product ? { measuredAt: dataSource === 'erp_sql' ? generatedAt : null } : null,
     },
     status: {
       website: websiteUnavailable ? 'unavailable' : (websiteRow ? 'available' : 'not_found'),

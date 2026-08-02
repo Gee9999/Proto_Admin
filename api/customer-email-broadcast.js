@@ -4,7 +4,7 @@ import {
   TEST_MERGE_VARS,
   sendBrevoTransactional,
 } from './_brevo-email.js';
-import { runEmailBroadcast, VALID_EMAIL_AUDIENCE } from './_send-email-broadcast.js';
+import { resolveEmailRecipients, runEmailBroadcast, VALID_EMAIL_AUDIENCE } from './_send-email-broadcast.js';
 
 export const config = {
   api: { bodyParser: { sizeLimit: '2mb' } },
@@ -26,6 +26,8 @@ export default async function handler(req, res) {
     testEmail,
     businessTypes,
     recipients,
+    action,
+    allowRecentDuplicate,
   } = req.body || {};
 
   // "Specific people" send — an explicit email list instead of an audience.
@@ -40,6 +42,21 @@ export default async function handler(req, res) {
   }
   if (isSelected && !testEmail && !selectedEmails.length) {
     return res.status(400).json({ error: 'Enter at least one valid email address to send to specific people.' });
+  }
+
+  // Read-only audience preflight. The composer and CRM CTA use this exact,
+  // deduplicated count before enabling a bulk send.
+  if (action === 'count') {
+    try {
+      const { recipients: resolved } = await resolveEmailRecipients({
+        audience: aud,
+        businessTypes: Array.isArray(businessTypes) ? businessTypes : [],
+        recipients: isSelected ? selectedEmails : null,
+      });
+      return res.status(200).json({ ok: true, recipientCount: resolved.length });
+    } catch (err) {
+      return res.status(500).json({ error: err.message || 'Failed to count recipients' });
+    }
   }
   const subj = String(subject || '').trim();
   if (!subj) return res.status(400).json({ error: 'Subject is required' });
@@ -73,6 +90,7 @@ export default async function handler(req, res) {
       htmlBlock: html,
       businessTypes: Array.isArray(businessTypes) ? businessTypes : [],
       recipients: isSelected ? selectedEmails : null,
+      allowRecentDuplicate: allowRecentDuplicate === true,
     });
     if (outcome.error && !outcome.total) {
       return res.status(400).json({ error: outcome.error });
@@ -88,6 +106,13 @@ export default async function handler(req, res) {
     });
   } catch (err) {
     console.error('customer-email-broadcast:', err?.message || err);
+    if (err?.code === 'duplicate_campaign') {
+      return res.status(409).json({
+        code: err.code,
+        error: err.message,
+        recentCampaign: err.recentCampaign || null,
+      });
+    }
     return res.status(500).json({ error: err.message || 'Broadcast failed' });
   }
 }

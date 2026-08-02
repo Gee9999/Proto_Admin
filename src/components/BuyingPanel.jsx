@@ -29,10 +29,10 @@ export default function BuyingPanel({ onOpenProductIntelligence }) {
       <div className="adm-section-head intelligence-panel__head">
         <div>
           <div className="intelligence-eyebrow"><Sparkles size={15} /> Hermes</div>
-          <h2 id="buying-title" className="adm-section-title">Buying</h2>
-          <p className="adm-section-note">The new server-backed home for supplier-order review and buying decisions.</p>
+          <h2 id="buying-title" className="adm-section-title">Buying · Foundation Preview</h2>
+          <p className="adm-section-note">A labelled preview of the future server-backed supplier-order workflow. No buying workflow is active yet.</p>
         </div>
-        <span className="intelligence-readonly"><ShieldCheck size={15} /> Shell only · no imports</span>
+        <span className="intelligence-readonly"><ShieldCheck size={15} /> Foundation preview · no imports</span>
       </div>
 
       <div className="buying-foundation-banner">
@@ -40,7 +40,7 @@ export default function BuyingPanel({ onOpenProductIntelligence }) {
           <strong>The Buying workspace foundation is ready.</strong>
           <span>The old standalone app has not been copied in. Its workflows will move here only after storage, permissions and API contracts are ready.</span>
         </div>
-        <button type="button" className="adm-btn-ghost" onClick={onOpenProductIntelligence}>Open Product Intelligence</button>
+        <button type="button" className="adm-btn-ghost" onClick={onOpenProductIntelligence}>Use Product Intelligence now</button>
       </div>
 
       <div className="buying-stage-grid">
@@ -65,4 +65,3 @@ export default function BuyingPanel({ onOpenProductIntelligence }) {
     </section>
   );
 }
-

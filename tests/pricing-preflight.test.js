@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildPricingPreflight } from '../src/lib/pricingPreflight.js';
+import { buildPricingPreflight, PRICING_SELECTION_MAX } from '../src/lib/pricingPreflight.js';
 
 const products = [
   { id: 'a', code: 'A', name: 'Alpha', price: 100 },
@@ -23,5 +23,15 @@ describe('pricing preflight', () => {
     const result = buildPricingPreflight(products, ['a', 'b'], -15);
     expect(result.highRisk).toBe(true);
     expect(result.confirmationPhrase).toBe('APPLY -15% TO 2 PRODUCTS');
+  });
+
+  it('hard-caps a single pricing run at 250 products', () => {
+    const many = Array.from({ length: PRICING_SELECTION_MAX + 1 }, (_, index) => ({
+      id: `p-${index}`,
+      price: 10,
+    }));
+    const result = buildPricingPreflight(many, many.map((product) => product.id), 5);
+    expect(result.blocked).toBe(true);
+    expect(result.blockers.join(' ')).toContain('250');
   });
 });

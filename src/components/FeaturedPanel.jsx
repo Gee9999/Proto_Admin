@@ -90,7 +90,18 @@ function reorderFlatList(list, dragId, overId) {
   return next;
 }
 
-function FeaturedOrderList({ products, onReorder, onRemove, saving }) {
+function ProductThumbnail({ src, className = '' }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className={`adm-product-thumb ${className}`}>
+      {src && !failed
+        ? <img src={src} alt="" loading="lazy" decoding="async" onError={() => setFailed(true)} />
+        : <span className="featured-image-fallback" aria-label="Product image unavailable">No image</span>}
+    </div>
+  );
+}
+
+function FeaturedOrderList({ products, onReorder, onRemove, saving, reorderDisabled = false }) {
   const productsRef = useRef(products);
   productsRef.current = products;
   const onReorderRef = useRef(onReorder);
@@ -137,7 +148,7 @@ function FeaturedOrderList({ products, onReorder, onRemove, saving }) {
   }, []);
 
   const startDrag = useCallback((productId, e) => {
-    if (saving) return;
+    if (saving || reorderDisabled) return;
     e.preventDefault();
     dragIdRef.current = productId;
     setDragId(productId);
@@ -147,7 +158,7 @@ function FeaturedOrderList({ products, onReorder, onRemove, saving }) {
     if (move) window.addEventListener('pointermove', move);
     if (end) window.addEventListener('pointerup', end);
     e.currentTarget.setPointerCapture?.(e.pointerId);
-  }, [saving]);
+  }, [reorderDisabled, saving]);
 
   if (!products.length) {
     return (
@@ -170,15 +181,11 @@ function FeaturedOrderList({ products, onReorder, onRemove, saving }) {
             className="featured-order-grip"
             aria-label={`Drag ${product.name}`}
             onPointerDown={(e) => startDrag(product.id, e)}
-            disabled={saving}
+            disabled={saving || reorderDisabled}
           >
             <Grip size={14} />
           </button>
-          <div className="adm-product-thumb featured-order-thumb">
-            {product.image
-              ? <img src={product.image} alt="" loading="lazy" decoding="async" />
-              : <span className="adm-muted">IMG</span>}
-          </div>
+          <ProductThumbnail src={product.image} className="featured-order-thumb" />
           <div className="featured-order-meta">
             <strong>{product.name}</strong>
             <div className="adm-muted" style={{ fontSize: 11 }}>
@@ -206,6 +213,7 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
   const queryClient = useQueryClient();
   const [view, setView] = useState('arrange');
   const [searchInput, setSearchInput] = useState('');
+  const [arrangeSearch, setArrangeSearch] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [categoryId, setCategoryId] = useState('');
   const [page, setPage] = useState(1);
@@ -296,6 +304,13 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
       missing: true,
     };
   }), [featuredItems, catalogBySku]);
+  const filteredFeaturedProducts = useMemo(() => {
+    const query = arrangeSearch.trim().toLowerCase();
+    if (!query) return orderedFeaturedProducts;
+    return orderedFeaturedProducts.filter((product) => (
+      [product.name, product.code, product.sku].some((value) => String(value || '').toLowerCase().includes(query))
+    ));
+  }, [arrangeSearch, orderedFeaturedProducts]);
 
   // Every edit gets a number. A save may only apply if it is still the newest
   // one issued: picks debounce for 2s while a remove fires immediately, so an
@@ -459,6 +474,22 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
 
       {view === 'arrange' && (
         <>
+          <label className="adm-search featured-arrange-search">
+            <Search size={15} />
+            <span className="adm-sr-only">Search featured products</span>
+            <input
+              type="search"
+              className="adm-search-input"
+              placeholder="Search featured products…"
+              value={arrangeSearch}
+              onChange={(event) => setArrangeSearch(event.target.value)}
+            />
+          </label>
+          {arrangeSearch && (
+            <p className="adm-section-note featured-filter-warning" role="status">
+              Showing {filteredFeaturedProducts.length} of {orderedFeaturedProducts.length}. Reordering is disabled while this filtered subset is shown.
+            </p>
+          )}
           {featuredQuery.isLoading ? (
             <p className="adm-section-note"><Loader2 size={14} className="spin" /> Loading featured products…</p>
           ) : featuredQuery.isError ? (
@@ -484,10 +515,11 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
                 </p>
               )}
               <FeaturedOrderList
-                products={orderedFeaturedProducts}
+                products={filteredFeaturedProducts}
                 onReorder={handleReorder}
                 onRemove={removeFeatured}
                 saving={saving}
+                reorderDisabled={Boolean(arrangeSearch)}
               />
             </>
           )}
@@ -538,11 +570,7 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
                         checked={checked}
                         onChange={(e) => toggleFeatured(product.sku, e.target.checked)}
                       />
-                      <div className="adm-product-thumb featured-pick-thumb">
-                        {product.image
-                          ? <img src={product.image} alt="" loading="lazy" decoding="async" />
-                          : <span className="adm-muted">IMG</span>}
-                      </div>
+                      <ProductThumbnail src={product.image} className="featured-pick-thumb" />
                       <div className="featured-pick-meta">
                         <strong>{product.name}</strong>
                         <div className="adm-muted" style={{ fontSize: 11 }}>{product.code}</div>

@@ -13,6 +13,7 @@ import {
 
 const CACHE_TTL_MS = 60_000;
 const RECENT_ORDER_LIMIT = 20;
+const UNSAFE_PRODUCT_LIMIT = 25;
 let cached = null;
 let cachedAt = 0;
 let inflight = null;
@@ -219,6 +220,7 @@ async function checkCatalogue() {
     majorStockMismatch: 0,
     unmatched: 0,
   };
+  const unsafeProducts = [];
   for (const row of enriched) {
     const issues = evaluateCatalogueValues({
       websitePrice: row.price,
@@ -233,6 +235,18 @@ async function checkCatalogue() {
       if (issue.code === 'price_mismatch') counts.majorPriceMismatch += 1;
       if (issue.code === 'major_stock_mismatch') counts.majorStockMismatch += 1;
       if (issue.code === 'unmatched_product') counts.unmatched += 1;
+    }
+    if (issues.length && unsafeProducts.length < UNSAFE_PRODUCT_LIMIT) {
+      unsafeProducts.push({
+        sku: String(row.sku || '').trim(),
+        barcode: String(row.barcode || '').trim() || null,
+        issues: issues.map((issue) => issue.code),
+        websitePrice: Number(row.price) || 0,
+        erpPrice: Number(row.sell_price) || null,
+        websiteStock: Number(row.website_available_stock) || 0,
+        erpStock: row.stockLinked ? Number(row.available_stock) || 0 : null,
+        route: `/?section=catalogue&search=${encodeURIComponent(String(row.sku || '').trim())}`,
+      });
     }
   }
   const safety = catalogueState(counts);
@@ -252,6 +266,9 @@ async function checkCatalogue() {
       summary: safety.reason,
       detail: `${rows.length} live products checked · ${counts.unmatched} without an ERP match.`,
       measured: { liveProducts: rows.length, ...counts, latencyMs: Date.now() - started },
+      publishStop: safety.state === 'critical',
+      unsafeProducts,
+      unsafeProductLimit: UNSAFE_PRODUCT_LIMIT,
       action: safety.state !== 'healthy' ? 'Open Product Manager and review the safety warnings before publishing.' : null,
     },
     {

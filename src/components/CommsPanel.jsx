@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, Suspense } from 'react';
 import { BarChart2, ChevronLeft, ChevronRight, Loader2, Mail, RefreshCw, Search, Send, Users } from 'lucide-react';
 import { ADMIN_REFRESH_EVENT } from '../lib/adminRefresh';
 import { lazyRetry } from '../lib/lazyRetry';
 import { BUSINESS_TYPES } from '../lib/businessTypes';
 import AdminSelect from './AdminSelect';
+import { fetchCustomerEmailAudienceCount } from '../lib/customers';
 
 const EmailAnalyticsPanel = lazyRetry(() => import('./EmailAnalyticsPanel'));
 
@@ -54,8 +55,13 @@ export default function CommsPanel({ onCompose, onShowToast }) {
   const [search, setSearch] = useState('');
   const [searchDebounced, setSearchDebounced] = useState('');
   const [businessType, setBusinessType] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [contactsLoaded, setContactsLoaded] = useState(false);
+  const [audienceCount, setAudienceCount] = useState(null);
+  const [audienceCountLoading, setAudienceCountLoading] = useState(true);
   const [selected, setSelected] = useState(() => new Set());
+  const toastRef = useRef(onShowToast);
+  useEffect(() => { toastRef.current = onShowToast; }, [onShowToast]);
 
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(search.trim()), 300);
@@ -74,16 +80,36 @@ export default function CommsPanel({ onCompose, onShowToast }) {
       setRows(json.rows || []);
       setTotal(Number(json.total || 0));
     } catch (err) {
-      onShowToast?.(err.message || 'Failed to load contacts', 'error');
+      toastRef.current?.(err.message || 'Failed to load contacts', 'error');
       setRows([]);
       setTotal(0);
     } finally {
       setLoading(false);
+      setContactsLoaded(true);
     }
-  }, [onShowToast]);
+  }, []);
 
   useEffect(() => { setPage(1); }, [searchDebounced, businessType]);
   useEffect(() => { void loadContacts(page, searchDebounced, businessType); }, [page, searchDebounced, businessType, loadContacts]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setAudienceCountLoading(true);
+    setAudienceCount(null);
+    fetchCustomerEmailAudienceCount({
+      audience: 'all-approved',
+      businessTypes: businessType ? [businessType] : [],
+    })
+      .then((count) => { if (!cancelled) setAudienceCount(count); })
+      .catch((err) => {
+        if (!cancelled) {
+          setAudienceCount(0);
+          toastRef.current?.(err.message || 'Failed to count email audience', 'error');
+        }
+      })
+      .finally(() => { if (!cancelled) setAudienceCountLoading(false); });
+    return () => { cancelled = true; };
+  }, [businessType]);
 
   useEffect(() => {
     const onRefresh = (event) => {
@@ -126,9 +152,11 @@ export default function CommsPanel({ onCompose, onShowToast }) {
   // means EVERYONE to the audience resolver, so emailing the audience while
   // filtered to Unspecified silently sent to all approved customers.
   const emailAudience = () => {
+    if (audienceCountLoading || !audienceCount) return;
     onCompose?.({
       audience: 'all-approved',
       businessTypes: businessType ? [businessType] : [],
+      recipientCount: audienceCount,
     });
   };
 
@@ -153,7 +181,7 @@ export default function CommsPanel({ onCompose, onShowToast }) {
       <div className="adm-customer-tabs" style={{ marginBottom: 12 }}>
         <button type="button" onClick={() => setTab('contacts')} className={`adm-tab${tab === 'contacts' ? ' adm-tab--active' : ''}`}>
           <Users size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
-          Contacts{total ? ` (${total})` : ''}
+          Contacts{contactsLoaded ? ` (${total})` : ''}
         </button>
         <button type="button" onClick={() => setTab('analytics')} className={`adm-tab${tab === 'analytics' ? ' adm-tab--active' : ''}`}>
           <BarChart2 size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
@@ -221,10 +249,11 @@ export default function CommsPanel({ onCompose, onShowToast }) {
                 className="adm-btn-ghost"
                 style={{ fontSize: 13, padding: '7px 14px' }}
                 onClick={emailAudience}
+                disabled={audienceCountLoading || !audienceCount}
                 title="Opens the send-email window targeting every approved customer in the current business-type filter (not just this page)."
               >
                 <Users size={13} style={{ marginRight: 6, verticalAlign: -2 }} />
-                Email {audienceLabel}
+                Email {audienceLabel} ({audienceCountLoading ? '…' : audienceCount ?? 0})
               </button>
             </div>
           </div>
@@ -265,11 +294,7 @@ export default function CommsPanel({ onCompose, onShowToast }) {
                 {searchDebounced || businessType ? 'No customers match this filter.' : 'No approved customers yet.'}
               </div>
             )}
-            {loading && rows.length === 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 16px', color: '#6b7280', fontSize: 13 }}>
-                <Loader2 size={16} className="spin" /> Loading contacts…
-              </div>
-            )}
+            {loading && rows.length === 0 && <ContactRowsSkeleton />}
           </div>
 
           {totalPages > 1 && (
@@ -285,6 +310,20 @@ export default function CommsPanel({ onCompose, onShowToast }) {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function ContactRowsSkeleton() {
+  return (
+    <div className="adm-loading-skeleton" role="status" aria-label="Loading contacts">
+      {[0, 1, 2].map((row) => (
+        <div key={row} className="adm-loading-skeleton__row">
+          {[18, 42, 30, 48, 34, 28].map((width, index) => (
+            <span key={index} className="adm-loading-skeleton__bar" style={{ width: `${width}%` }} />
+          ))}
+        </div>
+      ))}
     </div>
   );
 }

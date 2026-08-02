@@ -1,7 +1,7 @@
 import { requireOwner } from './_admin-auth.js';
 import { loadTaxonomy } from './_taxonomy-utils.js';
 import { getStockClient, enrichRowsWithProductStock } from './_stock-client.js';
-import { ensureProductFromCatalogueRow, restoreArchivedToLive } from './_ensure-product.js';
+import { restoreArchivedToLive, verifyCatalogueRowForPublication } from './_ensure-product.js';
 import { collectImageUrlsFromRow, removeStagingObjects } from './_staging-storage.js';
 import { reorderStagedImageSlots } from './_stage-dormant.js';
 import { isExactlyZeroStock } from './_catalog-adapt.js';
@@ -120,9 +120,19 @@ export default async function handler(req, res) {
       // subcategory_one is NOT NULL — default to the shallow-row convention
       // (duplicate the category) so non-UI callers can't trip the constraint.
       if (!String(clean.subcategory_one || '').trim()) clean.subcategory_one = clean.category;
+      const verification = await verifyCatalogueRowForPublication(supabase, clean, { excludeSku: clean.sku });
+      if (!verification.ok) {
+        return res.status(422).json({
+          error: verification.blockers.map((blocker) => blocker.message).join(' '),
+          code: verification.blockers[0]?.code || 'publication_blocked',
+          blockers: verification.blockers,
+        });
+      }
+      clean.price = Number(verification.product.sell_price);
+      clean.stock_qty = Number(verification.product.stock_qty ?? verification.product.available_stock);
+      clean.available_stock = Number(verification.product.available_stock ?? verification.product.stock_qty);
       const { error } = await supabase.from('website_stock').insert(clean);
       if (error) throw error;
-      await ensureProductFromCatalogueRow(supabase, clean);
       return res.status(200).json({ ok: true });
     }
 
@@ -320,6 +330,6 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: `Unknown action: ${action}` });
   } catch (err) {
     console.error('stock-actions error:', err.message);
-    return res.status(500).json({ error: err.message || 'Stock action failed' });
+    return res.status(Number(err.status) || 500).json({ error: err.message || 'Stock action failed', code: err.code });
   }
 }

@@ -38,6 +38,7 @@ import { bulkMoveProducts, bulkRemoveFromCategory, invalidateAdminCache, updateP
 import { partitionPlacedOnly } from '../lib/placements';
 import { formatWebsitePrice } from '../lib/pricing';
 import { childrenOfTree, fetchCategoryProductCounts, subcategoryOptionsFromTree, listHiddenMottaro, restoreMottaroNode } from '../lib/taxonomyAdmin';
+import { cataloguePublishEligibility } from '../lib/cataloguePublishEligibility';
 
 const ONLY_IN_STOCK_KEY = 'pm_only_in_stock';
 
@@ -419,10 +420,11 @@ function CodeEllipsis({ value, prefix = '' }) {
  * rows — which is what made the search feel laggy (each keystroke reconciled
  * the whole un-virtualised list even though the row data hadn't changed).
  */
-const PmSearchField = memo(function PmSearchField({ onDebouncedChange, delay = 200 }) {
-  const [value, setValue] = useState('');
+const PmSearchField = memo(function PmSearchField({ onDebouncedChange, initialValue = '', delay = 200 }) {
+  const [value, setValue] = useState(initialValue);
   const onChangeRef = useRef(onDebouncedChange);
   onChangeRef.current = onDebouncedChange;
+  useEffect(() => setValue(initialValue), [initialValue]);
   useEffect(() => {
     const t = setTimeout(() => onChangeRef.current(value.trim()), delay);
     return () => clearTimeout(t);
@@ -459,6 +461,7 @@ export default function ProductManagerEngine({
   showCategorySidebar = true,
   title = 'Product Manager',
   note = 'In-stock products are live on the site. Open a product to set its New Stock ribbon and To-order options.',
+  initialSearch = '',
 }) {
   const clampStatus = useCallback(
     (s) => (statuses.includes(s) ? s : statuses[0]),
@@ -506,6 +509,11 @@ export default function ProductManagerEngine({
   // past subcategory_four (stored in subcategory_extra).
   const [makeLiveCategory, setMakeLiveCategory] = useState({ categoryId: '', childIds: [] });
   const [makeLiveSaving, setMakeLiveSaving] = useState(false);
+  const makeLiveEligibility = useMemo(() => cataloguePublishEligibility(makeLiveItem ? {
+    ...makeLiveItem,
+    categoryId: makeLiveCategory.categoryId,
+    erpLinked: makeLiveItem.stockLinked !== false,
+  } : {}), [makeLiveItem, makeLiveCategory.categoryId]);
   const [categoryDrawerOpen, setCategoryDrawerOpen] = useState(false);
   const [categoryStackNav, setCategoryStackNav] = useState(null);
   const selectedRowsRef = useRef(new Map());
@@ -1269,6 +1277,10 @@ export default function ProductManagerEngine({
       onShowToast?.('Pick a main category before making live', 'error');
       return;
     }
+    if (!makeLiveEligibility.eligible) {
+      onShowToast?.(`Cannot make live: ${makeLiveEligibility.reasons.join('; ')}`, 'error');
+      return;
+    }
     const name = productListTitle(makeLiveItem, 'archived');
     setMakeLiveSaving(true);
     try {
@@ -1276,14 +1288,11 @@ export default function ProductManagerEngine({
       const restored = await mutations.unarchive.mutateAsync(makeLiveItem.sku);
       queryClient.invalidateQueries({ queryKey: ['catalog'] });
       onRefreshStats?.();
-      const zeroStock = (makeLiveItem.stockOnHand ?? makeLiveItem.stockQty ?? 0) === 0;
       if (restored?.syncWarnings?.length) {
         onShowToast?.(syncWarningMessage(restored.syncWarnings), 'warning');
       } else {
         onShowToast?.(
-          zeroStock
-            ? `"${name}" is live and will stay visible at 0 stock — set price and stock on hand when ready.`
-            : `"${name}" is now live on the website`,
+          `"${name}" is now live on the website`,
           'success',
         );
       }
@@ -1591,7 +1600,7 @@ export default function ProductManagerEngine({
                   </div>
                 </>
               )}
-              <PmSearchField onDebouncedChange={setDebouncedSearch} />
+              <PmSearchField onDebouncedChange={setDebouncedSearch} initialValue={initialSearch} />
               {status === 'live' && (
                 <FilterMenu
                   label="Filter"
@@ -2148,6 +2157,14 @@ export default function ProductManagerEngine({
               — choose the category before moving to the live catalogue.
             </p>
             <div className="adm-modal-body pm-make-live-fields">
+              {!makeLiveEligibility.eligible && (
+                <div role="alert" style={{ gridColumn: '1 / -1', padding: 12, borderRadius: 8, background: '#fef2f2', color: '#991b1b' }}>
+                  <strong>Publication blocked</strong>
+                  <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>
+                    {makeLiveEligibility.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+                  </ul>
+                </div>
+              )}
               <label className="adm-field">
                 <span className="adm-field-label">Main category</span>
                 <select
@@ -2209,7 +2226,7 @@ export default function ProductManagerEngine({
                 <button type="button" className="adm-btn-ghost" onClick={() => setMakeLiveItem(null)} disabled={makeLiveSaving}>
                   Cancel
                 </button>
-                <button type="button" className="adm-btn-red" onClick={() => void confirmMakeLive()} disabled={makeLiveSaving}>
+                <button type="button" className="adm-btn-red" onClick={() => void confirmMakeLive()} disabled={makeLiveSaving || !makeLiveEligibility.eligible}>
                   {makeLiveSaving ? <><Loader2 size={14} className="spin" /> Making live…</> : 'Make live'}
                 </button>
               </div>

@@ -32,7 +32,7 @@ function StatusIcon({ state }) {
   return <CircleHelp size={22} />;
 }
 
-function HealthCard({ check }) {
+function HealthCard({ check, onRoute }) {
   const age = formatAge(check.measured?.ageHours);
   return (
     <article className={`health-card health-card--${check.state}`}>
@@ -51,12 +51,33 @@ function HealthCard({ check }) {
             <span>{check.action}</span>
           </div>
         )}
+        {check.publishStop && (
+          <div className="health-publish-stop" role="alert">
+            <ShieldAlert size={15} />
+            <strong>Hard publish stop:</strong> unsafe pricing must be corrected before these products can be published again.
+          </div>
+        )}
+        {Array.isArray(check.unsafeProducts) && check.unsafeProducts.length > 0 && (
+          <div className="health-remediation-queue">
+            <strong>Products needing attention ({check.unsafeProducts.length}{check.unsafeProducts.length === check.unsafeProductLimit ? '+' : ''})</strong>
+            <ul>
+              {check.unsafeProducts.map((product) => (
+                <li key={product.sku}>
+                  <button type="button" onClick={() => onRoute?.(product.route, product.sku)}>
+                    <span>{product.sku}</span>
+                    <small>{product.issues.join(' · ').replaceAll('_', ' ')}</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </article>
   );
 }
 
-export default function BackendHealthPanel() {
+export default function BackendHealthPanel({ onOpenProductManager }) {
   const [payload, setPayload] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -125,7 +146,16 @@ export default function BackendHealthPanel() {
             </div>
           </div>
           <div className="health-grid">
-            {payload.checks.map((check) => <HealthCard key={check.id} check={check} />)}
+            {payload.checks.map((check) => (
+              <HealthCard
+                key={check.id}
+                check={check}
+                onRoute={(route, sku) => {
+                  if (onOpenProductManager) onOpenProductManager(sku);
+                  else window.location.assign(route);
+                }}
+              />
+            ))}
           </div>
           <p className="health-panel__footnote">
             WhatsApp is intentionally excluded until the WhatsApp delivery channel is introduced.

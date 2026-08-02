@@ -32,6 +32,27 @@ function displayMoney(value) {
   });
 }
 
+function sourceFreshness(value, { staleAfterHours = 24 } = {}) {
+  if (!value) return { state: 'unknown', label: 'Unknown age' };
+  const ageMs = Date.now() - new Date(value).getTime();
+  if (!Number.isFinite(ageMs)) return { state: 'unknown', label: 'Unknown age' };
+  const hours = Math.max(0, ageMs / 3_600_000);
+  return hours > staleAfterHours
+    ? { state: 'stale', label: `Stale · ${Math.round(hours)}h old` }
+    : { state: 'current', label: hours < 1 ? 'Current · under 1h' : `Current · ${Math.round(hours)}h old` };
+}
+
+function varianceLabel(actual, expected, suffix = '') {
+  if (actual === null || actual === undefined || actual === ''
+    || expected === null || expected === undefined || expected === '') return 'Unknown';
+  const left = Number(actual);
+  const right = Number(expected);
+  if (!Number.isFinite(left) || !Number.isFinite(right)) return 'Unknown';
+  const difference = left - right;
+  const sign = difference > 0 ? '+' : '';
+  return `${sign}${difference.toFixed(2)}${suffix}`;
+}
+
 function IntelligenceField({ label, value }) {
   return (
     <div className="intelligence-field">
@@ -65,20 +86,39 @@ function EmptyState({ searchedCode }) {
 }
 
 function ProductResult({ product, searchedCode }) {
+  const [imageFailed, setImageFailed] = useState(false);
   const positill = product.erp || {};
   const website = product.website || {};
   const buying = product.buying || {};
   const risks = Array.isArray(buying.risks) ? buying.risks : [];
   const degraded = product.status?.degraded;
   const code = product.code || positill.code || searchedCode;
+  const websiteFreshness = sourceFreshness(product.sourceMeta?.website?.measuredAt || website.updatedAt);
+  const erpFreshness = sourceFreshness(product.sourceMeta?.erp?.measuredAt, { staleAfterHours: 6 });
+  const expectedWebsitePrice = positill.price !== null && positill.price !== undefined
+    && Number.isFinite(Number(positill.price))
+    ? Number(positill.price) * 1.15
+    : null;
+  const priceVariance = varianceLabel(website.price, expectedWebsitePrice, ' incl. VAT');
+  const stockVariance = varianceLabel(website.availableStock, positill.availableStock, ' units');
+  const incompleteSources = product.status?.website !== 'available' || product.status?.erp !== 'available';
+
+  useEffect(() => setImageFailed(false), [website.imageUrl]);
 
   return (
     <div className="intelligence-result" aria-live="polite">
       <div className="intelligence-result__summary">
-        <div>
+        <div className="intelligence-product-summary">
+          <div className="intelligence-product-image">
+            {website.imageUrl && !imageFailed
+              ? <img src={website.imageUrl} alt={positill.title || website.title || code} onError={() => setImageFailed(true)} />
+              : <span>No image</span>}
+          </div>
+          <div>
           <span className="intelligence-result__code">{code}</span>
           <h3>{positill.title || website.title || 'Product description unavailable'}</h3>
           <p>{[positill.department, positill.supplier].filter(Boolean).join(' · ') || 'Department and supplier not yet available'}</p>
+          </div>
         </div>
         <span className="intelligence-readonly"><ShieldCheck size={15} /> Read-only result</span>
       </div>
@@ -86,6 +126,7 @@ function ProductResult({ product, searchedCode }) {
       <div className="intelligence-data-grid">
         <IntelligenceCard title="Positill" icon={Boxes}>
           <IntelligenceField label="Source" value={product.sources?.erp === 'erp_sql' ? 'Live Positill' : (product.sources?.erp === 'stmast_cache' ? 'Approved cache' : null)} />
+          <IntelligenceField label="Source age" value={erpFreshness.label} />
           <IntelligenceField label="On hand" value={positill.stockOnHand} />
           <IntelligenceField label="Booked" value={positill.booked} />
           <IntelligenceField label="Available" value={positill.availableStock} />
@@ -94,11 +135,14 @@ function ProductResult({ product, searchedCode }) {
 
         <IntelligenceCard title="Website" icon={Globe}>
           <IntelligenceField label="Website record" value={product.status?.website === 'available' ? 'Available' : null} />
+          <IntelligenceField label="Source age" value={websiteFreshness.label} />
           <IntelligenceField label="Website product" value={website.title} />
           <IntelligenceField label="Website price (incl. VAT)" value={displayMoney(website.price)} />
           <IntelligenceField label="Website stock" value={website.stockOnHand} />
           <IntelligenceField label="Online available" value={website.availableStock} />
           <IntelligenceField label="Image" value={website.imageUrl ? 'Available' : null} />
+          <IntelligenceField label="Price variance vs ERP + VAT" value={priceVariance} />
+          <IntelligenceField label="Available-stock variance" value={stockVariance} />
         </IntelligenceCard>
 
         <IntelligenceCard title="Buying intelligence" icon={TrendingUp}>
@@ -111,10 +155,15 @@ function ProductResult({ product, searchedCode }) {
         </IntelligenceCard>
       </div>
 
-      <div className={`intelligence-recommendation${risks.length || degraded ? ' intelligence-recommendation--warning' : ''}`}>
-        {risks.length || degraded ? <AlertTriangle size={19} /> : <CheckCircle2 size={19} />}
+      <div className="intelligence-source-status" aria-label="Source freshness">
+        <span className={`intelligence-source-pill intelligence-source-pill--${websiteFreshness.state}`}>Website: {websiteFreshness.label}</span>
+        <span className={`intelligence-source-pill intelligence-source-pill--${erpFreshness.state}`}>ERP: {erpFreshness.label}</span>
+      </div>
+
+      <div className={`intelligence-recommendation${risks.length || degraded || incompleteSources ? ' intelligence-recommendation--warning' : ''}`}>
+        {risks.length || degraded || incompleteSources ? <AlertTriangle size={19} /> : <CheckCircle2 size={19} />}
         <div>
-          <strong>{degraded ? 'Some live Positill information is unavailable' : (buying.recommendation || 'No Atlas recommendation available yet')}</strong>
+          <strong>{incompleteSources || degraded ? 'This result has incomplete source coverage' : (buying.recommendation || 'No Atlas recommendation available yet')}</strong>
           {risks.length > 0 && <span>{risks.join(' · ')}</span>}
           {!risks.length && degraded && <span>Website or approved cache information may still be shown. Treat this result as incomplete.</span>}
           {!risks.length && !degraded && <span>The current foundation is factual and read-only; Atlas recommendations will be connected later.</span>}

@@ -1,6 +1,7 @@
 const MAX_ABSOLUTE_PERCENT = 50;
 const HIGH_RISK_PERCENT = 15;
 const HIGH_RISK_PRODUCT_COUNT = 20;
+export const PRICING_SELECTION_MAX = 250;
 
 function money(value) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
@@ -28,6 +29,7 @@ export function buildPricingPreflight(products, selectedIds, rawPercent) {
   if (!Number.isFinite(percent) || percent === 0) blockers.push('Enter a non-zero percentage.');
   if (Math.abs(percent) > MAX_ABSOLUTE_PERCENT) blockers.push(`A single adjustment cannot exceed ${MAX_ABSOLUTE_PERCENT}%.`);
   if (!rows.length) blockers.push('Select at least one product.');
+  if (rows.length > PRICING_SELECTION_MAX) blockers.push(`A pricing run cannot exceed ${PRICING_SELECTION_MAX} products.`);
 
   const invalidRows = rows.filter((row) => !Number.isFinite(row.oldPrice) || row.oldPrice <= 0 || !Number.isFinite(row.newPrice) || row.newPrice <= 0);
   if (invalidRows.length) blockers.push(`${invalidRows.length} selected product${invalidRows.length === 1 ? ' has' : 's have'} an invalid current or proposed price.`);
