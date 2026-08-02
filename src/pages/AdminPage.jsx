@@ -112,6 +112,7 @@ import { queryKeys } from '../lib/queryKeys';
 import { dispatchAdminRefresh } from '../lib/adminRefresh';
 import { lazyRetry } from '../lib/lazyRetry';
 import SellingUnitField from '../components/SellingUnitField';
+import { businessSearchUrl, traderVerificationSummary } from '../lib/traderVerification';
 
 // Section panels — lazy-loaded so the initial admin bundle only ships the
 // default section (Product Manager). Each lazy chunk is fetched on demand
@@ -2830,6 +2831,37 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 <LastEmailBadge customer={profileCustomer} />
               </h2>
 
+              {profileSource !== 'proto-active' && !profileCustomer.is_approved && (() => {
+                const verification = traderVerificationSummary(profileCustomer);
+                return (
+                  <section className={`adm-trader-review adm-trader-review--${verification.tone}`} aria-label="Trader verification recommendation">
+                    <div className="adm-trader-review-head">
+                      <div>
+                        <span className="adm-trader-review-kicker">Application evidence</span>
+                        <h3>{verification.recommendation}</h3>
+                      </div>
+                    </div>
+                    <p className="adm-trader-review-note">Evidence summary only — it is not a probability score. A staff member makes the final decision.</p>
+                    <div className="adm-trader-evidence-list">
+                      {verification.evidence.map((item) => (
+                        <div className={`adm-trader-evidence adm-trader-evidence--${item.tone}`} key={item.label}>
+                          {item.tone === 'neutral' || item.tone === 'review'
+                            ? <Search size={15} aria-hidden="true" />
+                            : <CheckCircle size={15} aria-hidden="true" />}
+                          <div><strong>{item.label}</strong><span>{item.detail}</span></div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="adm-trader-research">
+                      <div><strong>Internet &amp; social check</strong><span>Not run automatically in this preview.</span></div>
+                      <a className="adm-btn-ghost adm-btn-sm" href={businessSearchUrl(profileCustomer)} target="_blank" rel="noreferrer">
+                        <Search size={13} /> Research business
+                      </a>
+                    </div>
+                  </section>
+                );
+              })()}
+
               {profileEditing ? (
                 <div style={{ display: 'grid', gap: 12, marginTop: 4 }}>
                   {profileSource === 'proto-active' ? (
@@ -2907,6 +2939,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                   {profileSource !== 'proto-active' && <DrawerField icon={Store} label="Business type" value={profileCustomer.business_type} />}
                   {profileSource !== 'proto-active' && <DrawerField icon={Store} label="Monthly spend" value={profileCustomer.monthly_spend} />}
                   {profileSource !== 'proto-active' && <DrawerField icon={Globe} label="Website / social" value={profileCustomer.website} />}
+                  {profileSource !== 'proto-active' && profileCustomer.claimed_customer_code && (
+                    <DrawerField icon={Search} label="Old Proto code claimed" value={profileCustomer.claimed_customer_code} />
+                  )}
                   {profileSource !== 'proto-active' && (
                     <DrawerField icon={Shield} label="Accept WhatsApp" value={profileCustomer.accept_whatsapp == null ? null : profileCustomer.accept_whatsapp ? 'Yes' : 'No'} />
                   )}
