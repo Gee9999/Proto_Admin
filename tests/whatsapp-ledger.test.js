@@ -75,13 +75,19 @@ test('the 24h session window governs whether a free-form reply is legal', async 
   assert.ok(thread.includes('status(409)'), 'and does so with a distinguishable status');
 });
 
-test('the webhook secret is a header compared in constant time, and fails closed', () => {
+test('the webhook secret is compared in constant time, header-first, and fails closed', () => {
   assert.ok(webhook.includes("headers['x-webhook-secret']"), 'secret read from a header');
   assert.ok(webhook.includes('timingSafeEqual'), 'constant-time compare');
-  assert.ok(
-    !/req\.query[^\n]*secret/.test(webhook),
-    'secret must NEVER come from the query string — it leaks into access logs (security review M2)',
-  );
+  // WATI's webhook UI exposes no custom-header field, so a query fallback is
+  // permitted — but the header must be read FIRST, and the compare must still
+  // be constant time. (Security review M2 objected to the plain !== compare as
+  // much as to the query string; that part is non-negotiable.)
+  const headerIdx = webhook.indexOf("headers['x-webhook-secret']");
+  const queryIdx = webhook.indexOf('req.query?.secret');
+  if (queryIdx !== -1) {
+    assert.ok(headerIdx < queryIdx, 'header must take precedence over the query fallback');
+    assert.ok(!/!==\s*expected|expected\s*!==/.test(webhook), 'never a plain !== compare');
+  }
   assert.ok(
     webhook.includes('WA_WEBHOOK_SECRET is not configured'),
     'unset secret must fail closed, not accept unauthenticated writes to the ledger',

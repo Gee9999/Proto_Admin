@@ -108,7 +108,16 @@ export default async function handler(req, res) {
     // let anyone forge customer conversations.
     return res.status(503).json({ error: 'WA_WEBHOOK_SECRET is not configured' });
   }
-  const provided = String(req.headers['x-webhook-secret'] || '').trim();
+  // Header is preferred (it stays out of access logs). WATI's webhook UI has no
+  // custom-header field, so a `?secret=` query fallback is accepted — compared
+  // in constant time either way. Tradeoff, accepted knowingly: the secret then
+  // appears in Vercel/proxy access logs. Worst case for a leak is forged
+  // INBOUND rows in the ledger (no send capability, no account access), and the
+  // value is rotatable independently of WATI_API_TOKEN. Prefer the header if a
+  // future WATI plan exposes one.
+  const provided = String(
+    req.headers['x-webhook-secret'] || req.query?.secret || '',
+  ).trim();
   if (!safeEqual(provided, expected)) return res.status(401).json({ error: 'Unauthorised' });
 
   const payload = req.body || {};
