@@ -7,6 +7,7 @@ import { reorderStagedImageSlots } from './_stage-dormant.js';
 import { isExactlyZeroStock } from './_catalog-adapt.js';
 import { detachSkuFromGroup } from './_group-cascade.js';
 import { normalizeUnitsOfIssue } from '../lib/selling-unit.mjs';
+import { INCOMING_STOCK_STATUSES, normalizeIncomingAvailability } from '../lib/product-availability.mjs';
 
 // maxDuration for this route is set in vercel.json (functions."api/stock-actions.js").
 const PAGE_SIZE = 1000;
@@ -25,6 +26,11 @@ const LIVE_LIST_COLS = [
 // memory to be worth flagging (see catalog.js FULL_SCAN_WARN_ROWS) — logged, not
 // enforced, so listings stay complete while the size is surfaced for ops.
 const FULL_SCAN_WARN_ROWS = 15000;
+
+function availabilityTableMissing(error) {
+  const text = `${error?.code || ''} ${error?.message || ''}`;
+  return /PGRST205|42P01|website_product_availability/i.test(text);
+}
 
 async function fetchAllRows(supabase, table, { filter = null, orderBy = null, select = '*' } = {}) {
   const rows = [];
@@ -164,6 +170,94 @@ export default async function handler(req, res) {
         if (!arch.data?.length) return res.status(404).json({ error: 'Product not found' });
       }
       return res.status(200).json({ ok: true, toOrder: !!toOrder });
+    }
+
+    if (action === 'getProductAvailability') {
+      const sku = String(req.body?.sku || '').trim();
+      if (!sku) return res.status(400).json({ error: 'sku required' });
+      const { data, error } = await supabase
+        .from('website_product_availability')
+        .select('sku, incoming_status, incoming_qty, incoming_eta, shipment_ref, allow_preorder, updated_at')
+        .eq('sku', sku)
+        .maybeSingle();
+      if (error && availabilityTableMissing(error)) {
+        return res.status(200).json({ schemaReady: false, availability: normalizeIncomingAvailability() });
+      }
+      if (error) throw error;
+      return res.status(200).json({
+        schemaReady: true,
+        availability: normalizeIncomingAvailability(data || {}),
+        updatedAt: data?.updated_at || null,
+      });
+    }
+
+    if (action === 'setProductAvailability') {
+      const sku = String(req.body?.sku || '').trim();
+      const incomingStatus = String(req.body?.incomingStatus || 'none');
+      const incomingQty = Number(req.body?.incomingQty || 0);
+      const incomingEta = String(req.body?.incomingEta || '').trim();
+      const shipmentRef = String(req.body?.shipmentRef || '').trim().slice(0, 120);
+      const allowPreorder = Boolean(req.body?.allowPreorder);
+
+      if (!sku) return res.status(400).json({ error: 'sku required' });
+      if (!INCOMING_STOCK_STATUSES.includes(incomingStatus)) {
+        return res.status(400).json({ error: 'Invalid incoming stock status' });
+      }
+      if (!Number.isFinite(incomingQty) || incomingQty < 0 || incomingQty > 1000000000) {
+        return res.status(400).json({ error: 'Incoming quantity must be between 0 and 1,000,000,000' });
+      }
+      if (incomingStatus !== 'none' && incomingQty <= 0) {
+        return res.status(400).json({ error: 'Enter the expected incoming quantity' });
+      }
+      if (incomingEta && !/^\d{4}-\d{2}-\d{2}$/.test(incomingEta)) {
+        return res.status(400).json({ error: 'ETA must be a valid date' });
+      }
+
+      const { data: product, error: productError } = await supabase
+        .from('website_stock')
+        .select('sku')
+        .eq('sku', sku)
+        .maybeSingle();
+      if (productError) throw productError;
+      if (!product) return res.status(404).json({ error: 'Product not found in the live catalogue' });
+
+      if (incomingStatus === 'none') {
+        const { error } = await supabase.from('website_product_availability').delete().eq('sku', sku);
+        if (error && availabilityTableMissing(error)) {
+          return res.status(503).json({ error: 'Availability migration 059 has not been applied' });
+        }
+        if (error) throw error;
+        return res.status(200).json({ ok: true, availability: normalizeIncomingAvailability() });
+      }
+
+      const row = {
+        sku,
+        incoming_status: incomingStatus,
+        incoming_qty: incomingQty,
+        incoming_eta: incomingEta || null,
+        shipment_ref: shipmentRef,
+        allow_preorder: ['on_the_way', 'customs'].includes(incomingStatus) && allowPreorder,
+        updated_at: new Date().toISOString(),
+        updated_by: 'admin-portal',
+      };
+      const { data, error } = await supabase
+        .from('website_product_availability')
+        .upsert(row, { onConflict: 'sku' })
+        .select('incoming_status, incoming_qty, incoming_eta, shipment_ref, allow_preorder')
+        .single();
+      if (error && availabilityTableMissing(error)) {
+        return res.status(503).json({ error: 'Availability migration 059 has not been applied' });
+      }
+      if (error) throw error;
+      // Any explicitly tracked shipment must remain visible at zero SOH so the
+      // storefront can communicate its real status. This never changes ERP
+      // stock and clearing the shipment does not silently hide the product.
+      const { error: visibilityError } = await supabase
+        .from('website_stock')
+        .update({ keep_live_when_oos: true, updated_at: new Date().toISOString() })
+        .eq('sku', sku);
+      if (visibilityError) throw visibilityError;
+      return res.status(200).json({ ok: true, availability: normalizeIncomingAvailability(data) });
     }
 
     if (action === 'setNewArrival') {
