@@ -18,7 +18,7 @@ const LIVE_LIST_COLS = [
   'subcategory_one', 'subcategory_two', 'subcategory_three', 'subcategory_four', 'subcategory_extra',
   'image_url_one', 'image_url_two', 'image_url_three', 'image_url_four',
   'price', 'stock_qty', 'available_stock', 'is_new_arrival', 'to_order',
-  'original_description', 'pack_description', 'units_of_issue',
+  'original_description', 'pack_description', 'units_of_issue', 'min_order_qty',
   'created_at', 'updated_at', 'keep_live_when_oos',
 ].join(', ');
 
@@ -113,10 +113,11 @@ export default async function handler(req, res) {
         'sku', 'barcode', 'title', 'original_description', 'price', 'category',
         'subcategory_one', 'subcategory_two', 'subcategory_three', 'subcategory_four', 'subcategory_extra',
         'image_url_one', 'image_url_two', 'image_url_three', 'image_url_four',
-        'units_of_issue', 'pack_description',
+        'units_of_issue', 'pack_description', 'min_order_qty',
       ]);
       const clean = Object.fromEntries(Object.entries(row).filter(([k]) => ALLOWED.has(k)));
       clean.units_of_issue = normalizeUnitsOfIssue(clean.units_of_issue || 'EACH');
+      clean.min_order_qty = Math.max(1, Math.min(9999, Math.floor(Number(clean.min_order_qty) || 1)));
       // subcategory_one is NOT NULL — default to the shallow-row convention
       // (duplicate the category) so non-UI callers can't trip the constraint.
       if (!String(clean.subcategory_one || '').trim()) clean.subcategory_one = clean.category;

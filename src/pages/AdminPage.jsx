@@ -291,6 +291,7 @@ const emptyForm = {
   description: '',
   packDescription: '',
   unitsOfIssue: 'EACH',
+  minQty: '1',
   image: '',
   secondaryImage: '',
   imageThree: '',
@@ -459,6 +460,7 @@ function productToForm(product, tree = categories) {
     description: product.description || '',
     packDescription: product.packDescription || '',
     unitsOfIssue: product.unitsOfIssue || 'EACH',
+    minQty: String(Math.max(1, Math.floor(Number(product.minQty) || 1))),
     image: product.image || product.images?.[0] || '',
     secondaryImage: product.secondaryImage || product.images?.[1] || '',
     imageThree: product.imageThree || product.images?.[2] || '',
@@ -1583,6 +1585,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       description: productForm.description,
       packDescription: productForm.packDescription,
       unitsOfIssue: productForm.unitsOfIssue,
+      minQty: Number(productForm.minQty),
       image: productForm.image.trim(),
       secondaryImage: productForm.secondaryImage.trim(),
       imageThree: productForm.imageThree.trim(),
@@ -3254,6 +3257,21 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 onChange={(unitsOfIssue) => setContentEditForm((form) => ({ ...form, unitsOfIssue }))}
                 id="content-edit-selling-unit-options"
               />
+              <AdminField label="Minimum order quantity">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max="9999"
+                  step="1"
+                  value={productForm.minQty}
+                  onChange={(e) => setProductForm((product) => ({ ...product, minQty: e.target.value }))}
+                  className="adm-field-input"
+                />
+                <p className="adm-muted" style={{ fontSize: 12, margin: '6px 0 0' }}>
+                  Number of selling units required. Example: Pack 10 with minimum 3 means the customer orders at least 3 packs.
+                </p>
+              </AdminField>
             </div>
 
             {contentEditError && (
