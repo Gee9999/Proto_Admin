@@ -16,6 +16,7 @@ import AdminResetPasswordPage from './components/AdminResetPasswordPage';
 
 const AdminPage = lazyRetry(() => import('./pages/AdminPage'));
 const FulfillmentPage = lazyRetry(() => import('./pages/FulfillmentPage'));
+const CustomerAnalysisPreview = lazyRetry(() => import('./components/CustomerAnalysisPreview'));
 
 installAuthFetch();
 
@@ -36,6 +37,15 @@ export default function Root() {
   const path = window.location.pathname;
   const isFulfillment = path === '/fulfillment' || path === '/f' || path.startsWith('/f/');
   const isResetPassword = path === '/reset-password';
+  const isCustomerAnalysisPreview = path === '/preview/customer-analysis';
+
+  if (isCustomerAnalysisPreview) {
+    return (
+      <Suspense fallback={loadingFallback}>
+        <CustomerAnalysisPreview />
+      </Suspense>
+    );
+  }
 
   if (isFulfillment) return <AdminGate fulfillment />;
 
@@ -80,7 +90,6 @@ function AdminGate({ fulfillment = false }) {
         }
         if (mounted) {
           setSession(verified);
-          
           setBooting(false);
         }
       } catch {
@@ -112,7 +121,6 @@ function AdminGate({ fulfillment = false }) {
         return;
       }
       setSession(s);
-      
     });
 
     const onUnauthorized = () => { void signOut().then(() => setSession(null)); };
@@ -156,7 +164,6 @@ function AdminGate({ fulfillment = false }) {
               return;
             }
             setSession(s);
-            
           });
         }}
       />
