@@ -126,6 +126,7 @@ const PricingPanel = lazyRetry(() => import('../components/PricingPanel'));
 const ReorderPanel = lazyRetry(() => import('../components/ReorderPanel'));
 const OrdersWorkspacePanel = lazyRetry(() => import('../components/OrdersWorkspacePanel'));
 const BackendHealthPanel = lazyRetry(() => import('../components/BackendHealthPanel'));
+const WhatsappPanel = lazyRetry(() => import('../components/WhatsappPanel'));
 const HermesPanel = lazyRetry(() => import('../components/HermesPanel'));
 const ProductIntelligencePanel = lazyRetry(() => import('../components/ProductIntelligencePanel'));
 const BuyingPanel = lazyRetry(() => import('../components/BuyingPanel'));
@@ -2786,6 +2787,16 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                   />
                 </Suspense>
               )}
+              </SectionErrorBoundary>
+            )}
+
+            {/* WHATSAPP — broadcast, inbox, analytics and contacts over WATI.
+                All state is read from our own message ledger (migration 060). */}
+            {activeSection === 'whatsapp' && (
+              <SectionErrorBoundary name="whatsapp" title="WhatsApp crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Loading WhatsApp…" />}>
+                  <WhatsappPanel onShowToast={showToast} />
+                </Suspense>
               </SectionErrorBoundary>
             )}
 

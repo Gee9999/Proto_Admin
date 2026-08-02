@@ -29,15 +29,37 @@ npm run build
 `image-replace` · `catalogue` (Product Manager, live only) · `archive`
 (archived products, no category sidebar) · `reorder` (Reorder Grid) ·
 `customers` · `comms` (Email CRM: Brevo-synced contacts + broadcast composer +
-Email Analytics) · `site-content` (Featured + Specials + Banner Editor) ·
-`analytics` · `pricing` · `team` (opens fulfillment team modal).
+Email Analytics) · `whatsapp` (Broadcast + Inbox + Analytics + Contacts over
+WATI) · `site-content` (Featured + Specials + Banner Editor) · `analytics` ·
+`pricing` · `team` (opens fulfillment team modal).
 
 Removed features — do NOT reintroduce: **Apollo (the entire tab, engine and
-docs)**, **WhatsApp/WATI outgoing messaging** (order alerts, broadcasts,
-welcome messages, Intercom relay — the customer's `accept_whatsapp` opt-in
-DATA stays), Cost Tracking, product approval tab, reorder mode inside Product
+docs)**, Cost Tracking, product approval tab, reorder mode inside Product
 Manager, product-type dropdown in the edit modal, scheduled send for email
 broadcasts (immediate-send only).
+
+**WhatsApp was deliberately reinstated** (migration 060), after PR #179 removed
+the original build and migration 055 dropped its tables. It is NOT the old
+feature restored — the rules below are the point of the rebuild, so do not
+"simplify" back toward the previous design:
+
+- **We own the message ledger.** `whatsapp_messages` is the source of truth for
+  every message in and out. Per-contact rollups (`last_outbound_*`,
+  `last_inbound_*`, `session_expires_at`, `unread_count`) are maintained by the
+  migration-060 trigger and read from our DB.
+- **Never store or read state in WATI contact custom params.** The old build
+  kept join status in `attribute_2` / `joined` / `join_status` and scraped
+  `getMessages` per contact on every render. Both are gone on purpose.
+- **Broadcast audience is `customers.accept_whatsapp` only**, resolved through
+  the `wa_broadcast_audience()` SQL function so the composer's preview count and
+  the worker's send list cannot diverge. Team numbers and STOP contacts never
+  receive.
+- **Broadcasts queue; they never send in-request.** `api/wa-broadcast.js`
+  enqueues, the `api/wa-broadcast-worker.js` cron drains in bounded batches.
+- **The webhook secret goes in a header** (`x-webhook-secret`, `timingSafeEqual`),
+  never the query string — see the Brevo webhook for the same pattern.
+- **Order alerts stay email-only.** Reinstating WhatsApp for messaging does not
+  reinstate WhatsApp order notifications; `api/_order-notify-core.js` is unchanged.
 
 ## Customers & email
 - **Customer codes are NEVER auto-generated** — always null or an admin-typed

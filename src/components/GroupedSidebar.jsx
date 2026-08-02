@@ -7,6 +7,7 @@ import {
   ImagePlus,
   Layout,
   Mail,
+  MessageCircle,
   PackagePlus,
   ScanLine,
   Search,
@@ -35,6 +36,7 @@ const NAV_ITEMS = [
   { id: 'reorder', label: 'Reorder Grid', icon: Grip },
   { id: 'customers', label: 'Customer Management', icon: Users },
   { id: 'comms', label: 'Email CRM', icon: Mail },
+  { id: 'whatsapp', label: 'WhatsApp', icon: MessageCircle },
   { id: 'site-content', label: 'Site Content', icon: Star },
   { id: 'analytics', label: 'Analytics', icon: BarChart2 },
   { id: 'backend-health', label: 'Backend Health', icon: HeartPulse },
@@ -53,6 +55,7 @@ const CHUNK_PREFETCH = {
   pricing: () => import('./PricingPanel'),
   reorder: () => import('./ReorderPanel'),
   'backend-health': () => import('./BackendHealthPanel'),
+  whatsapp: () => import('./WhatsappPanel'),
 };
 
 function prefetchSection(sectionId) {
