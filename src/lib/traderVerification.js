@@ -20,6 +20,9 @@ export function traderVerificationSummary(customer = {}) {
   if (has(customer.business_type)) {
     evidence.push({ tone: 'positive', label: 'Business category supplied', detail: customer.business_type });
   }
+  if (has(customer.business_description)) {
+    evidence.push({ tone: 'positive', label: 'Business description supplied', detail: customer.business_description });
+  }
   if (has(customer.website)) {
     evidence.push({ tone: 'positive', label: 'Public business lead supplied', detail: customer.website });
   } else {
@@ -36,7 +39,7 @@ export function traderVerificationSummary(customer = {}) {
   }
 
   const hasBusinessEvidence = has(customer.business_type)
-    && (has(customer.website) || has(customer.vat_number) || has(customer.company_address));
+    && (has(customer.business_description) || has(customer.website) || has(customer.vat_number) || has(customer.company_address));
   const recommendation = hasHistory
     ? 'Likely existing Proto customer'
     : claimedCode

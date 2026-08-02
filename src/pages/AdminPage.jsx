@@ -1768,6 +1768,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       phone: profileCustomer.phone || '',
       business_name: profileCustomer.business_name || profileCustomer.name || '',
       business_type: profileCustomer.business_type || '',
+      business_description: profileCustomer.business_description || '',
       monthly_spend: profileCustomer.monthly_spend || '',
       website: profileCustomer.website || '',
       vat_number: profileCustomer.vat_number || '',
@@ -2896,6 +2897,17 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                         </div>
                       ))}
                       <div>
+                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Business description</label>
+                        <textarea
+                          className="adm-field-input"
+                          rows={4}
+                          maxLength={400}
+                          value={profileForm.business_description || ''}
+                          onChange={setPf('business_description')}
+                          style={{ width: '100%', resize: 'vertical' }}
+                        />
+                      </div>
+                      <div>
                         <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Customer code</label>
                         <input
                           className="adm-field-input"
@@ -2937,6 +2949,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                   <DrawerField icon={Mail} label="Email" value={profileCustomer.email} />
                   {profileSource !== 'proto-active' && <DrawerField icon={Phone} label="Phone" value={profileCustomer.phone} />}
                   {profileSource !== 'proto-active' && <DrawerField icon={Store} label="Business type" value={profileCustomer.business_type} />}
+                  {profileSource !== 'proto-active' && <DrawerField icon={Store} label="Business description" value={profileCustomer.business_description} />}
                   {profileSource !== 'proto-active' && <DrawerField icon={Store} label="Monthly spend" value={profileCustomer.monthly_spend} />}
                   {profileSource !== 'proto-active' && <DrawerField icon={Globe} label="Website / social" value={profileCustomer.website} />}
                   {profileSource !== 'proto-active' && profileCustomer.claimed_customer_code && (

@@ -92,7 +92,7 @@ export default async function handler(req, res) {
     const ALLOWED_PATCH_FIELDS = new Set([
       'is_approved', 'tier', 'name', 'email', 'phone', 'business_name',
       'business_type', 'company_address', 'delivery_address', 'vat_number',
-      'monthly_spend', 'website',
+      'business_description', 'monthly_spend', 'website',
       'country', 'province', 'city', 'accept_whatsapp', 'customer_code',
       'sales_last_12_months', 'invoice_count', 'last_purchase_date',
       'contact_name', 'first_name', 'tags',
@@ -222,7 +222,7 @@ export default async function handler(req, res) {
         is_approved: true,
         customer_code: null,
       };
-      for (const col of ['phone', 'business_type', 'contact_name', 'first_name', 'vat_number', 'website', 'city', 'province', 'country', 'company_address', 'delivery_address']) {
+      for (const col of ['phone', 'business_type', 'business_description', 'contact_name', 'first_name', 'vat_number', 'website', 'city', 'province', 'country', 'company_address', 'delivery_address']) {
         const v = b[col];
         if (v !== undefined && v !== null && String(v).trim() !== '') row[col] = String(v).trim();
       }

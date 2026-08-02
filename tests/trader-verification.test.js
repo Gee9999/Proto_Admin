@@ -21,6 +21,20 @@ describe('trader application evidence summary', () => {
     expect(result.evidence).toContainEqual(expect.objectContaining({ detail: expect.stringContaining('not a reason to decline') }));
   });
 
+  it('uses the applicant description as review evidence without auto-approval', () => {
+    const result = traderVerificationSummary({
+      business_type: 'Gift & novelty store',
+      business_description: 'We sell gifts from a market stall to walk-in customers.',
+    });
+    expect(result.recommendation).toBe('Trader evidence supplied');
+    expect(result.evidence).toContainEqual(expect.objectContaining({
+      label: 'Business description supplied',
+      detail: expect.stringContaining('market stall'),
+    }));
+    expect(result).not.toHaveProperty('approved');
+    expect(result).not.toHaveProperty('confidence');
+  });
+
   it('keeps a claimed old code separate and asks staff to verify it', () => {
     const result = traderVerificationSummary({ claimed_customer_code: 'abc123' });
     expect(result.recommendation).toBe('Verify claimed Proto code');
