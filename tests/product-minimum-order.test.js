@@ -9,6 +9,12 @@ describe('product minimum order quantity', () => {
   it('is editable as a whole-number selling-unit minimum', () => {
     expect(adminPage).toContain('Minimum order quantity');
     expect(adminPage).toContain('Number of selling units required');
+    const productEditorStart = adminPage.indexOf('id="product-editor-selling-unit-options"');
+    const contentEditorStart = adminPage.indexOf('id="content-edit-selling-unit-options"');
+    const minimumField = adminPage.indexOf('Minimum order quantity');
+    expect(productEditorStart).toBeGreaterThan(-1);
+    expect(minimumField).toBeGreaterThan(productEditorStart);
+    expect(adminPage.slice(contentEditorStart, productEditorStart)).not.toContain('Minimum order quantity');
     expect(updateApi).toContain('patch.min_order_qty = parsedMinQty');
   });
 

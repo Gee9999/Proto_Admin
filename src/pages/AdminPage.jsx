@@ -3257,21 +3257,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 onChange={(unitsOfIssue) => setContentEditForm((form) => ({ ...form, unitsOfIssue }))}
                 id="content-edit-selling-unit-options"
               />
-              <AdminField label="Minimum order quantity">
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min="1"
-                  max="9999"
-                  step="1"
-                  value={productForm.minQty}
-                  onChange={(e) => setProductForm((product) => ({ ...product, minQty: e.target.value }))}
-                  className="adm-field-input"
-                />
-                <p className="adm-muted" style={{ fontSize: 12, margin: '6px 0 0' }}>
-                  Number of selling units required. Example: Pack 10 with minimum 3 means the customer orders at least 3 packs.
-                </p>
-              </AdminField>
             </div>
 
             {contentEditError && (
@@ -3498,6 +3483,21 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 onChange={(unitsOfIssue) => setProductForm((product) => ({ ...product, unitsOfIssue }))}
                 id="product-editor-selling-unit-options"
               />
+              <AdminField label="Minimum order quantity">
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="1"
+                  max="9999"
+                  step="1"
+                  value={productForm.minQty}
+                  onChange={(e) => setProductForm((product) => ({ ...product, minQty: e.target.value }))}
+                  className="adm-field-input"
+                />
+                <p className="adm-muted" style={{ fontSize: 12, margin: '6px 0 0' }}>
+                  Number of selling units required. Example: Pack 10 with minimum 3 means the customer orders at least 3 packs.
+                </p>
+              </AdminField>
 
               <AdminField label="Product images (up to 4)" full>
                 <p className="adm-muted" style={{ fontSize: 12, margin: '0 0 10px' }}>
