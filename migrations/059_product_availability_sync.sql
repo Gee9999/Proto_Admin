@@ -128,7 +128,7 @@ create trigger website_stock_reconcile_availability_after_grv
   for each row
   execute function public.reconcile_website_product_availability_after_grv();
 
-revoke all on function public.reconcile_website_product_availability_after_grv() from public;
+revoke all on function public.reconcile_website_product_availability_after_grv() from public, anon, authenticated;
 
 comment on table public.website_product_availability is
   'Private per-SKU incoming stock state. ERP stock remains authoritative stock on hand; to_order remains the made/sourced-on-request flag.';
