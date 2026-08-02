@@ -4,7 +4,7 @@ import { requireOwner } from './_admin-auth.js';
 import { logProductLoaderAudit } from './_product-loader-audit.js';
 import { labelsToDbFields } from './_taxonomy-utils.js';
 import { fetchProductLookupMap, findProductBySku } from './_sku-match.js';
-import { canonicalPublishValues } from '../lib/catalogue-safety.mjs';
+import { canonicalPublishValues, cataloguePublicationBlockers, duplicateLiveCatalogueSku } from '../lib/catalogue-safety.mjs';
 import { normalizeUnitsOfIssue } from '../lib/selling-unit.mjs';
 
 function getStockClient() {
@@ -182,6 +182,36 @@ export default async function handler(req, res) {
       subcategory_two: subcategoryTwo ? String(subcategoryTwo).trim() : null,
     };
 
+  let duplicateLiveSku = '';
+  const { data: barcodeMatches, error: barcodeMatchError } = await sb
+    .from('website_stock')
+    .select('sku, barcode')
+    .eq('barcode', erpBarcode);
+  if (barcodeMatchError) {
+    return res.status(503).json({ error: `Catalogue identity check failed: ${barcodeMatchError.message}`, code: 'catalogue_safety_unavailable' });
+  }
+  duplicateLiveSku = duplicateLiveCatalogueSku(barcodeMatches, erpBarcode, sku);
+  const publicationBlockers = cataloguePublicationBlockers({
+    row: {
+      title: resolvedTitle,
+      category: catFields.category,
+      image_url_one: imageFields.image_url_one || existing?.image_url_one,
+      image_url_two: imageFields.image_url_two || existing?.image_url_two,
+      image_url_three: imageFields.image_url_three || existing?.image_url_three,
+      image_url_four: imageFields.image_url_four || existing?.image_url_four,
+    },
+    product: canonicalProduct,
+    duplicateLiveSku,
+  });
+  if (publicationBlockers.length) {
+    return res.status(422).json({
+      error: publicationBlockers.map((blocker) => blocker.message).join(' '),
+      code: publicationBlockers[0].code,
+      blockers: publicationBlockers,
+      sku,
+    });
+  }
+
   const patch = {
     title: resolvedTitle,
     // Never trust browser-supplied price/stock when a synchronised ERP product
@@ -222,10 +252,6 @@ export default async function handler(req, res) {
       image_url_three: null,
       image_url_four: null,
       ...imageFields,
-      // An authored product has no ERP stock feed, so a 0-stock row would be
-      // hidden by isPublishableOnWebsite. Keep it live regardless — the admin
-      // explicitly chose to publish it (auto-OOS archiving is off anyway).
-      ...(requireNew ? { keep_live_when_oos: true } : {}),
       updated_at: now,
     };
     const { error } = await sb.from('website_stock').insert(insertRow);

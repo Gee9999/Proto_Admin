@@ -181,6 +181,16 @@ const ORDER_TAB_DEFS = [
   { key: 'all', label: 'All orders', overview: true },
 ];
 const ORDER_TAB_LABELS = Object.fromEntries(ORDER_TAB_DEFS.map((t) => [t.key, t.label]));
+const ACTIONABLE_ORDER_TABS = new Set(ORDER_TAB_DEFS.filter((tab) => !tab.overview).map((tab) => tab.key));
+
+function loadLastActionableOrderTab() {
+  try {
+    const stored = localStorage.getItem('adm-orders-last-actionable-tab');
+    return ACTIONABLE_ORDER_TABS.has(stored) ? stored : 'new';
+  } catch {
+    return 'new';
+  }
+}
 
 const ADMIN_PAGE_SIZE = 50;
 const CUSTOMER_SERVICE_SECTIONS = ['orders', 'customers', 'comms'];
@@ -491,7 +501,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     const preferred = initialOrderWorkspaceId ? 'orders' : 'catalogue';
     return allowedSectionIds.includes(preferred) ? preferred : allowedSectionIds[0] || 'orders';
   });
+  const previousSectionRef = useRef(activeSection);
   const [productLoaderCode, setProductLoaderCode] = useState('');
+  const [catalogueSearch, setCatalogueSearch] = useState('');
   const [siteContentTab, setSiteContentTab] = useState('featured');
   const { data: dashStats } = useDashboardStats();
   const [loading, setLoading] = useState(false);
@@ -506,6 +518,8 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   const [editorImageUploading, setEditorImageUploading] = useState(false);
   const [editorImageDragOver, setEditorImageDragOver] = useState('');
   const editorImageFileInputRefs = useRef({});
+  const editorDialogRef = useRef(null);
+  const editorReturnFocusRef = useRef(null);
   const [profileCustomer, setProfileCustomer] = useState(null);
   const [profileOrders, setProfileOrders] = useState([]);
   const [profileOrdersLoading, setProfileOrdersLoading] = useState(false);
@@ -570,6 +584,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   // Order Workspace now lives below the order list, revealed on demand. Auto-open
   // when a workspace was deep-linked so the URL still lands on it.
   const [orderWorkspaceOpen, setOrderWorkspaceOpen] = useState(Boolean(initialOrderWorkspaceId));
+  const orderWorkspaceListSnapshotRef = useRef(null);
 
   const [fulfillmentOrder, setFulfillmentOrder] = useState(null);
   const [fulfillmentItems, setFulfillmentItems] = useState([]);
@@ -593,7 +608,8 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     const stored = Number(localStorage.getItem('adm-orders-badge-seen'));
     return Number.isFinite(stored) ? stored : 0;
   });
-  const [orderTab, setOrderTab] = useState('new');
+  const [orderTab, setOrderTab] = useState(loadLastActionableOrderTab);
+  const lastActionableOrderTabRef = useRef(loadLastActionableOrderTab());
   const [orderPage, setOrderPage] = useState(1);
   const [orderTotal, setOrderTotal] = useState(0);
   const [orderTabCounts, setOrderTabCounts] = useState(null);
@@ -641,6 +657,11 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     return () => clearTimeout(timer);
   }, [orderSearch]);
   useEffect(() => { setOrderPage(1); }, [orderTab, orderSearchDebounced]);
+  useEffect(() => {
+    if (orderTab === 'all') return;
+    lastActionableOrderTabRef.current = orderTab;
+    try { localStorage.setItem('adm-orders-last-actionable-tab', orderTab); } catch { /* best effort */ }
+  }, [orderTab]);
   // Banner + Specials own their own load effects — see BannerPanel and SpecialsPanel.
 
 
@@ -1171,16 +1192,33 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     const section = params.get('section');
     const tab = params.get('orderTab');
     const focus = params.get('focusOrder');
+    const search = params.get('search');
     // Deep links must respect the same role allowlist as the visible sidebar.
     // Without this check, a restricted user could open a hidden section with
     // `?section=...` even though the navigation correctly omitted it.
     if (section && allowedSectionIds.includes(section)) setActiveSection(section);
     if (tab) setOrderTab(tab);
     if (focus) setFocusOrderId(focus);
+    if (section === 'catalogue' && search) setCatalogueSearch(search);
     if (section || tab || focus) {
       window.history.replaceState({}, '', window.location.pathname);
     }
   }, [allowedSectionIds]);
+
+  useEffect(() => {
+    if (previousSectionRef.current === activeSection) return undefined;
+    previousSectionRef.current = activeSection;
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    const frame = window.requestAnimationFrame(() => {
+      const headings = [...document.querySelectorAll('#admin-main .adm-section-title')];
+      const heading = headings.find((node) => node.offsetParent !== null);
+      if (heading) {
+        heading.setAttribute('tabindex', '-1');
+        heading.focus({ preventScroll: true });
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [activeSection]);
 
   useEffect(() => {
     if (!focusOrderId || activeSection !== 'orders' || !orders.length) return;
@@ -1416,11 +1454,45 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   );
 
   const orderRows = useMemo(() => {
-    if (!pinnedOrder || orders.some((o) => o.id === pinnedOrder.id)) return orders;
-    return [{ ...pinnedOrder, __pinned: true }, ...orders];
-  }, [orders, pinnedOrder]);
+    const currentKey = `${orderTab}|${orderPage}|${orderSearchDebounced}`;
+    const snapshot = orderWorkspaceListSnapshotRef.current;
+    const visibleOrders = orderWorkspaceOpen && orders.length === 0 && snapshot?.key === currentKey && snapshot.rows.length
+      ? snapshot.rows
+      : orders;
+    if (!pinnedOrder || visibleOrders.some((o) => o.id === pinnedOrder.id)) return visibleOrders;
+    return [{ ...pinnedOrder, __pinned: true }, ...visibleOrders];
+  }, [orders, pinnedOrder, orderWorkspaceOpen, orderTab, orderPage, orderSearchDebounced]);
+
+  const selectOrderTab = (key) => {
+    if (key !== 'all') lastActionableOrderTabRef.current = key;
+    setOrderTab(key);
+    setOrderPage(1);
+  };
+
+  const toggleOrderWorkspace = () => {
+    const key = `${orderTab}|${orderPage}|${orderSearchDebounced}`;
+    if (!orderWorkspaceOpen) {
+      orderWorkspaceListSnapshotRef.current = {
+        key,
+        rows: orders,
+        total: orderTotal,
+        tabCounts: orderTabCounts,
+        actionableTab: lastActionableOrderTabRef.current,
+      };
+      setOrderWorkspaceOpen(true);
+      return;
+    }
+    const snapshot = orderWorkspaceListSnapshotRef.current;
+    if (snapshot?.key === key) {
+      setOrders(snapshot.rows);
+      setOrderTotal(snapshot.total);
+      setOrderTabCounts(snapshot.tabCounts);
+    }
+    setOrderWorkspaceOpen(false);
+  };
 
   const openNewProduct = () => {
+    editorReturnFocusRef.current = document.activeElement;
     const firstCategory = taxonomyTree[0]?.id || categories[0]?.id || '';
     const firstChild = subcategoryOptions(firstCategory, taxonomyTree)[0]?.id || '';
     setEditingProduct(null);
@@ -1436,6 +1508,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   };
 
   const openEditProduct = (product) => {
+    editorReturnFocusRef.current = document.activeElement;
     setEditingProduct(product);
     setProductForm({ ...productToForm(product, taxonomyTree), availabilityLoading: true });
     setEditorError('');
@@ -1473,7 +1546,38 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     setEditorError('');
     setEditorImageUploading(false);
     setEditorImageDragOver('');
+    requestAnimationFrame(() => editorReturnFocusRef.current?.focus?.());
   };
+
+  useEffect(() => {
+    if (!editorOpen) return undefined;
+    const dialog = editorDialogRef.current;
+    const focusable = () => [...(dialog?.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+    ) || [])].filter((element) => !element.hidden);
+    requestAnimationFrame(() => focusable()[0]?.focus());
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape' && !editorImageUploading) {
+        event.preventDefault();
+        closeEditor();
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const items = focusable();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    dialog?.addEventListener('keydown', onKeyDown);
+    return () => dialog?.removeEventListener('keydown', onKeyDown);
+  }, [editorOpen, editorImageUploading]);
 
   const swapEditorImageSlots = (index) => {
     setProductForm((current) => {
@@ -1841,9 +1945,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       setCustomerPage(1);
       closeCustomerProfile();
       const who = person.business_name || person.name || 'Customer';
-      if (result.welcomeEmail === 'sent') showToast(`${who} approved — confirmation email sent`);
-      else if (customerCode) showToast(`${who} approved with code ${customerCode}`);
-      else showToast(`${who} approved — allocate a code later to send the confirmation email`);
+      if (result.welcomeEmail === 'sent') showToast(`${who} approved — portal access granted and welcome email sent`);
+      else if (result.welcomeEmail === 'failed') showToast(`${who} approved — portal access granted, but the welcome email failed`, 'error');
+      else showToast(`${who} approved — portal access granted${customerCode ? ` with code ${customerCode}` : ''}`);
     } catch (err) {
       showToast(err.message || 'Approval failed', 'error');
     } finally { setSaving(''); }
@@ -2142,6 +2246,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 onShowToast={showToast}
                 onRefreshStats={refreshDashboardStats}
                 initialStatus="live"
+                initialSearch={catalogueSearch}
                 statuses={['live']}
                 onEditProduct={(item) => openEditProduct(item)}
                 onEditCategory={setEditTaxonomyModal}
@@ -2217,7 +2322,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
             {activeSection === 'backend-health' && (
               <SectionErrorBoundary name="backend-health" title="Backend Health crashed" resetKey={activeSection}>
                 <Suspense fallback={<LazySectionFallback label="Checking backend health…" />}>
-                  <BackendHealthPanel />
+                  <BackendHealthPanel onOpenProductManager={(sku) => { setCatalogueSearch(sku); setActiveSection('catalogue'); }} />
                 </Suspense>
               </SectionErrorBoundary>
             )}
@@ -2385,6 +2490,11 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                     Contacts for CRM email campaigns before trade portal approval.
                   </p>
                 )}
+                {customerTab === 'requests' && (
+                  <p className="adm-muted adm-tab-helper" role="note">
+                    Approving grants portal access immediately and sends the welcome email. The six-character customer code is optional and can be allocated later.
+                  </p>
+                )}
 
                 {customerTab === 'proto-active' ? (
                   <div className="adm-list">
@@ -2430,7 +2540,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                         <span data-label="Last purchase" style={{ fontSize: 11, color: '#6b7280' }}>{row.last_purchase_date ? new Date(row.last_purchase_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</span>
                         <div data-cell="actions" style={{ display: 'flex', gap: 5 }}>
                           <button type="button" className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }} onClick={() => openCustomerProfile(row, 'proto-active')}>Edit</button>
-                          <button type="button" className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 7px', color: '#c40000' }} disabled={saving === `del-proto-${row.id}`} onClick={() => void removeProtoActiveCustomer(row)}>
+                          <button type="button" className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 7px', color: '#c40000' }} disabled={saving === `del-proto-${row.id}`} onClick={() => void removeProtoActiveCustomer(row)} aria-label={`Remove ${row.name || row.email} from pre-registration`} title="Remove this contact from pre-registration">
                             <X size={13} />
                           </button>
                         </div>
@@ -2476,7 +2586,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                               ...prev,
                               [person.id]: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6),
                             }))}
-                            title="Optional. A code sends the confirmation email now; leave blank to allocate later."
+                            title="Optional customer code. Approval grants portal access and sends the welcome email now, with or without a code."
                             style={{ width: '84px', fontFamily: 'monospace', fontWeight: 700 }}
                             aria-label={`Customer code for ${person.email}`}
                           />
@@ -2488,10 +2598,11 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                             className="adm-btn-green adm-btn-sm"
                             disabled={saving === person.id
                               || (!!approvalCodes[person.id] && !/^[A-Z0-9]{6}$/.test(approvalCodes[person.id]))}
+                            title="Approve portal access and send the welcome email now"
                           >
                             {saving === person.id ? '…' : <><Check size={12} /> Approve</>}
                           </button>
-                          <button onClick={() => void removeCustomer(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 7px', color: '#c40000' }} disabled={saving === `del-${person.id}`}>
+                          <button onClick={() => void removeCustomer(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 7px', color: '#c40000' }} disabled={saving === `del-${person.id}`} aria-label={`Delete trade request for ${person.business_name || person.name || person.email}`} title="Permanently delete this trade request">
                             <X size={13} />
                           </button>
                         </div>
@@ -2530,7 +2641,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                         <span data-label="Orders">{person.orderCount}</span>
                         <div data-cell="actions" style={{ display: 'flex', gap: 5 }}>
                           <button onClick={() => void openCustomerProfile(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }}>Edit</button>
-                          <button onClick={() => void removeCustomer(person)} className="adm-btn-ghost adm-btn-sm" disabled={saving === `del-${person.id}`} style={{ color: '#c40000', padding: '4px 8px' }}>
+                          <button onClick={() => void removeCustomer(person)} className="adm-btn-ghost adm-btn-sm" disabled={saving === `del-${person.id}`} style={{ color: '#c40000', padding: '4px 8px' }} aria-label={`Delete approved customer ${person.name || person.business_name || person.email}`} title="Permanently delete this approved customer">
                             {saving === `del-${person.id}` ? '…' : <X size={14} />}
                           </button>
                         </div>
@@ -2590,7 +2701,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                       type="button"
                       className={`adm-btn-ghost${orderWorkspaceOpen ? ' adm-tab--active' : ''}`}
                       aria-expanded={orderWorkspaceOpen}
-                      onClick={() => setOrderWorkspaceOpen((v) => !v)}
+                      onClick={toggleOrderWorkspace}
                       title="Open the order-building workspace (drafts, customer context, reminders)"
                     >
                       <ClipboardList size={15} />
@@ -2604,15 +2715,15 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 <>
                 <div className="adm-order-tabs">
                   {ORDER_TAB_DEFS.map(({ key, label, overview }) => {
-                    const count = orderTabCounts?.[key] ?? (key === 'all'
-                      ? orderTabCounts?.all ?? orderTotal
-                      : 0);
+                    const count = orderTabCounts == null
+                      ? null
+                      : orderTabCounts[key] ?? (key === 'all' ? orderTotal : 0);
                     const isActive = orderTab === key;
                     return (
                       <button
                         key={key}
                         type="button"
-                        onClick={() => { setOrderTab(key); setOrderPage(1); }}
+                        onClick={() => selectOrderTab(key)}
                         className={[
                           'adm-order-tab',
                           isActive ? 'adm-order-tab--active' : '',
@@ -2621,7 +2732,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                         ].filter(Boolean).join(' ')}
                       >
                         {label}
-                        {count > 0 && (
+                        {count != null && (
                           <span className={[
                             'adm-order-tab-count',
                             overview ? 'adm-order-tab-count--muted' : '',
@@ -2819,7 +2930,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 {!profileEditing && (
                   <button onClick={startEditProfile} className="adm-btn-ghost adm-btn-sm">Edit</button>
                 )}
-                <button onClick={closeCustomerProfile} className="adm-icon-btn"><X size={16} /></button>
+                <button onClick={closeCustomerProfile} className="adm-icon-btn" aria-label="Close customer profile" title="Close customer profile"><X size={16} /></button>
               </div>
             </div>
             <div className="adm-drawer-body">
@@ -2974,7 +3085,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                       ...prev,
                       [profileCustomer.id]: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6),
                     }))}
-                    title="Optional. Type a 6-character code to send the confirmation email now, or leave blank and allocate it later."
+                    title="Optional customer code. Approval grants portal access and sends the welcome email now, with or without a code."
                     style={{ width: 108, fontFamily: 'monospace', fontWeight: 700 }}
                   />
                   <button
@@ -2982,6 +3093,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                     className="adm-btn-green"
                     disabled={saving === profileCustomer.id
                       || (!!approvalCodes[profileCustomer.id] && !/^[A-Z0-9]{6}$/.test(approvalCodes[profileCustomer.id]))}
+                    title="Approve portal access and send the welcome email now"
                   >
                     {saving === profileCustomer.id ? 'Approving…' : <><Check size={15} /> Approve</>}
                   </button>
@@ -3017,6 +3129,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
             initialAudience={composeTarget?.audience || null}
             initialBusinessTypes={composeTarget?.businessTypes || null}
             initialRecipients={composeTarget?.recipients || null}
+            initialRecipientCount={composeTarget?.recipientCount ?? null}
           />
         </Suspense>
       )}
@@ -3390,13 +3503,21 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       {/* Product editor modal */}
       {editorOpen && (
         <div className="adm-modal-backdrop" onClick={closeEditor}>
-          <div className="adm-modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: 900, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+          <div
+            ref={editorDialogRef}
+            className="adm-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="product-editor-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: 900, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}
+          >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexShrink: 0 }}>
               <div>
-                <h3 style={{ margin: 0, fontSize: 22, fontFamily: 'Outfit, sans-serif' }}>{editingProduct ? 'Edit product' : 'Add product'}</h3>
+                <h3 id="product-editor-title" style={{ margin: 0, fontSize: 22, fontFamily: 'Outfit, sans-serif' }}>{editingProduct ? 'Edit product' : 'Add product'}</h3>
                 <p className="adm-muted" style={{ marginTop: 4 }}>Fill in the details and assign a category.</p>
               </div>
-              <button onClick={closeEditor} className="adm-icon-btn"><X size={16} /></button>
+              <button type="button" onClick={closeEditor} className="adm-icon-btn" aria-label="Close product editor"><X size={16} /></button>
             </div>
 
             <div style={{ overflowY: 'auto', paddingRight: 4, flex: 1, minHeight: 0 }}>

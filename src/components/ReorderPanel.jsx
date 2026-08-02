@@ -111,8 +111,8 @@ const ReorderPanel = forwardRef(function ReorderPanel({
   // stale token.
   const saveChainRef = useRef(Promise.resolve());
   const cacheByMainRef = useRef({});
-  const saveTimerRef = useRef(null);
-  const pendingSaveRef = useRef(null);
+  const publishedOrderRef = useRef([]);
+  const draftHistoryRef = useRef([]);
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
 
@@ -170,6 +170,8 @@ const ReorderPanel = forwardRef(function ReorderPanel({
       if (prev.length === ordered.length && prev.every((p, i) => p.id === ordered[i]?.id)) return prev;
       return ordered;
     });
+    publishedOrderRef.current = ordered;
+    draftHistoryRef.current = [];
     return ordered;
   }, [navPath, taxonomyTree]);
 
@@ -200,20 +202,20 @@ const ReorderPanel = forwardRef(function ReorderPanel({
   }, [categoryPath.length, mainId, applyReorderView]);
 
   const doCommitReorderOrder = useCallback(async (orderedProducts, { groupId } = {}) => {
-    if (search.trim().length > 0) return;
+    if (search.trim().length > 0) return false;
 
     const savePath = groupId && !categoryPath.length ? [groupId] : navPath;
     if (!savePath.length) {
       toast('Select a category in the sidebar to save order', 'error');
-      return;
+      return false;
     }
 
     const categoryKey = sortOrderCategoryKey(savePath, taxonomyTree);
-    if (!categoryKey) return;
+    if (!categoryKey) return false;
 
     const slice = productsForSortSave(orderedProducts, groupId);
     const skuOrder = slice.map((p) => p.id);
-    if (!skuOrder.length) return;
+    if (!skuOrder.length) return false;
 
     const legacyKeys = sortOrderLookupKeys(savePath, taxonomyTree).filter((k) => k !== categoryKey);
     const save = () => persistSortOrder({
@@ -241,6 +243,8 @@ const ReorderPanel = forwardRef(function ReorderPanel({
       storeUpdatedAtRef.current = json.storeUpdatedAt || null;
       categoryTokensRef.current.set(categoryKey, json.categoryUpdatedAt || json.updatedAt || null);
       setDirty(false);
+      publishedOrderRef.current = orderedProducts;
+      draftHistoryRef.current = [];
       if (mainId && cacheByMainRef.current[cacheKey]) {
         const cachePath = categoryPath.length ? categoryPath : [mainId];
         cacheByMainRef.current[cacheKey] = mergeIntoCategoryCache(
@@ -249,15 +253,17 @@ const ReorderPanel = forwardRef(function ReorderPanel({
           cachePath,
         );
       }
+      return true;
     } catch (err) {
       if (err.status === 409) {
         toast('Someone else is editing this category right now — refreshing to the latest order', 'error');
         invalidateSortOrderStore();
         await loadProducts({ forceCatalog: true });
-        return;
+        return false;
       }
       toast(err.message || 'Failed to save order', 'error');
       setDirty(true);
+      return false;
     } finally {
       setSavingOrder(false);
     }
@@ -270,20 +276,6 @@ const ReorderPanel = forwardRef(function ReorderPanel({
     saveChainRef.current = saveChainRef.current.then(run, run);
     return saveChainRef.current;
   }, [doCommitReorderOrder]);
-
-  const scheduleReorderSave = useCallback((orderedProducts, meta) => {
-    pendingSaveRef.current = { orderedProducts, meta };
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      const pending = pendingSaveRef.current;
-      pendingSaveRef.current = null;
-      if (pending) void commitReorderOrder(pending.orderedProducts, pending.meta);
-    }, 600);
-  }, [commitReorderOrder]);
-
-  useEffect(() => () => {
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-  }, []);
 
   useEffect(() => {
     if (!isActive) return;
@@ -309,6 +301,7 @@ const ReorderPanel = forwardRef(function ReorderPanel({
 
   const handleProductsChange = useCallback((nextOrFn) => {
     setProducts((prev) => {
+      draftHistoryRef.current = [...draftHistoryRef.current.slice(-19), prev];
       if (typeof nextOrFn === 'function') return nextOrFn(prev);
       const pathFiltered = applyPathFilter(prev, navPath);
       const q = search.trim();
@@ -318,13 +311,26 @@ const ReorderPanel = forwardRef(function ReorderPanel({
     setDirty(true);
   }, [navPath, search]);
 
+  const undoDraft = () => {
+    const previous = draftHistoryRef.current.pop();
+    if (!previous) return;
+    setProducts(previous);
+    setDirty(previous.some((product, index) => product.id !== publishedOrderRef.current[index]?.id));
+  };
+
+  const discardDraft = () => {
+    setProducts(publishedOrderRef.current);
+    draftHistoryRef.current = [];
+    setDirty(false);
+  };
+
   const saveReorderOrder = async () => {
     if (searchActive) {
       toast('Clear search before saving sort order', 'error');
       return;
     }
-    await commitReorderOrder(products);
-    toast('Sort order saved to live site', 'success');
+    const published = await commitReorderOrder(products);
+    if (published) toast('Draft order published to the live catalogue', 'success');
   };
 
   const toggleSelectAll = () => {
@@ -431,6 +437,7 @@ const ReorderPanel = forwardRef(function ReorderPanel({
   const moveSelectedToTop = () => {
     if (!selectedIds.size) return;
     setProducts((prev) => {
+      draftHistoryRef.current = [...draftHistoryRef.current.slice(-19), prev];
       const moving = prev.filter((p) => selectedIds.has(p.id));
       const rest = prev.filter((p) => !selectedIds.has(p.id));
       return [...moving, ...rest];
@@ -502,7 +509,7 @@ const ReorderPanel = forwardRef(function ReorderPanel({
         <div className="adm-section-head adm-section-head--reorder">
           <div>
             <h2 className="adm-section-title">Reorder Grid</h2>
-            <p className="adm-section-note">Matches the live trade portal order (cached). Pick a category in the sidebar — drag to reorder within that category. Changes save automatically after you drop.</p>
+            <p className="adm-section-note">Drag products into a draft order, review it, then publish explicitly. Category-name ordering still saves immediately.</p>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             {sortMeta.updatedAt && formatSortSavedAt(sortMeta.updatedAt) && (
@@ -516,8 +523,10 @@ const ReorderPanel = forwardRef(function ReorderPanel({
               className="adm-btn-red"
               disabled={!dirty || savingOrder || searchActive}
             >
-              {savingOrder ? 'Saving…' : 'Save order'}
+              {savingOrder ? 'Publishing…' : 'Publish order'}
             </button>
+            <button type="button" className="adm-btn-ghost" onClick={undoDraft} disabled={!draftHistoryRef.current.length || savingOrder}>Undo</button>
+            <button type="button" className="adm-btn-ghost" onClick={discardDraft} disabled={!dirty || savingOrder}>Discard draft</button>
           </div>
         </div>
 
@@ -606,7 +615,7 @@ const ReorderPanel = forwardRef(function ReorderPanel({
               </button>
             </div>
             <p className="adm-section-note" style={{ margin: '0 0 10px', fontSize: 12 }}>
-              Drag categories and subcategories by the grip handle. Order saves to the live trade portal automatically.
+              Drag categories and subcategories by the grip handle. Category-name order saves immediately; product-card order remains a draft until Publish.
             </p>
             <CategorySidebar
               tree={taxonomyTree}
@@ -633,7 +642,7 @@ const ReorderPanel = forwardRef(function ReorderPanel({
             onEditProduct={onEditProduct}
             onEditSubcategory={onEditSubcategory}
             onDeleteSubcategory={onDeleteSubcategory}
-            onOrderCommitted={(next, meta) => scheduleReorderSave(next, meta)}
+            onOrderCommitted={() => {}}
           />
         </div>
 

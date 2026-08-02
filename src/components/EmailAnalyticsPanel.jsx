@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { BarChart2, Download, Loader2, X } from 'lucide-react';
 import { ADMIN_REFRESH_EVENT } from '../lib/adminRefresh';
+import { normalizeCampaignAnalytics } from '../lib/emailAnalytics';
 
 /**
  * Email analytics as a SPREADSHEET, not a wall of text.
@@ -55,7 +56,7 @@ const SORTS = {
 
 export default function EmailAnalyticsPanel({ onShowToast }) {
   const [campaigns, setCampaigns] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [sort, setSort] = useState('date');
   const [detail, setDetail] = useState(null);
 
@@ -85,33 +86,7 @@ export default function EmailAnalyticsPanel({ onShowToast }) {
   }, [load]);
 
   const rows = useMemo(() => {
-    const mapped = (campaigns || []).map((c) => {
-      const e = c.events || {};
-      const sent = c.sent || c.recipientCount || 0;
-      const delivered = e.delivered || 0;
-      const opened = e.opened || 0;
-      const clicked = e.clicked || 0;
-      const bounced = e.bounced || 0;
-      // Opens/clicks are counted per EVENT (one person opening 3 times is 3),
-      // so rates are measured against unique recipients where we have them and
-      // capped at 100% — a "300% open rate" is meaningless to read.
-      const openedUnique = (c.eventEmails?.opened || []).length || opened;
-      const clickedUnique = (c.eventEmails?.clicked || []).length || clicked;
-      return {
-        ...c,
-        sent,
-        delivered,
-        opened,
-        clicked,
-        bounced,
-        openedUnique,
-        clickedUnique,
-        deliveryRate: Math.min(100, pct(delivered, sent)),
-        openRate: Math.min(100, pct(openedUnique, sent)),
-        clickRate: Math.min(100, pct(clickedUnique, sent)),
-        bounceRate: Math.min(100, pct(bounced, sent)),
-      };
-    });
+    const mapped = (campaigns || []).map(normalizeCampaignAnalytics);
     return mapped.sort(SORTS[sort] || SORTS.date);
   }, [campaigns, sort]);
 
@@ -119,20 +94,21 @@ export default function EmailAnalyticsPanel({ onShowToast }) {
     campaigns: acc.campaigns + 1,
     sent: acc.sent + r.sent,
     delivered: acc.delivered + r.delivered,
+    deliveryUnknown: acc.deliveryUnknown + r.deliveryUnknown,
     openedUnique: acc.openedUnique + r.openedUnique,
     clickedUnique: acc.clickedUnique + r.clickedUnique,
     bounced: acc.bounced + r.bounced,
-  }), { campaigns: 0, sent: 0, delivered: 0, openedUnique: 0, clickedUnique: 0, bounced: 0 }), [rows]);
+  }), { campaigns: 0, sent: 0, delivered: 0, deliveryUnknown: 0, openedUnique: 0, clickedUnique: 0, bounced: 0 }), [rows]);
 
   const exportCsv = () => {
     downloadCsv('proto-email-campaigns.csv', [
-      ['Sent at', 'Subject', 'Audience', 'Business types', 'Recipients', 'Delivered', 'Delivered %', 'Opened (people)', 'Open %', 'Clicked (people)', 'Click %', 'Bounced', 'Bounce %'],
+      ['Sent at', 'Subject', 'Audience', 'Business types', 'Recipients', 'Confirmed delivered', 'Delivered %', 'Delivery unknown', 'Opened (people)', 'Open %', 'Clicked (people)', 'Click %', 'Bounced', 'Bounce %'],
       ...rows.map((r) => [
         r.sentAt ? new Date(r.sentAt).toISOString() : '',
         r.subject || '(no subject)',
         r.audience || '',
         (r.businessTypes || []).join(' / '),
-        r.sent, r.delivered, `${r.deliveryRate}%`,
+        r.sent, r.delivered, `${r.deliveryRate}%`, r.deliveryUnknown,
         r.openedUnique, `${r.openRate}%`,
         r.clickedUnique, `${r.clickRate}%`,
         r.bounced, `${r.bounceRate}%`,
@@ -140,12 +116,15 @@ export default function EmailAnalyticsPanel({ onShowToast }) {
     ]);
   };
 
+  if (loading && campaigns.length === 0) return <EmailAnalyticsSkeleton />;
+
   return (
     <div style={{ marginTop: 8 }}>
       <div className="adm-email-stats">
         <Headline label="Campaigns" value={totals.campaigns} />
         <Headline label="Emails sent" value={totals.sent.toLocaleString('en-ZA')} />
-        <Headline label="Delivered" value={`${pct(totals.delivered, totals.sent)}%`} sub={`${totals.delivered.toLocaleString('en-ZA')} of ${totals.sent.toLocaleString('en-ZA')}`} />
+        <Headline label="Confirmed delivered" value={`${pct(totals.delivered, totals.sent)}%`} sub={`${totals.delivered.toLocaleString('en-ZA')} of ${totals.sent.toLocaleString('en-ZA')}`} />
+        <Headline label="Delivery unknown" value={totals.deliveryUnknown.toLocaleString('en-ZA')} sub="Accepted send; no delivery webhook" tone={totals.deliveryUnknown > 0 ? 'bad' : undefined} />
         <Headline label="Opened" value={`${pct(totals.openedUnique, totals.sent)}%`} sub={`${totals.openedUnique.toLocaleString('en-ZA')} people`} />
         <Headline label="Clicked" value={`${pct(totals.clickedUnique, totals.sent)}%`} sub={`${totals.clickedUnique.toLocaleString('en-ZA')} people`} />
         <Headline label="Bounced" value={`${pct(totals.bounced, totals.sent)}%`} sub={`${totals.bounced.toLocaleString('en-ZA')} addresses`} tone={totals.bounced > 0 ? 'bad' : undefined} />
@@ -189,7 +168,8 @@ export default function EmailAnalyticsPanel({ onShowToast }) {
                 <th style={{ minWidth: 220 }}>Subject</th>
                 <th style={{ minWidth: 130 }}>Audience</th>
                 <th className="adm-sheet__num">Recipients</th>
-                <th className="adm-sheet__num">Delivered</th>
+                <th className="adm-sheet__num">Confirmed delivered</th>
+                <th className="adm-sheet__num">Delivery unknown</th>
                 <th className="adm-sheet__num">Opened</th>
                 <th className="adm-sheet__num">Clicked</th>
                 <th className="adm-sheet__num">Bounced</th>
@@ -209,6 +189,7 @@ export default function EmailAnalyticsPanel({ onShowToast }) {
                   <td className="adm-sheet__num">
                     {r.delivered.toLocaleString('en-ZA')}<span className={rateClass(r.deliveryRate, { good: 90, warn: 60 })}>{r.deliveryRate}%</span>
                   </td>
+                  <td className="adm-sheet__num">{r.deliveryUnknown.toLocaleString('en-ZA')}</td>
                   <td className="adm-sheet__num">
                     {r.openedUnique.toLocaleString('en-ZA')}<span className={rateClass(r.openRate, { good: 25, warn: 10 })}>{r.openRate}%</span>
                   </td>
@@ -232,11 +213,35 @@ export default function EmailAnalyticsPanel({ onShowToast }) {
       )}
 
       <p className="adm-section-note" style={{ marginTop: 12 }}>
-        Open and click rates count each PERSON once, measured against recipients. Stats arrive from Brevo webhooks —
-        a campaign sent moments ago may still show zeros.
+        Open and click rates count each PERSON once, measured against recipients. “Confirmed delivered” requires a Brevo
+        delivery webhook; accepted sends without that evidence remain “Delivery unknown” instead of being reported as failed or delivered.
       </p>
 
       {detail && <CampaignDetail campaign={detail} onClose={() => setDetail(null)} />}
+    </div>
+  );
+}
+
+function EmailAnalyticsSkeleton() {
+  return (
+    <div className="adm-email-analytics-skeleton" role="status" aria-label="Loading email analytics">
+      <div className="adm-email-stats">
+        {[0, 1, 2, 3, 4, 5].map((key) => (
+          <div className="adm-email-stat" key={key}>
+            <span className="adm-loading-skeleton__bar" style={{ width: '55%' }} />
+            <span className="adm-loading-skeleton__bar" style={{ width: '35%', height: 24 }} />
+          </div>
+        ))}
+      </div>
+      <div className="adm-loading-skeleton">
+        {[0, 1, 2].map((row) => (
+          <div key={row} className="adm-loading-skeleton__row">
+            {[26, 44, 34, 20].map((width, index) => (
+              <span key={index} className="adm-loading-skeleton__bar" style={{ width: `${width}%` }} />
+            ))}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

@@ -1,6 +1,11 @@
 import { createClient } from '@supabase/supabase-js';
 import { fetchCustomerAudience, fetchRecipientsByEmail, sendBroadcastBatch } from './_brevo-email.js';
-import { appendEmailCampaign } from './_email-campaigns.js';
+import {
+  appendEmailCampaign,
+  emailCampaignFingerprint,
+  findRecentDuplicateCampaign,
+  readEmailCampaigns,
+} from './_email-campaigns.js';
 import { markCustomersEmailed } from './_customer-email-status.js';
 
 export const VALID_EMAIL_AUDIENCE = new Set(['requests', 'regular', 'proto-active', 'all-portal', 'all-approved', 'selected']);
@@ -13,19 +18,33 @@ export function getPortalDbClient() {
   );
 }
 
-/**
- * Resolve the audience, send the personalized broadcast, and log the
- * campaign. Shared by the live send endpoint and the scheduled-send cron.
- */
-export async function runEmailBroadcast({ audience, subject, introText = '', htmlBlock = '', businessTypes = [], recipients: recipientEmails = null }) {
+export async function resolveEmailRecipients({ audience, businessTypes = [], recipients: recipientEmails = null }) {
   const sb = getPortalDbClient();
-  // Explicit recipient list ("Specific people") bypasses audience resolution.
   const useSelected = Array.isArray(recipientEmails) && recipientEmails.length > 0;
   const recipients = useSelected
     ? await fetchRecipientsByEmail(sb, recipientEmails.map((r) => (typeof r === 'string' ? r : r?.email)))
     : await fetchCustomerAudience(sb, audience, {
       businessTypes: Array.isArray(businessTypes) ? businessTypes : [],
     });
+  return { sb, recipients, useSelected };
+}
+
+/**
+ * Resolve the audience, send the personalized broadcast, and log the
+ * campaign. Shared by the live send endpoint and the scheduled-send cron.
+ */
+export async function runEmailBroadcast({
+  audience,
+  subject,
+  introText = '',
+  htmlBlock = '',
+  businessTypes = [],
+  recipients: recipientEmails = null,
+  allowRecentDuplicate = false,
+}) {
+  const { sb, recipients, useSelected } = await resolveEmailRecipients({
+    audience, businessTypes, recipients: recipientEmails,
+  });
   if (!recipients.length) {
     return {
       ok: false,
@@ -36,6 +55,24 @@ export async function runEmailBroadcast({ audience, subject, introText = '', htm
         ? 'No valid email addresses in the list.'
         : 'No customers with valid email addresses in this audience.',
     };
+  }
+
+  const contentFingerprint = emailCampaignFingerprint({
+    audience,
+    subject,
+    introText,
+    htmlBlock,
+    businessTypes,
+    recipients: useSelected ? recipients.map((recipient) => recipient.email) : [],
+  });
+  if (!allowRecentDuplicate) {
+    const recent = findRecentDuplicateCampaign(await readEmailCampaigns(), contentFingerprint);
+    if (recent) {
+      const error = new Error('An identical campaign was sent less than five minutes ago.');
+      error.code = 'duplicate_campaign';
+      error.recentCampaign = { id: recent.id, sentAt: recent.sentAt, subject: recent.subject };
+      throw error;
+    }
   }
 
   const { sent, failed, errors, messageIds } = await sendBroadcastBatch(recipients, {
@@ -54,6 +91,7 @@ export async function runEmailBroadcast({ audience, subject, introText = '', htm
       sent,
       failed,
       messageIds: messageIds || [],
+      contentFingerprint,
       events: {},
     });
   } catch (logErr) {

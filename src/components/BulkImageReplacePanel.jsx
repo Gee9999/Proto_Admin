@@ -23,6 +23,7 @@ import {
   buildPreflightMatch,
   catalogRowToSelection,
   downloadFailedCsv,
+  preflightSkus,
   replaceBatch,
   slotFilenameExample,
 } from '../lib/bulkImageReplace';
@@ -64,6 +65,7 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState(null);
   const [runResults, setRunResults] = useState(null);
+  const [mappingConfirmed, setMappingConfirmed] = useState(false);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(searchInput.trim()), 300);
@@ -175,18 +177,49 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
     });
   }, []);
 
-  const handleFolder = useCallback((fileList) => {
+  const handleFolder = useCallback(async (fileList) => {
     const files = [...(fileList || [])];
     const match = buildPreflightMatch(selectedProducts, imageSlot, files);
-    setPreflight({ ...match, files });
-    onShowToast?.(
-      `${match.readyCount} ready · ${match.missingCount} missing`,
-      match.readyCount ? 'success' : 'warning',
-    );
-  }, [selectedProducts, imageSlot, onShowToast]);
+    const targetCounts = new Map();
+    match.ready.forEach((item) => targetCounts.set(item.sku, (targetCounts.get(item.sku) || 0) + 1));
+    const ambiguousSkus = new Set([...targetCounts].filter(([, count]) => count > 1).map(([sku]) => sku));
+    const unambiguousReady = match.ready.filter((item) => !ambiguousSkus.has(item.sku));
+    setMappingConfirmed(false);
+    try {
+      const server = await preflightSkus(selectedProducts.map((product) => product.sku), imageSlot, scope);
+      const serverFound = new Set(server.found || []);
+      const verifiedReady = unambiguousReady
+        .filter((item) => serverFound.has(item.sku))
+        .map((item) => ({ ...item, previewUrl: URL.createObjectURL(item.file) }));
+      const serverMissing = unambiguousReady.filter((item) => !serverFound.has(item.sku));
+      setPreflight((previous) => {
+        previous?.ready?.forEach((item) => item.previewUrl && URL.revokeObjectURL(item.previewUrl));
+        return {
+          ...match,
+          files,
+          ready: verifiedReady,
+          readyCount: verifiedReady.length,
+          serverMissing,
+          ambiguousSkus: [...ambiguousSkus],
+          serverVerified: true,
+        };
+      });
+      onShowToast?.(
+        `${verifiedReady.length} server-verified · ${match.missingCount + serverMissing.length} unmatched`,
+        verifiedReady.length ? 'success' : 'warning',
+      );
+    } catch (error) {
+      setPreflight({ ...match, files, ready: [], readyCount: 0, serverMissing: unambiguousReady, ambiguousSkus: [...ambiguousSkus], serverVerified: false, verificationError: error.message });
+      onShowToast?.(error.message || 'Server verification failed', 'error');
+    }
+  }, [selectedProducts, imageSlot, scope, onShowToast]);
+
+  useEffect(() => () => {
+    preflight?.ready?.forEach((item) => item.previewUrl && URL.revokeObjectURL(item.previewUrl));
+  }, [preflight]);
 
   const startReplace = useCallback(async () => {
-    if (!preflight?.ready?.length) return;
+    if (!preflight?.ready?.length || !preflight.serverVerified || !mappingConfirmed) return;
     if (!window.confirm(`Replace image ${imageSlot} for ${preflight.ready.length} product(s)?`)) return;
 
     abortRef.current = false;
@@ -218,7 +251,7 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
       setRunning(false);
       setProgress(null);
     }
-  }, [preflight, imageSlot, scope, selectedProducts, onShowToast]);
+  }, [preflight, imageSlot, scope, selectedProducts, mappingConfirmed, onShowToast]);
 
   const resetWizard = useCallback(() => {
     abortRef.current = false;
@@ -227,6 +260,7 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
     setRunResults(null);
     setProgress(null);
     setRunning(false);
+    setMappingConfirmed(false);
   }, []);
 
   const retryFailed = useCallback(async () => {
@@ -497,7 +531,7 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
               webkitdirectory=""
               directory=""
               hidden
-              onChange={(e) => { handleFolder(e.target.files); e.target.value = ''; }}
+              onChange={(e) => { void handleFolder(e.target.files); e.target.value = ''; }}
             />
           </label>
 
@@ -512,12 +546,48 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
                 {preflight.extra.length > 0 && (
                   <span className="bir-stat">{preflight.extra.length} extra (ignored)</span>
                 )}
+                {(preflight.serverMissing?.length || 0) > 0 && (
+                  <span className="bir-stat bir-stat--bad">{preflight.serverMissing.length} not found on server</span>
+                )}
+                {(preflight.ambiguousSkus?.length || 0) > 0 && (
+                  <span className="bir-stat bir-stat--bad">{preflight.ambiguousSkus.length} ambiguous mappings</span>
+                )}
               </div>
 
-              {preflight.readyCount > 0 && (
-                <p className="adm-section-note" style={{ color: '#15803d' }}>
-                  {preflight.readyCount} product(s) will be updated. {preflight.missingCount} selected product(s) have no matching file and will be skipped.
+              {preflight.verificationError && (
+                <p role="alert" className="adm-section-note" style={{ color: '#b91c1c' }}>
+                  Server verification failed: {preflight.verificationError}. Nothing can be replaced until verification succeeds.
                 </p>
+              )}
+
+              {(preflight.ambiguousSkus?.length || 0) > 0 && (
+                <p role="alert" className="adm-section-note" style={{ color: '#b91c1c' }}>
+                  Multiple files target: {preflight.ambiguousSkus.join(', ')}. These products are excluded until each has exactly one matching file.
+                </p>
+              )}
+
+              {preflight.readyCount > 0 && (
+                <>
+                  <p className="adm-section-note" style={{ color: '#15803d' }}>
+                    {preflight.readyCount} product(s) passed server verification. {preflight.missingCount + (preflight.serverMissing?.length || 0) + (preflight.ambiguousSkus?.length || 0)} selected product(s) are unmatched or ambiguous and will be skipped.
+                  </p>
+                  <div className="bir-review-scroll" aria-label="Current and proposed image mapping">
+                    {preflight.ready.slice(0, 200).map((item) => (
+                      <div key={item.sku} className="bir-review-row" style={{ display: 'grid', gridTemplateColumns: '44px 20px 44px 1fr', alignItems: 'center', gap: 8 }}>
+                        {item.product?.images?.[imageSlot - 1]
+                          ? <img src={item.product.images[imageSlot - 1]} alt={`Current ${item.sku}`} width="44" height="44" style={{ objectFit: 'cover', borderRadius: 6 }} />
+                          : <span className="adm-product-thumb" aria-label="No current image" />}
+                        <ArrowRight size={14} aria-hidden="true" />
+                        <img src={item.previewUrl} alt={`Proposed ${item.sku}`} width="44" height="44" style={{ objectFit: 'cover', borderRadius: 6 }} />
+                        <span><strong>{item.sku}</strong><br /><small>{item.file.name}</small></span>
+                      </div>
+                    ))}
+                  </div>
+                  <label className="adm-field" style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
+                    <input type="checkbox" checked={mappingConfirmed} onChange={(event) => setMappingConfirmed(event.target.checked)} />
+                    <span>I confirm every shown product-to-file mapping and the selected image slot.</span>
+                  </label>
+                </>
               )}
 
               {progress && (
@@ -536,7 +606,7 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
             <button
               type="button"
               className="adm-btn-red adm-btn--sm"
-              disabled={running || !preflight?.readyCount}
+              disabled={running || !preflight?.readyCount || !preflight?.serverVerified || !mappingConfirmed}
               onClick={() => void startReplace()}
             >
               {running ? <Loader2 size={14} className="spin" /> : <Upload size={14} />}

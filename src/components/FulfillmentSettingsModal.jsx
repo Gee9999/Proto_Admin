@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, Crown, Loader2, Plus, Trash2, X } from 'lucide-react';
 import { fetchFulfillmentUsers, saveFulfillmentUsers } from '../lib/fulfillmentUsers';
 import { LEGACY_NAV_ALIASES } from '../lib/taxonomy';
@@ -68,6 +68,9 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const dialogRef = useRef(null);
+  const closeButtonRef = useRef(null);
+  const openerRef = useRef(null);
 
   const mainCategories = useMemo(() => buildMainCategories(taxonomyTree), [taxonomyTree]);
 
@@ -91,6 +94,42 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    openerRef.current = document.activeElement;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const frame = window.requestAnimationFrame(() => closeButtonRef.current?.focus());
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        onClose(false);
+        return;
+      }
+      if (event.key !== 'Tab') return;
+      const focusable = [...(dialogRef.current?.querySelectorAll(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+      ) || [])];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      openerRef.current?.focus?.();
+    };
+  }, [open, onClose]);
 
   const updateUser = (idx, patch) => {
     setUsers((prev) => prev.map((u, i) => (i === idx ? { ...u, ...patch } : u)));
@@ -148,12 +187,20 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
 
   return (
     <div className="adm-modal-backdrop" onClick={() => onClose(false)}>
-      <div className="adm-modal adm-modal--form adm-modal--wide" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="adm-modal adm-modal--form adm-modal--wide"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="fulfillment-team-title"
+        aria-describedby="fulfillment-team-description"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="adm-modal-header">
-          <h3 className="adm-modal-title">Fulfillment team</h3>
-          <button type="button" className="adm-modal-close" onClick={() => onClose(false)} aria-label="Close"><X size={18} /></button>
+          <h3 id="fulfillment-team-title" className="adm-modal-title">Fulfillment team</h3>
+          <button ref={closeButtonRef} type="button" className="adm-modal-close" onClick={() => onClose(false)} aria-label="Close fulfillment team editor"><X size={18} /></button>
         </div>
-        <p className="adm-modal-note">
+        <p id="fulfillment-team-description" className="adm-modal-note">
           Tap categories to assign them. Team admins can tick items in <strong>every</strong> category on the fulfillment page.
         </p>
 
@@ -170,7 +217,9 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
               <div key={user.id || idx} className={`adm-ff-card${user.isAdmin ? ' adm-ff-card--admin' : ''}`}>
                 <div className="adm-ff-card__head">
                   <div className="adm-ff-card__identity">
+                    <label className="adm-sr-only" htmlFor={`team-name-${idx}`}>Team member name</label>
                     <input
+                      id={`team-name-${idx}`}
                       className="adm-ff-card__name"
                       value={user.name}
                       onChange={(e) => updateUser(idx, { name: e.target.value, id: user.id || slugify(e.target.value) })}
@@ -184,19 +233,21 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
                       className={`adm-ff-admin-toggle${user.isAdmin ? ' adm-ff-admin-toggle--on' : ''}`}
                       onClick={() => updateUser(idx, { isAdmin: !user.isAdmin })}
                       title="Team admins can tick items in any category"
+                      aria-pressed={user.isAdmin}
                     >
                       <Crown size={13} />
                       {user.isAdmin ? 'Admin' : 'Make admin'}
                     </button>
-                    <button type="button" className="adm-icon-btn" onClick={() => removeUser(idx)} title="Remove user" style={{ color: '#c40000' }}>
+                    <button type="button" className="adm-icon-btn" onClick={() => removeUser(idx)} title="Remove user" aria-label={`Remove ${user.name || 'team member'}`} style={{ color: '#c40000' }}>
                       <Trash2 size={14} />
                     </button>
                   </div>
                 </div>
 
                 <div className="adm-ff-card__phone">
-                  <span className="adm-field-label">Phone</span>
+                  <label className="adm-field-label" htmlFor={`team-phone-${idx}`}>Phone</label>
                   <input
+                    id={`team-phone-${idx}`}
                     className={`adm-field-input${!phoneOk ? ' adm-field-input--error' : ''}`}
                     value={user.whatsapp}
                     onChange={(e) => updateUser(idx, { whatsapp: e.target.value })}
@@ -223,6 +274,7 @@ export default function FulfillmentSettingsModal({ open, onClose, taxonomyTree =
                           type="button"
                           className={`adm-ff-chip${active ? ' adm-ff-chip--on' : ''}`}
                           onClick={() => toggleCategory(idx, cat.id)}
+                          aria-pressed={active}
                         >
                           {active && <Check size={12} strokeWidth={3} />}
                           {cat.label}

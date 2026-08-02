@@ -3,6 +3,8 @@ import { BarChart2, Code2, Eye, ImagePlus, Loader2, Mail, Send, X } from 'lucide
 import EmailTemplateTests from './EmailTemplateTests';
 import { PROTO_URLS } from '../lib/protoUrls';
 import { BUSINESS_TYPES } from '../lib/businessTypes';
+import { fetchCustomerEmailAudienceCount } from '../lib/customers';
+import { normalizeCampaignAnalytics } from '../lib/emailAnalytics';
 import {
   MERGE_TAGS,
   PREVIEW_MERGE_VARS,
@@ -98,6 +100,7 @@ export default function CustomerEmailModal({
   initialAudience = null,
   initialBusinessTypes = null,
   initialRecipients = null,
+  initialRecipientCount = null,
 }) {
   const [subject, setSubject] = useState('');
   const [introBody, setIntroBody] = useState('');
@@ -116,6 +119,8 @@ export default function CustomerEmailModal({
   const [campaigns, setCampaigns] = useState([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [recipientsText, setRecipientsText] = useState('');
+  const [recipientCount, setRecipientCount] = useState(null);
+  const [recipientCountLoading, setRecipientCountLoading] = useState(false);
   const selectedEmails = useMemo(() => parseEmailList(recipientsText), [recipientsText]);
 
   const subjectRef = useRef(null);
@@ -123,6 +128,9 @@ export default function CustomerEmailModal({
   const htmlRef = useRef(null);
   const imageRef = useRef(null);
   const activeFieldRef = useRef('intro');
+  const liveSendLockRef = useRef(false);
+  const toastRef = useRef(onShowToast);
+  useEffect(() => { toastRef.current = onShowToast; }, [onShowToast]);
 
   // Seed targeting ONCE when the modal opens. Depending on the initial* props
   // (fresh array refs each parent render) would re-run this on every render and
@@ -134,6 +142,7 @@ export default function CustomerEmailModal({
     setShowHtml(false);
     setWantTest(false);
     setShowPreview(false);
+    liveSendLockRef.current = false;
     setTestEmail(adminEmail || '');
     const recips = Array.isArray(initialRecipients) ? initialRecipients.filter(Boolean) : [];
     if (recips.length) {
@@ -148,6 +157,35 @@ export default function CustomerEmailModal({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    if (audience === 'selected') {
+      setRecipientCount(selectedEmails.length);
+      setRecipientCountLoading(false);
+      return undefined;
+    }
+    let cancelled = false;
+    const seededCount = Number(initialRecipientCount);
+    if (Number.isFinite(seededCount) && seededCount >= 0
+      && audience === initialAudience
+      && JSON.stringify(businessTypes) === JSON.stringify(initialBusinessTypes || [])) {
+      setRecipientCount(seededCount);
+    } else {
+      setRecipientCount(null);
+    }
+    setRecipientCountLoading(true);
+    fetchCustomerEmailAudienceCount({ audience, businessTypes })
+      .then((count) => { if (!cancelled) setRecipientCount(count); })
+      .catch((err) => {
+        if (!cancelled) {
+          setRecipientCount(0);
+          toastRef.current?.(err.message || 'Failed to count email recipients', 'error');
+        }
+      })
+      .finally(() => { if (!cancelled) setRecipientCountLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, audience, businessTypes, selectedEmails.length, initialAudience, initialBusinessTypes, initialRecipientCount]);
 
   // Delivery analytics for recent campaigns, shown inside the compose modal.
   useEffect(() => {
@@ -260,6 +298,7 @@ export default function CustomerEmailModal({
 
 
   const handleSend = async (test = false) => {
+    if (!test && liveSendLockRef.current) return;
     if (!subject.trim()) {
       onShowToast?.('Subject is required', 'error');
       return;
@@ -274,11 +313,15 @@ export default function CustomerEmailModal({
       onShowToast?.('Enter at least one valid email address', 'error');
       return;
     }
+    if (!test && (recipientCountLoading || !recipientCount)) {
+      onShowToast?.(recipientCountLoading ? 'Please wait while the recipient count loads' : 'There are no valid recipients in this audience', 'error');
+      return;
+    }
 
-    const audienceLabel = isSelected
-      ? `${selectedEmails.length} specific ${selectedEmails.length === 1 ? 'person' : 'people'}`
-      : `${selectedAudience.label}${businessTypes.length ? ` · ${businessTypes.join(', ')} only` : ' · all business types'}`;
-    if (!test && !window.confirm(`Send this email to: ${audienceLabel}?`)) return;
+    const audienceLabel = `${recipientCount} ${recipientCount === 1 ? 'recipient' : 'recipients'} — ${isSelected
+      ? 'specific people'
+      : `${selectedAudience.label}${businessTypes.length ? ` · ${businessTypes.join(', ')} only` : ' · all business types'}`}`;
+    if (!test && !window.confirm(`Send this email to exactly ${audienceLabel}?`)) return;
 
     if (test) {
       // A test is a self-preview with sample merge data + a [TEST] subject, so
@@ -306,16 +349,29 @@ export default function CustomerEmailModal({
       return;
     }
 
+    liveSendLockRef.current = true;
     setSending(true);
     try {
-      const result = await onSend({
+      const payload = {
         audience,
         subject: subject.trim(),
         introText: introBody.trim(),
         htmlBlock: htmlBody.trim(),
         businessTypes: isSelected ? [] : businessTypes,
         ...(isSelected ? { recipients: selectedEmails } : {}),
-      });
+      };
+      let result;
+      try {
+        result = await onSend(payload);
+      } catch (err) {
+        if (err?.code !== 'duplicate_campaign') throw err;
+        const sentWhen = err.details?.recentCampaign?.sentAt
+          ? new Date(err.details.recentCampaign.sentAt).toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' })
+          : 'within the last five minutes';
+        const repeat = window.confirm(`Warning: this identical campaign was already sent ${sentWhen}. Send it again anyway?`);
+        if (!repeat) return;
+        result = await onSend({ ...payload, allowRecentDuplicate: true });
+      }
       onShowToast?.(
         `Sent to ${result.sent} ${isSelected ? 'recipient' : 'customer'}(s)${result.failed ? ` — ${result.failed} failed` : ''}`,
         result.failed ? 'error' : 'success',
@@ -325,6 +381,7 @@ export default function CustomerEmailModal({
       onShowToast?.(err.message || 'Send failed', 'error');
     } finally {
       setSending(false);
+      liveSendLockRef.current = false;
     }
   };
 
@@ -358,17 +415,17 @@ export default function CustomerEmailModal({
                 <BarChart2 size={14} /> Recent delivery analytics
               </span>
               {recentCampaigns.map((c, idx) => {
-                const ev = c.events || {};
-                const sent = c.sent || c.recipientCount || 0;
-                const pct = (part) => (sent ? `${Math.round(((part || 0) / sent) * 100)}%` : '0%');
+                const analytics = normalizeCampaignAnalytics(c);
+                const { sent } = analytics;
                 return (
                   <div key={c.id || idx} style={{ display: 'flex', flexWrap: 'wrap', gap: 10, fontSize: 12, padding: '4px 0', borderTop: idx ? '1px solid #eef2f7' : 'none' }}>
                     <strong style={{ minWidth: 140, maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.subject || c.audience || 'Campaign'}</strong>
                     <span>{sent} sent</span>
-                    <span style={{ color: '#15803d' }}>{ev.delivered || 0} delivered ({pct(ev.delivered)})</span>
-                    <span>{ev.opened || 0} opened ({pct(ev.opened)})</span>
-                    <span>{ev.clicked || 0} clicked</span>
-                    <span style={{ color: (ev.bounced || 0) ? '#b91c1c' : '#6b7280' }}>{ev.bounced || 0} bounced</span>
+                    <span style={{ color: '#15803d' }}>{analytics.delivered} confirmed delivered ({analytics.deliveryRate}%)</span>
+                    <span>{analytics.deliveryUnknown} delivery unknown</span>
+                    <span>{analytics.openedUnique} opened ({analytics.openRate}%)</span>
+                    <span>{analytics.clickedUnique} clicked</span>
+                    <span style={{ color: analytics.bounced ? '#b91c1c' : '#6b7280' }}>{analytics.bounced} bounced</span>
                   </div>
                 );
               })}
@@ -674,10 +731,12 @@ export default function CustomerEmailModal({
             <button
               type="button"
               className="adm-btn-red"
-              disabled={sending || testSending || (audience === 'selected' && !selectedEmails.length)}
+              disabled={sending || testSending || recipientCountLoading || !recipientCount}
               onClick={() => void handleSend(false)}
             >
-              {sending ? <><Loader2 size={14} className="spin" /> Sending…</> : <><Send size={14} /> Send now{audience === 'selected' && selectedEmails.length ? ` (${selectedEmails.length})` : ''}</>}
+              {sending
+                ? <><Loader2 size={14} className="spin" /> Sending…</>
+                : <><Send size={14} /> Send now ({recipientCountLoading ? '…' : recipientCount ?? 0})</>}
             </button>
           </div>
         </div>

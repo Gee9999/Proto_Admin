@@ -148,18 +148,35 @@ export async function pushPortalCustomersToBrevo() {
 }
 
 export async function sendCustomerEmailBroadcast({
-  audience, subject, introText, htmlBlock, testEmail, businessTypes, recipients,
+  audience, subject, introText, htmlBlock, testEmail, businessTypes, recipients, allowRecentDuplicate,
 }) {
   const res = await fetch('/api/customer-email-broadcast', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      audience, subject, introText, htmlBlock, testEmail, businessTypes, recipients,
+      audience, subject, introText, htmlBlock, testEmail, businessTypes, recipients, allowRecentDuplicate,
     }),
   });
   const json = await res.json();
-  if (!res.ok && res.status !== 207) throw new Error(json.error || 'Email send failed');
+  if (!res.ok && res.status !== 207) {
+    const error = new Error(json.error || 'Email send failed');
+    error.status = res.status;
+    error.code = json.code;
+    error.details = json;
+    throw error;
+  }
   return json;
+}
+
+export async function fetchCustomerEmailAudienceCount({ audience, businessTypes, recipients }) {
+  const res = await fetch('/api/customer-email-broadcast', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'count', audience, businessTypes, recipients }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to count email recipients');
+  return Number(json.recipientCount || 0);
 }
 
 export async function fetchCrmContactsPage({ page = 1, pageSize = 1 } = {}) {

@@ -162,6 +162,20 @@ export default function SearchAnalyticsDashboard() {
 
       {error && <p className="oa-error">{error}</p>}
 
+      {!loading && data && (data.kpis?.totalSearches || 0) > 0 && (data.kpis?.totalSearches || 0) < 20 && (
+        <div className="oa-data-warning" role="status">
+          <strong>Low sample size</strong>
+          <span>Only {data.kpis.totalSearches} searches fall in this period. Conversion and ranking results are directional.</span>
+        </div>
+      )}
+
+      {!loading && data && (data.trackingEnabled === false || !data.funnel) && (
+        <div className="oa-data-warning" role="status">
+          <strong>Journey tracking is incomplete</strong>
+          <span>Search totals may be available, but click, basket and order attribution is missing or not connected.</span>
+        </div>
+      )}
+
       {!loading && data && data.kpis?.totalSearches === 0 && (
         <div className="sa-empty-banner">
           <strong>No search data yet for this period.</strong>

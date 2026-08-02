@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Download, Loader2, RefreshCw, Trash2, X } from 'lucide-react';
+import { Download, Eye, EyeOff, Loader2, RefreshCw, Trash2, X } from 'lucide-react';
 import { downloadCsv, downloadExcel } from '../lib/exportReport';
 import { ADMIN_REFRESH_EVENT } from '../lib/adminRefresh';
 
@@ -7,6 +7,17 @@ const PERIODS = [7, 30, 90, 120];
 
 function money(n) {
   return `R ${Number(n || 0).toLocaleString('en-ZA', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+}
+
+function maskCustomer(value, kind = 'name') {
+  const text = String(value || '').trim();
+  if (!text) return '—';
+  if (kind === 'email') {
+    const [local, domain] = text.split('@');
+    if (!domain) return '••••';
+    return `${local.slice(0, 1)}•••@${domain}`;
+  }
+  return `${text.slice(0, 1)}${'•'.repeat(Math.min(6, Math.max(3, text.length - 1)))}`;
 }
 
 function PanelHeader({ title, onExport, exportLabel = 'Export Report' }) {
@@ -115,6 +126,8 @@ export default function OrderAnalyticsDashboard() {
   const [customerLimit, setCustomerLimit] = useState(5);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
   const [clearing, setClearing] = useState(false);
+  const [clearPhrase, setClearPhrase] = useState('');
+  const [customerPiiVisible, setCustomerPiiVisible] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -185,6 +198,7 @@ export default function OrderAnalyticsDashboard() {
   };
 
   const exportCustomersExcel = () => {
+    if (!customerPiiVisible) return;
     void downloadExcel(
       `top-customers-${periodTag}.xlsx`,
       'Top Customers',
@@ -221,7 +235,7 @@ export default function OrderAnalyticsDashboard() {
           <button
             type="button"
             className="adm-btn-ghost adm-btn-ghost--danger"
-            onClick={() => setClearConfirmOpen(true)}
+            onClick={() => { setClearPhrase(''); setClearConfirmOpen(true); }}
             disabled={loading || clearing}
           >
             <Trash2 size={15} />
@@ -242,13 +256,23 @@ export default function OrderAnalyticsDashboard() {
               Order history is not affected — order totals and revenue come from the
               orders themselves. This cannot be undone.
             </p>
+            <label className="adm-field-label" htmlFor="clear-analytics-confirmation">
+              Type <strong>CLEAR ANALYTICS</strong> to confirm
+            </label>
+            <input
+              id="clear-analytics-confirmation"
+              className="adm-field-input"
+              value={clearPhrase}
+              onChange={(event) => setClearPhrase(event.target.value)}
+              autoComplete="off"
+            />
             <div className="adm-modal-footer adm-modal-footer--end">
               <div className="adm-modal-footer__actions">
                 <button type="button" className="adm-btn-ghost" onClick={() => setClearConfirmOpen(false)}>Cancel</button>
                 <button
                   type="button"
                   className="adm-btn-red"
-                  disabled={clearing}
+                  disabled={clearing || clearPhrase !== 'CLEAR ANALYTICS'}
                   onClick={async () => {
                     setClearing(true);
                     try {
@@ -284,6 +308,18 @@ export default function OrderAnalyticsDashboard() {
 
       {summary && (
         <>
+          {summary.totalOrders < 10 && (
+            <div className="oa-data-warning" role="status">
+              <strong>Low sample size</strong>
+              <span>Only {summary.totalOrders} order{summary.totalOrders === 1 ? '' : 's'} fall in this period. Treat rankings, averages and percentages as directional.</span>
+            </div>
+          )}
+          {!data.trackingEnabled && (
+            <div className="oa-data-warning" role="status">
+              <strong>Product and category tracking is incomplete</strong>
+              <span>Order totals remain available, but view-based reports cannot be treated as complete until portal tracking is connected.</span>
+            </div>
+          )}
           <div className="oa-stat-grid">
             <div className="oa-stat-card"><div className="oa-stat-val">{summary.totalOrders}</div><div className="oa-stat-label">Total Orders</div></div>
             <div className="oa-stat-card oa-stat-card--accent"><div className="oa-stat-val">{money(summary.totalRevenue)}</div><div className="oa-stat-label">Total Revenue</div></div>
@@ -372,6 +408,15 @@ export default function OrderAnalyticsDashboard() {
             <div className="oa-panel-head">
               <h3>Top Customers</h3>
               <div className="oa-panel-actions">
+                <button
+                  type="button"
+                  className="oa-export-btn"
+                  onClick={() => setCustomerPiiVisible((visible) => !visible)}
+                  aria-pressed={customerPiiVisible}
+                >
+                  {customerPiiVisible ? <EyeOff size={14} /> : <Eye size={14} />}
+                  {customerPiiVisible ? 'Hide customer details' : 'Reveal customer details'}
+                </button>
                 <label className="oa-select-wrap">
                   <span>Show</span>
                   <select value={customerLimit} onChange={(e) => setCustomerLimit(Number(e.target.value))}>
@@ -379,7 +424,15 @@ export default function OrderAnalyticsDashboard() {
                     <option value={50}>Top 50</option>
                   </select>
                 </label>
-                <button type="button" className="oa-export-btn" onClick={exportCustomersExcel} disabled={!visibleCustomers.length}>
+                <button
+                  type="button"
+                  className="oa-export-btn"
+                  onClick={() => {
+                    if (window.confirm('Export revealed customer names and email addresses to Excel?')) exportCustomersExcel();
+                  }}
+                  disabled={!visibleCustomers.length || !customerPiiVisible}
+                  title={customerPiiVisible ? 'Export revealed customer details' : 'Reveal customer details before exporting PII'}
+                >
                   <Download size={14} />
                   Export Excel
                 </button>
@@ -396,8 +449,8 @@ export default function OrderAnalyticsDashboard() {
                   <tbody>
                     {visibleCustomers.map((c) => (
                       <tr key={c.id}>
-                        <td>{c.name}</td>
-                        <td>{c.email}</td>
+                        <td>{customerPiiVisible ? c.name : maskCustomer(c.name)}</td>
+                        <td>{customerPiiVisible ? c.email : maskCustomer(c.email, 'email')}</td>
                         <td>{c.orders}</td>
                         <td>{money(c.spend)}</td>
                       </tr>
