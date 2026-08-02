@@ -2013,6 +2013,56 @@ input, select, textarea { font-family: inherit; outline: none; }
   margin: 0 0 22px;
 }
 
+.adm-trader-review {
+  margin: -6px 0 22px;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-left: 4px solid #9ca3af;
+  background: #f9fafb;
+}
+
+.adm-trader-review--strong { border-left-color: #15803d; background: #f0fdf4; }
+.adm-trader-review--review { border-left-color: #b7791f; background: #fffbeb; }
+.adm-trader-review--weak { border-left-color: #9ca3af; }
+
+.adm-trader-review-head,
+.adm-trader-research {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.adm-trader-review-kicker {
+  display: block;
+  color: #6b7280;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.adm-trader-review h3 { margin: 3px 0 0; font: 800 17px/1.2 'Outfit', sans-serif; }
+.adm-trader-review-score { font: 900 24px/1 'Outfit', sans-serif; }
+.adm-trader-review-score span { font-size: 13px; }
+.adm-trader-review-note { margin: 10px 0 14px; color: #6b7280; font-size: 11px; }
+.adm-trader-evidence-list { display: grid; gap: 8px; }
+
+.adm-trader-evidence { display: flex; gap: 8px; color: #4b5563; }
+.adm-trader-evidence svg { flex: 0 0 auto; margin-top: 1px; }
+.adm-trader-evidence--strong,
+.adm-trader-evidence--positive { color: #166534; }
+.adm-trader-evidence strong,
+.adm-trader-evidence span { display: block; }
+.adm-trader-evidence strong { font-size: 12px; }
+.adm-trader-evidence span { margin-top: 2px; font-size: 11px; line-height: 1.35; }
+
+.adm-trader-research { margin-top: 14px; padding-top: 12px; border-top: 1px solid rgba(107,114,128,.2); }
+.adm-trader-research strong,
+.adm-trader-research span { display: block; }
+.adm-trader-research strong { font-size: 12px; }
+.adm-trader-research span { color: #6b7280; font-size: 10px; margin-top: 2px; }
+
 .adm-drawer-fields {
   display: grid;
   gap: 14px;
