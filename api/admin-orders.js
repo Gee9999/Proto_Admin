@@ -261,14 +261,14 @@ export default async function handler(req, res) {
 
     if (customerId) {
       const lim = Math.min(500, Math.max(1, parseInt(limit, 10) || 20));
-      const { data, error } = await supabase
+      const { data, error, count } = await supabase
         .from('orders')
-        .select(ORDER_SELECT)
+        .select(ORDER_SELECT, { count: 'exact' })
         .eq('customer_id', customerId)
         .order('created_at', { ascending: false })
         .limit(lim);
       if (error) return res.status(400).json({ error: error.message });
-      return res.status(200).json({ rows: data || [], capabilities });
+      return res.status(200).json({ rows: data || [], total: count || 0, capabilities });
     }
 
     let pageNum;
