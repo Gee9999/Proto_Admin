@@ -2062,6 +2062,137 @@ input, select, textarea { font-family: inherit; outline: none; }
 .adm-trader-research strong { font-size: 12px; }
 .adm-trader-research span { color: #6b7280; font-size: 10px; margin-top: 2px; }
 
+.adm-application {
+  margin: 0 0 24px;
+  padding: 18px;
+  border: 1px solid #e5e7eb;
+  border-top: 3px solid #b91c1c;
+  background: #fff;
+}
+
+.adm-application-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.adm-application-kicker {
+  display: block;
+  color: #991b1b;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.adm-application h3,
+.adm-account-details h3 {
+  margin: 3px 0 0;
+  color: #111827;
+  font: 800 17px/1.2 'Outfit', sans-serif;
+}
+
+.adm-application-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  background: #fffbeb;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.adm-application-status--approved {
+  border-color: #bbf7d0;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.adm-application-note {
+  margin: 9px 0 16px;
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.adm-application-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: #e5e7eb;
+  border: 1px solid #e5e7eb;
+}
+
+.adm-application-detail {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 13px;
+  background: #f9fafb;
+}
+
+.adm-application-detail--wide { grid-column: 1 / -1; }
+.adm-application-detail > svg { flex: 0 0 auto; margin-top: 1px; color: #991b1b; }
+.adm-application-detail > div { min-width: 0; }
+
+.adm-application-detail-label {
+  margin-bottom: 4px;
+  color: #6b7280;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.adm-application-detail-value {
+  color: #111827;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.adm-application-detail-value a { color: #991b1b; text-decoration: underline; text-underline-offset: 2px; }
+.adm-application-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.adm-application-chips span { padding: 3px 7px; border: 1px solid #d1d5db; background: #fff; font-size: 11px; font-weight: 700; }
+
+.adm-application-empty {
+  padding: 16px;
+  border: 1px dashed #d1d5db;
+  color: #6b7280;
+  background: #f9fafb;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.adm-application-date {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  color: #6b7280;
+  font-size: 11px;
+}
+
+.adm-account-details { margin-top: 4px; }
+.adm-account-details h3 { margin-bottom: 10px; font-size: 14px; }
+
+@media (max-width: 560px) {
+  .adm-application { padding: 14px; }
+  .adm-application-head { align-items: stretch; flex-direction: column; }
+  .adm-application-status { align-self: flex-start; }
+  .adm-application-grid { grid-template-columns: 1fr; }
+  .adm-application-detail--wide { grid-column: auto; }
+}
+
 .adm-drawer-fields {
   display: grid;
   gap: 14px;
