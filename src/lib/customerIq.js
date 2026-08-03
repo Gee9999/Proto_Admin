@@ -18,6 +18,7 @@ function number(value) {
 }
 
 function dateValue(value) {
+  if (value === null || value === undefined || value === '') return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }

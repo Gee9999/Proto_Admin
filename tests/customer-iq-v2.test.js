@@ -16,6 +16,8 @@ describe('Customer IQ v2', () => {
     });
     expect(iq.contractVersion).toBe('customer-iq.v2');
     expect(iq.status.key).toBe('first_order');
+    expect(iq.metrics.lastOrder).toBeNull();
+    expect(iq.metrics.daysSinceOrder).toBeNull();
     expect(iq.signals.some((signal) => signal.key === 'next_step')).toBe(true);
   });
 
