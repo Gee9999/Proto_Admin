@@ -121,13 +121,16 @@ export default function CustomerIntelligenceWorkspace({ customer, orders = [], t
     const count = Number(totalOrders) || orders.length || Number(customer?.invoice_count) || 0;
     const spend = iq.metrics.spend;
     const recordedSales = Number(customer?.sales_last_12_months) || 0;
+    const hasPositillSummary = source === 'proto-active'
+      || Number(customer?.invoice_count) > 0
+      || recordedSales > 0;
     const spendOrderCount = source === 'proto-active' ? count : orders.length;
     const hasBehaviouralEvidence = count > 0 || recordedSales > 0 || Boolean(iq.metrics.lastOrder);
     const orderSummary = hasBehaviouralEvidence ? {
       orderCount: count,
       recordedSales,
-      salesPeriodLabel: source === 'proto-active' ? `${POSITILL_CUSTOMER_SALES_PERIOD.label} sales` : 'Recorded sales',
-      salesSnapshot: source === 'proto-active',
+      salesPeriodLabel: hasPositillSummary ? `${POSITILL_CUSTOMER_SALES_PERIOD.label} sales` : 'Recorded sales',
+      salesSnapshot: hasPositillSummary,
       averageOrderValue: spendOrderCount ? spend / spendOrderCount : 0,
       lastOrderDate: iq.metrics.lastOrder,
       ordersLast90Days: ordersInLastDays(orders, 90),
@@ -197,7 +200,7 @@ export default function CustomerIntelligenceWorkspace({ customer, orders = [], t
         </div>
       )}
       {partialHistory && <div className="adm-ci-warning">Showing the latest {orders.length} of {totalOrders} portal orders. Spend, rhythm and repeat-product evidence are partial.</div>}
-      {source === 'proto-active' && (
+      {(source === 'proto-active' || Number(customer?.invoice_count) > 0 || Number(customer?.sales_last_12_months) > 0) && (
         <div className="adm-ci-warning">
           Imported Positill snapshot for {POSITILL_CUSTOMER_SALES_PERIOD.start}–{POSITILL_CUSTOMER_SALES_PERIOD.end}, {POSITILL_CUSTOMER_SALES_PERIOD.taxBasis}. Later transactions may not yet be included.
         </div>
