@@ -112,6 +112,8 @@ import { queryKeys } from '../lib/queryKeys';
 import { dispatchAdminRefresh } from '../lib/adminRefresh';
 import { lazyRetry } from '../lib/lazyRetry';
 import SellingUnitField from '../components/SellingUnitField';
+import CustomerApplicationDetails from '../components/CustomerApplicationDetails';
+import CustomerIqPanel from '../components/CustomerIqPanel';
 import { businessSearchUrl, traderVerificationSummary } from '../lib/traderVerification';
 
 // Section panels — lazy-loaded so the initial admin bundle only ships the
@@ -511,7 +513,10 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   const editorImageFileInputRefs = useRef({});
   const [profileCustomer, setProfileCustomer] = useState(null);
   const [profileOrders, setProfileOrders] = useState([]);
+  const [profileOrdersTotal, setProfileOrdersTotal] = useState(0);
   const [profileOrdersLoading, setProfileOrdersLoading] = useState(false);
+  const [profileOrdersError, setProfileOrdersError] = useState('');
+  const profileOrdersReqSeqRef = useRef(0);
   const [profileEditing, setProfileEditing] = useState(false);
   const [profileForm, setProfileForm] = useState({});
   const [savingProfile, setSavingProfile] = useState(false);
@@ -1747,21 +1752,31 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   // Pricing selection + apply moved into PricingPanel.
 
   const openCustomerProfile = async (person, source = 'portal') => {
+    const requestSeq = ++profileOrdersReqSeqRef.current;
     setProfileCustomer(person);
     setProfileSource(source);
     setProfileEditing(false);
     setProfileOrders([]);
+    setProfileOrdersTotal(0);
+    setProfileOrdersError('');
+    setProfileOrdersLoading(false);
     if (source === 'proto-active') return;
     setProfileOrdersLoading(true);
     try {
       const res = await fetch(`/api/admin-orders?customerId=${person.id}&limit=20`);
       const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Could not load order history');
+      if (requestSeq !== profileOrdersReqSeqRef.current) return;
       setProfileOrders(json.rows || []);
-    } catch { /* silent */ }
-    finally { setProfileOrdersLoading(false); }
+      setProfileOrdersTotal(Number(json.total) || (json.rows || []).length);
+    } catch (err) {
+      if (requestSeq === profileOrdersReqSeqRef.current) setProfileOrdersError(err.message || 'Could not load order history');
+    } finally {
+      if (requestSeq === profileOrdersReqSeqRef.current) setProfileOrdersLoading(false);
+    }
   };
 
-  const closeCustomerProfile = () => { setProfileCustomer(null); setProfileOrders([]); setProfileEditing(false); setProfileSource('portal'); };
+  const closeCustomerProfile = () => { profileOrdersReqSeqRef.current += 1; setProfileCustomer(null); setProfileOrders([]); setProfileOrdersTotal(0); setProfileOrdersError(''); setProfileOrdersLoading(false); setProfileEditing(false); setProfileSource('portal'); };
 
   const SPEND_BANDS = ['R0 – R5,000', 'R5,000 – R10,000', 'R10,000 – R25,000', 'R25,000 – R50,000', 'R50,000+'];
   const startEditProfile = () => {
@@ -2487,7 +2502,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                           />
                         </div>
                         <div data-cell="actions" style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                          <button onClick={() => void openCustomerProfile(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }}>Edit</button>
+                          <button onClick={() => void openCustomerProfile(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }}>View details</button>
                           <button
                             onClick={() => void approveRequest(person)}
                             className="adm-btn-green adm-btn-sm"
@@ -2534,7 +2549,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                         <span data-label="WhatsApp"><WhatsappOptIn value={person.accept_whatsapp} /></span>
                         <span data-label="Orders">{person.orderCount}</span>
                         <div data-cell="actions" style={{ display: 'flex', gap: 5 }}>
-                          <button onClick={() => void openCustomerProfile(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }}>Edit</button>
+                          <button onClick={() => void openCustomerProfile(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }}>View details</button>
                           <button onClick={() => void removeCustomer(person)} className="adm-btn-ghost adm-btn-sm" disabled={saving === `del-${person.id}`} style={{ color: '#c40000', padding: '4px 8px' }}>
                             {saving === `del-${person.id}` ? '…' : <X size={14} />}
                           </button>
@@ -2835,6 +2850,15 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 <LastEmailBadge customer={profileCustomer} />
               </h2>
 
+              <CustomerIqPanel
+                customer={profileCustomer}
+                orders={profileOrders}
+                totalOrders={profileOrdersTotal}
+                source={profileSource}
+                loading={profileOrdersLoading}
+                loadError={profileOrdersError}
+              />
+
               {profileSource !== 'proto-active' && !profileCustomer.is_approved && (() => {
                 const verification = traderVerificationSummary(profileCustomer);
                 return (
@@ -2865,6 +2889,10 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                   </section>
                 );
               })()}
+
+              {profileSource !== 'proto-active' && (
+                <CustomerApplicationDetails customer={profileCustomer} />
+              )}
 
               {profileEditing ? (
                 <div style={{ display: 'grid', gap: 12, marginTop: 4 }}>
@@ -2899,17 +2927,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                           <input className="adm-field-input" type={type} value={profileForm[key] || ''} onChange={setPf(key)} style={{ width: '100%' }} />
                         </div>
                       ))}
-                      <div>
-                        <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Business description</label>
-                        <textarea
-                          className="adm-field-input"
-                          rows={4}
-                          maxLength={400}
-                          value={profileForm.business_description || ''}
-                          onChange={setPf('business_description')}
-                          style={{ width: '100%', resize: 'vertical' }}
-                        />
-                      </div>
                       <div>
                         <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 5 }}>Customer code</label>
                         <input
@@ -2947,27 +2964,14 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                   </div>
                 </div>
               ) : (
-                <div className="adm-drawer-fields">
+                <section className="adm-account-details" aria-labelledby="customer-account-heading">
+                  <h3 id="customer-account-heading">Current account details</h3>
+                  <div className="adm-drawer-fields">
                   <DrawerField icon={User} label="Contact person" value={profileCustomer.contact_name || profileCustomer.name} />
                   <DrawerField icon={Mail} label="Email" value={profileCustomer.email} />
                   {profileSource !== 'proto-active' && <DrawerField icon={Phone} label="Phone" value={profileCustomer.phone} />}
-                  {profileSource !== 'proto-active' && !profileCustomer.product_categories?.length && <DrawerField icon={Store} label="Business type" value={profileCustomer.business_type} />}
-                  {profileSource !== 'proto-active' && <DrawerField icon={Store} label="How they trade" value={Array.isArray(profileCustomer.sales_channels) ? profileCustomer.sales_channels.join(', ') : profileCustomer.sales_channels} />}
-                  {profileSource !== 'proto-active' && <DrawerField icon={Store} label="What they sell" value={Array.isArray(profileCustomer.product_categories) ? profileCustomer.product_categories.join(', ') : profileCustomer.product_categories} />}
-                  {profileSource !== 'proto-active' && <DrawerField icon={Store} label="Business description" value={profileCustomer.business_description} />}
-                  {profileSource !== 'proto-active' && <DrawerField icon={Store} label="Monthly spend" value={profileCustomer.monthly_spend} />}
-                  {profileSource !== 'proto-active' && <DrawerField icon={Globe} label="Website / social" value={profileCustomer.website} />}
-                  {profileSource !== 'proto-active' && profileCustomer.claimed_customer_code && (
-                    <DrawerField icon={Search} label="Old Proto code claimed" value={profileCustomer.claimed_customer_code} />
-                  )}
-                  {profileSource !== 'proto-active' && (
-                    <DrawerField icon={Shield} label="Accept WhatsApp" value={profileCustomer.accept_whatsapp == null ? null : profileCustomer.accept_whatsapp ? 'Yes' : 'No'} />
-                  )}
                   <DrawerField icon={Building2} label="Customer code" value={profileCustomer.customer_code || profileCustomer.account_code} />
                   {profileCustomer.first_name && <DrawerField icon={User} label="First name" value={profileCustomer.first_name} />}
-                  {profileCustomer.vat_number && <DrawerField icon={Shield} label="VAT number" value={profileCustomer.vat_number} />}
-                  {profileCustomer.company_address && <DrawerField icon={MapPin} label="Company address" value={profileCustomer.company_address} />}
-                  {profileCustomer.delivery_address && <DrawerField icon={MapPin} label="Delivery address" value={profileCustomer.delivery_address} />}
                   {profileCustomer.sales_last_12_months != null && (
                     <DrawerField icon={Store} label="12mo sales" value={`R${Number(profileCustomer.sales_last_12_months).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`} />
                   )}
@@ -2977,10 +2981,8 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                   {profileCustomer.last_purchase_date && (
                     <DrawerField icon={Building2} label="Last purchase" value={new Date(profileCustomer.last_purchase_date).toLocaleDateString('en-ZA')} />
                   )}
-                  {profileSource !== 'proto-active' && profileCustomer.created_at && (
-                    <DrawerField icon={Building2} label="Applied" value={new Date(profileCustomer.created_at).toLocaleString('en-ZA')} />
-                  )}
-                </div>
+                  </div>
+                </section>
               )}
 
               {profileSource !== 'proto-active' && (

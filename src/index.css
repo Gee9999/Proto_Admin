@@ -2062,6 +2062,189 @@ input, select, textarea { font-family: inherit; outline: none; }
 .adm-trader-research strong { font-size: 12px; }
 .adm-trader-research span { color: #6b7280; font-size: 10px; margin-top: 2px; }
 
+.adm-application {
+  margin: 0 0 24px;
+  padding: 18px;
+  border: 1px solid #e5e7eb;
+  border-top: 3px solid #b91c1c;
+  background: #fff;
+}
+
+.adm-application-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.adm-application-kicker {
+  display: block;
+  color: #991b1b;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+}
+
+.adm-application h3,
+.adm-account-details h3 {
+  margin: 3px 0 0;
+  color: #111827;
+  font: 800 17px/1.2 'Outfit', sans-serif;
+}
+
+.adm-application-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border: 1px solid #fde68a;
+  color: #92400e;
+  background: #fffbeb;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+
+.adm-application-status--approved {
+  border-color: #bbf7d0;
+  color: #166534;
+  background: #f0fdf4;
+}
+
+.adm-application-note {
+  margin: 9px 0 16px;
+  color: #6b7280;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.adm-application-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1px;
+  background: #e5e7eb;
+  border: 1px solid #e5e7eb;
+}
+
+.adm-application-detail {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+  padding: 13px;
+  background: #f9fafb;
+}
+
+.adm-application-detail--wide { grid-column: 1 / -1; }
+.adm-application-detail > svg { flex: 0 0 auto; margin-top: 1px; color: #991b1b; }
+.adm-application-detail > div { min-width: 0; }
+
+.adm-application-detail-label {
+  margin-bottom: 4px;
+  color: #6b7280;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.adm-application-detail-value {
+  color: #111827;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.adm-application-detail-value a { color: #991b1b; text-decoration: underline; text-underline-offset: 2px; }
+.adm-application-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+.adm-application-chips span { padding: 3px 7px; border: 1px solid #d1d5db; background: #fff; font-size: 11px; font-weight: 700; }
+
+.adm-application-empty {
+  padding: 16px;
+  border: 1px dashed #d1d5db;
+  color: #6b7280;
+  background: #f9fafb;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.adm-application-date {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  color: #6b7280;
+  font-size: 11px;
+}
+
+/* Customer IQ — transparent staff intelligence, never an automated decision. */
+.adm-iq { margin: 18px 0; border: 1px solid #d7dce3; background: #f8fafc; box-shadow: 0 8px 24px rgba(15, 23, 42, .06); }
+.adm-iq-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 17px 18px; background: linear-gradient(135deg, #111827, #020617); color: #fff; }
+.adm-iq-kicker { display: inline-flex; align-items: center; gap: 6px; color: #d4af37; font-size: 10px; font-weight: 900; letter-spacing: .09em; text-transform: uppercase; }
+.adm-iq-head h3 { margin: 5px 0 0; color: #fff; font-family: Outfit, sans-serif; font-size: 20px; }
+.adm-iq-head p { margin: 5px 0 0; color: #cbd5e1; font-size: 12px; line-height: 1.45; }
+.adm-iq-head small { display: block; margin-top: 3px; color: #94a3b8; font-size: 10px; line-height: 1.4; }
+.adm-iq-status { flex: 0 0 auto; border: 1px solid; padding: 5px 9px; font-size: 10px; font-weight: 900; letter-spacing: .03em; text-transform: uppercase; }
+.adm-iq-status--positive { border-color: #86efac; background: #dcfce7; color: #166534; }
+.adm-iq-status--opportunity { border-color: #fde68a; background: #fef3c7; color: #854d0e; }
+.adm-iq-status--attention { border-color: #fecaca; background: #fee2e2; color: #991b1b; }
+.adm-iq-status--review { border-color: #bfdbfe; background: #dbeafe; color: #1e40af; }
+.adm-iq-status--neutral { border-color: #cbd5e1; background: #f1f5f9; color: #334155; }
+.adm-iq-state { display: flex; align-items: center; gap: 8px; min-height: 90px; padding: 18px; color: #64748b; font-size: 13px; }
+.adm-iq-warning { margin: 14px 16px 0; border-left: 3px solid #b45309; background: #fffbeb; padding: 9px 11px; color: #78350f; font-size: 12px; line-height: 1.45; }
+.adm-iq-explanation { margin: 0; padding: 14px 16px 0; color: #334155; font-size: 13px; line-height: 1.5; }
+.adm-iq-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 14px 16px; }
+.adm-iq-metric { min-width: 0; border: 1px solid #e2e8f0; background: #fff; padding: 11px; }
+.adm-iq-metric > span { display: block; color: #64748b; font-size: 9px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.adm-iq-metric > strong { display: block; margin-top: 4px; color: #0f172a; font-size: 17px; overflow-wrap: anywhere; }
+.adm-iq-metric > small { display: block; margin-top: 3px; color: #64748b; font-size: 10px; }
+.adm-iq-section { border-top: 1px solid #e2e8f0; padding: 14px 16px; }
+.adm-iq-section h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 10px; color: #111827; font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .04em; }
+.adm-iq-signals { display: grid; gap: 7px; }
+.adm-iq-signal { border-left: 3px solid #94a3b8; background: #fff; padding: 9px 10px; }
+.adm-iq-signal--opportunity { border-left-color: #d4af37; }
+.adm-iq-signal--attention { border-left-color: #b91c1c; }
+.adm-iq-signal--fact { border-left-color: #475569; }
+.adm-iq-signal strong, .adm-iq-signal span, .adm-iq-signal small { display: block; }
+.adm-iq-signal strong { color: #111827; font-size: 12px; }
+.adm-iq-signal span { margin-top: 3px; color: #334155; font-size: 12px; line-height: 1.45; }
+.adm-iq-signal small { margin-top: 4px; color: #64748b; font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.adm-iq-reorders { display: grid; gap: 7px; }
+.adm-iq-reorder { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 8px; align-items: center; border: 1px solid #e2e8f0; background: #fff; padding: 9px; }
+.adm-iq-reorder > svg { color: #991b1b; }
+.adm-iq-reorder strong, .adm-iq-reorder span { display: block; }
+.adm-iq-reorder strong { color: #111827; font-size: 11px; }
+.adm-iq-reorder span { margin-top: 2px; color: #64748b; font-size: 10px; }
+.adm-iq-reorder-meta { text-align: right; }
+.adm-iq-empty { border: 1px dashed #cbd5e1; background: #fff; padding: 11px; color: #64748b; font-size: 12px; }
+.adm-iq-foot { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; border-top: 1px solid #e2e8f0; padding: 10px 16px 0; color: #64748b; font-size: 9px; }
+.adm-iq-foot span { display: inline-flex; align-items: center; gap: 5px; }
+.adm-iq-safety { margin: 0; padding: 7px 16px 14px; color: #64748b; font-size: 9px; line-height: 1.4; }
+
+@media (max-width: 560px) {
+  .adm-iq-head { flex-direction: column; }
+  .adm-iq-status { align-self: flex-start; }
+  .adm-iq-metrics { grid-template-columns: 1fr; }
+  .adm-iq-reorder { grid-template-columns: auto minmax(0, 1fr); }
+  .adm-iq-reorder-meta { grid-column: 2; text-align: left; }
+}
+
+.adm-account-details { margin-top: 4px; }
+.adm-account-details h3 { margin-bottom: 10px; font-size: 14px; }
+
+@media (max-width: 560px) {
+  .adm-application { padding: 14px; }
+  .adm-application-head { align-items: stretch; flex-direction: column; }
+  .adm-application-status { align-self: flex-start; }
+  .adm-application-grid { grid-template-columns: 1fr; }
+  .adm-application-detail--wide { grid-column: auto; }
+}
+
 .adm-drawer-fields {
   display: grid;
   gap: 14px;
