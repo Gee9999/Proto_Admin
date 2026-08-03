@@ -38,6 +38,7 @@ import { bulkMoveProducts, bulkRemoveFromCategory, invalidateAdminCache, updateP
 import { partitionPlacedOnly } from '../lib/placements';
 import { formatWebsitePrice } from '../lib/pricing';
 import { childrenOfTree, fetchCategoryProductCounts, subcategoryOptionsFromTree, listHiddenMottaro, restoreMottaroNode } from '../lib/taxonomyAdmin';
+import { sellingUnitLabel } from '../../lib/selling-unit.mjs';
 
 const ONLY_IN_STOCK_KEY = 'pm_only_in_stock';
 
@@ -262,6 +263,8 @@ function PmMobileProductCard({
   onRefreshStats,
   recycleSku,
   onShowToast,
+  onToggleToOrder,
+  toOrderPendingSku,
   tree,
 }) {
   return (
@@ -308,6 +311,8 @@ function PmMobileProductCard({
             <span>BC: <CodeEllipsis value={item.barcode || item.code} /></span>
             {item.sku && <span>WSK: <CodeEllipsis value={item.sku} /></span>}
             {item.price > 0 && <span>R{formatWebsitePrice(item.price)}</span>}
+            {item.toOrder && <span>Unit: {sellingUnitLabel(item.unitsOfIssue)}</span>}
+            {item.toOrder && <span>Minimum: {Math.max(1, Number(item.minQty) || 1)}</span>}
           </div>
           {item.categoryLabel && (
             <ProductCategoryLine item={item} tree={tree} />
@@ -327,6 +332,16 @@ function PmMobileProductCard({
         )}
         {status === 'live' && (
           <>
+            <button
+              type="button"
+              className={`adm-btn-ghost adm-btn--sm${item.toOrder ? ' pm-toorder-btn--on' : ''}`}
+              aria-pressed={!!item.toOrder}
+              disabled={toOrderPendingSku === item.sku}
+              onClick={() => onToggleToOrder?.(item)}
+            >
+              {toOrderPendingSku === item.sku ? <Loader2 size={14} className="spin" /> : <PackagePlus size={14} />}
+              To order
+            </button>
             <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={() => mutations.archive.mutate(item.sku, { onSuccess: () => onRefreshStats?.(), onError: (err) => onShowToast?.(err.message || 'Archive failed', 'error') })}>Archive</button>
             <button type="button" className="adm-btn-red adm-btn--sm" title="Move to recycle bin" aria-label="Move to recycle bin" onClick={() => recycleSku(item.sku, false)}><Trash2 size={14} /></button>
           </>
@@ -457,6 +472,7 @@ export default function ProductManagerEngine({
   initialStatus = 'live',
   statuses = CATALOG_STATUSES,
   showCategorySidebar = true,
+  initialToOrderOnly = false,
   title = 'Product Manager',
   note = 'In-stock products are live on the site. Open a product to set its New Stock ribbon and To-order options.',
 }) {
@@ -475,7 +491,7 @@ export default function ProductManagerEngine({
   const [page, setPage] = useState(1);
   const [pageSize] = useState(50);
   const [onlyInStock, setOnlyInStock] = useState(() => readOnlyInStockPref());
-  const [toOrderOnly, setToOrderOnly] = useState(false);
+  const [toOrderOnly, setToOrderOnly] = useState(() => Boolean(initialToOrderOnly));
   // SKU whose per-row "To order" toggle is mid-flight (for spinner + disable).
   const [toOrderPendingSku, setToOrderPendingSku] = useState(null);
   // Only the debounced term lives here; the raw input value is owned by
@@ -517,6 +533,13 @@ export default function ProductManagerEngine({
   const reorderSyncKeyRef = useRef('');
   const catalogTotalWhileDirtyRef = useRef(null);
   const isMobile = useMediaQuery('(max-width: 900px)');
+
+  useEffect(() => {
+    setToOrderOnly(Boolean(initialToOrderOnly));
+    setOnlyInStock(initialToOrderOnly ? false : readOnlyInStockPref());
+    setPage(1);
+    setCategoryPath([]);
+  }, [initialToOrderOnly]);
 
   const mutations = useCatalogMutations();
   const showStockColumn = STOCK_STATUSES.has(status);
@@ -1604,7 +1627,7 @@ export default function ProductManagerEngine({
                       accentColor: '#8B1A1A',
                       onChange: (v) => handleOnlyInStockChange(v),
                     },
-                    {
+                    !initialToOrderOnly && {
                       key: 'to-order',
                       label: 'To order only',
                       hint: 'Only products marked “To order” (orderable at 0 stock)',
@@ -1612,7 +1635,7 @@ export default function ProductManagerEngine({
                       accentColor: '#b45309',
                       onChange: (v) => { setToOrderOnly(v); setPage(1); },
                     },
-                  ]}
+                  ].filter(Boolean)}
                 />
               )}
               {!reorderMode && (
@@ -1791,6 +1814,8 @@ export default function ProductManagerEngine({
                         onRefreshStats={onRefreshStats}
                         recycleSku={recycleSku}
                         onShowToast={onShowToast}
+                        onToggleToOrder={toggleToOrder}
+                        toOrderPendingSku={toOrderPendingSku}
                         tree={tree}
                       />
                     ))}
@@ -1885,6 +1910,16 @@ export default function ProductManagerEngine({
                           {item.price > 0 && (
                             <span title="Price incl. VAT" style={{ marginLeft: 8, fontWeight: 700, color: '#374151' }}>
                               R{formatWebsitePrice(item.price)}
+                            </span>
+                          )}
+                          {item.toOrder && (
+                            <span title="Customer selling unit" style={{ marginLeft: 8, fontWeight: 700, color: '#92400e' }}>
+                              Unit: {sellingUnitLabel(item.unitsOfIssue)}
+                            </span>
+                          )}
+                          {item.toOrder && (
+                            <span title="Minimum selling units per order" style={{ marginLeft: 8, fontWeight: 700, color: '#92400e' }}>
+                              Minimum: {Math.max(1, Number(item.minQty) || 1)}
                             </span>
                           )}
                         </div>

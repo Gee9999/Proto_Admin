@@ -6,6 +6,7 @@ import {
   Grip,
   ImagePlus,
   Layout,
+  ListFilter,
   Mail,
   PackagePlus,
   ScanLine,
@@ -31,6 +32,7 @@ const NAV_ITEMS = [
   { id: 'product-loader', label: 'Product Loader', icon: ScanLine },
   { id: 'image-replace', label: 'Image Replace', icon: ImagePlus },
   { id: 'catalogue', label: 'Product Manager', icon: PackagePlus },
+  { id: 'to-order', label: 'To-order products', icon: ListFilter },
   { id: 'archive', label: 'Archive', icon: Archive },
   { id: 'reorder', label: 'Reorder Grid', icon: Grip },
   { id: 'customers', label: 'Customer Management', icon: Users },
@@ -56,13 +58,18 @@ const CHUNK_PREFETCH = {
 };
 
 function prefetchSection(sectionId) {
-  if (sectionId === 'catalogue' || sectionId === 'reorder') {
+  if (sectionId === 'catalogue' || sectionId === 'to-order' || sectionId === 'reorder') {
     queryClient.prefetchQuery({
-      queryKey: queryKeys.catalog(buildCatalogParams({ status: 'live', page: 1 })),
+      queryKey: queryKeys.catalog(buildCatalogParams({
+        status: 'live',
+        page: 1,
+        toOrderOnly: sectionId === 'to-order',
+      })),
       queryFn: async () => {
         // Match the default sort (most-recently-edited first) so this prefetch
         // primes the same cache entry the Product Manager query reads.
         const qs = new URLSearchParams({ status: 'live', page: '1', pageSize: '50', sort: 'updated' });
+        if (sectionId === 'to-order') qs.set('toOrderOnly', 'true');
         const res = await fetch(`/api/catalog?${qs}`);
         return res.json();
       },
