@@ -1,3 +1,5 @@
+import { POSITILL_CUSTOMER_SALES_PERIOD } from './customerIq';
+
 function has(value) {
   if (Array.isArray(value)) return value.some((item) => String(item || '').trim());
   return String(value || '').trim().length > 0;
@@ -15,7 +17,7 @@ export function traderVerificationSummary(customer = {}) {
   const hasHistory = historicalSales > 0 || invoices > 0;
   const claimedCode = String(customer.claimed_customer_code || '').trim().toUpperCase();
   if (hasHistory) {
-    evidence.push({ tone: 'strong', label: 'Proto history found', detail: `${invoices || 'Previous'} invoices${historicalSales ? ` · R${historicalSales.toLocaleString('en-ZA')} in 12-month sales` : ''}` });
+    evidence.push({ tone: 'strong', label: 'Proto history found', detail: `${invoices || 'Previous'} invoices${historicalSales ? ` · R${historicalSales.toLocaleString('en-ZA')} in ${POSITILL_CUSTOMER_SALES_PERIOD.shortLabel} sales (${POSITILL_CUSTOMER_SALES_PERIOD.taxBasis})` : ''}` });
   } else if (claimedCode) {
     evidence.push({ tone: 'review', label: 'Old Proto code claimed', detail: `${claimedCode} · verify against email or phone before approval.` });
   } else {

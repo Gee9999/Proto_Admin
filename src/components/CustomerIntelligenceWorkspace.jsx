@@ -15,7 +15,7 @@ import {
   UserRoundCog,
 } from 'lucide-react';
 import CustomerApplicationDetails from './CustomerApplicationDetails';
-import { buildCustomerIq } from '../lib/customerIq';
+import { buildCustomerIq, POSITILL_CUSTOMER_SALES_PERIOD } from '../lib/customerIq';
 import { buildCustomerIntelligence } from '../lib/customerIntelligenceEngine';
 import { businessSearchUrl, traderVerificationSummary } from '../lib/traderVerification';
 
@@ -125,7 +125,9 @@ export default function CustomerIntelligenceWorkspace({ customer, orders = [], t
     const hasBehaviouralEvidence = count > 0 || recordedSales > 0 || Boolean(iq.metrics.lastOrder);
     const orderSummary = hasBehaviouralEvidence ? {
       orderCount: count,
-      salesLast12Months: recordedSales,
+      recordedSales,
+      salesPeriodLabel: source === 'proto-active' ? `${POSITILL_CUSTOMER_SALES_PERIOD.label} sales` : 'Recorded sales',
+      salesSnapshot: source === 'proto-active',
       averageOrderValue: spendOrderCount ? spend / spendOrderCount : 0,
       lastOrderDate: iq.metrics.lastOrder,
       ordersLast90Days: ordersInLastDays(orders, 90),
@@ -195,6 +197,11 @@ export default function CustomerIntelligenceWorkspace({ customer, orders = [], t
         </div>
       )}
       {partialHistory && <div className="adm-ci-warning">Showing the latest {orders.length} of {totalOrders} portal orders. Spend, rhythm and repeat-product evidence are partial.</div>}
+      {source === 'proto-active' && (
+        <div className="adm-ci-warning">
+          Imported Positill snapshot for {POSITILL_CUSTOMER_SALES_PERIOD.start}–{POSITILL_CUSTOMER_SALES_PERIOD.end}, {POSITILL_CUSTOMER_SALES_PERIOD.taxBasis}. Later transactions may not yet be included.
+        </div>
+      )}
 
       {activeTab === 'overview' && (
         <div id="customer-intelligence-panel-overview" role="tabpanel" aria-labelledby="customer-intelligence-tab-overview" className="adm-ci-panel">

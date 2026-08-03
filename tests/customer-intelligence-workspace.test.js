@@ -55,6 +55,29 @@ describe('Customer Intelligence Workspace', () => {
     expect(html).toContain('partial');
   });
 
+  it('labels imported Positill figures as the 2025/26 VAT-inclusive financial year', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CustomerIntelligenceWorkspace, {
+        customer: {
+          id: 'sm-watch',
+          is_approved: true,
+          name: 'S.M. Watch Wholesalers',
+          account_code: 'SMWATC',
+          sales_last_12_months: 184880,
+          invoice_count: 9,
+          last_purchase_date: '2026-04-21',
+        },
+        source: 'proto-active',
+      }),
+    );
+
+    expect(html).toContain('2025/26 FY sales (incl. VAT)');
+    expect(html).toContain('2025/26 FY invoices');
+    expect(html).toContain('1 Jul 2025–30 Jun 2026, incl. VAT');
+    expect(html).toContain('Later transactions may not yet be included');
+    expect(html).not.toContain('12mo');
+  });
+
   it('defines accessible tabs and keeps staff approval outside the workspace', () => {
     expect(source).toContain('role="tablist"');
     expect(source).toContain('role="tab"');

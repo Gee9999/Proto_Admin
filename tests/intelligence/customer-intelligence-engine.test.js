@@ -52,7 +52,9 @@ describe('customer intelligence engine', () => {
       },
       orderSummary: {
         orderCount: 8,
-        salesLast12Months: 72000,
+        recordedSales: 72000,
+        salesPeriodLabel: '2025/26 financial year sales',
+        salesSnapshot: true,
         averageOrderValue: 9000,
         lastOrderDate: '2026-02-01T00:00:00.000Z',
         ordersLast90Days: 0,
@@ -66,7 +68,8 @@ describe('customer intelligence engine', () => {
       priority: 'high',
     });
     expect(result.nextBestAction.reason).toContain('183 days');
-    expect(result.scores.customerPotential.reasons.join(' ')).toMatch(/R72\s000 in recorded 12-month sales/);
+    expect(result.scores.customerPotential.reasons.join(' ')).toMatch(/R72\s000 in 2025\/26 financial year sales/);
+    expect(result.scores.customerPotential.limitations.join(' ')).toContain('imported financial-year snapshot');
   });
 
   it('keeps customer-stated spend visible as a limitation', () => {

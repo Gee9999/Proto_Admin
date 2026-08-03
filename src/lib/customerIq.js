@@ -2,6 +2,17 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const CUSTOMER_IQ_CONTRACT_VERSION = 'customer-iq.v2';
 
+// The imported Positill customer summary currently represents Proto's
+// 2025/26 financial year, not a rolling 12-month window. Keep this metadata
+// explicit until dated invoice-level customer history is connected.
+export const POSITILL_CUSTOMER_SALES_PERIOD = Object.freeze({
+  label: '2025/26 financial year',
+  shortLabel: '2025/26 FY',
+  start: '1 Jul 2025',
+  end: '30 Jun 2026',
+  taxBasis: 'incl. VAT',
+});
+
 function text(value) {
   return String(value ?? '').trim();
 }
@@ -198,12 +209,13 @@ export function buildCustomerIq({ customer = {}, orders = [], totalOrders, sourc
     status,
     metrics: {
       recordedOrderCount: hasPositillSummary && positillInvoiceCount ? positillInvoiceCount : recordedOrderCount,
-      orderCountLabel: hasPositillSummary && positillInvoiceCount ? 'Invoices (12mo)' : 'Portal orders',
+      orderCountLabel: hasPositillSummary && positillInvoiceCount ? `${POSITILL_CUSTOMER_SALES_PERIOD.shortLabel} invoices` : 'Portal orders',
       lastOrder: lastOrder?.toISOString() || null,
       daysSinceOrder,
       rhythmDays,
       spend: hasPositillSummary ? number(customer.sales_last_12_months) : portalSpend,
-      spendLabel: hasPositillSummary ? 'Sales (12mo)' : `Visible portal spend${recordedOrderCount > visibleOrderCount ? ' (partial)' : ''}`,
+      spendLabel: hasPositillSummary ? `${POSITILL_CUSTOMER_SALES_PERIOD.shortLabel} sales (${POSITILL_CUSTOMER_SALES_PERIOD.taxBasis})` : `Visible portal spend${recordedOrderCount > visibleOrderCount ? ' (partial)' : ''}`,
+      salesPeriod: hasPositillSummary ? POSITILL_CUSTOMER_SALES_PERIOD : null,
     },
     application: { salesChannels, productCategories, businessDescription },
     reorderProducts: buildReorderProducts(datedOrders),

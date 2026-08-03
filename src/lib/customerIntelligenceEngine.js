@@ -99,19 +99,20 @@ function traderConfidence(customer, summary) {
 }
 
 function customerPotential(customer, summary) {
-  const sales = positiveNumber(summary.salesLast12Months ?? customer.sales_last_12_months);
+  const sales = positiveNumber(summary.recordedSales ?? summary.salesLast12Months ?? customer.sales_last_12_months);
   const orderCount = positiveNumber(summary.orderCount ?? customer.invoice_count);
   const averageOrder = positiveNumber(summary.averageOrderValue) || (orderCount ? sales / orderCount : 0);
   const categoryCount = list(customer.product_categories || customer.business_categories).length;
   const spendPoints = monthlySpendPoints(customer.monthly_spend);
   const components = [
-    component('recorded_sales', 'Recorded 12-month sales', sales >= 100000 ? 35 : sales >= 50000 ? 28 : sales >= 10000 ? 18 : sales > 0 ? 8 : 0, 35, sales ? `R${Math.round(sales).toLocaleString('en-ZA')} in recorded 12-month sales.` : 'No 12-month sales total is available.'),
+    component('recorded_sales', summary.salesPeriodLabel || 'Recorded sales', sales >= 100000 ? 35 : sales >= 50000 ? 28 : sales >= 10000 ? 18 : sales > 0 ? 8 : 0, 35, sales ? `R${Math.round(sales).toLocaleString('en-ZA')} in ${summary.salesPeriodLabel ? summary.salesPeriodLabel.toLowerCase() : 'recorded sales'}.` : 'No recorded sales total is available.'),
     component('stated_spend', 'Stated monthly spend', spendPoints, 30, has(customer.monthly_spend) ? `Applicant selected ${text(customer.monthly_spend)}.` : 'No estimated monthly spend was supplied.'),
     component('ordering_depth', 'Ordering depth', averageOrder >= 10000 ? 20 : averageOrder >= 5000 ? 15 : averageOrder > 0 ? 8 : 0, 20, averageOrder ? `Recorded average order value is about R${Math.round(averageOrder).toLocaleString('en-ZA')}.` : 'Average order value is unavailable.'),
     component('category_fit', 'Category opportunity', categoryCount >= 3 ? 15 : categoryCount === 2 ? 10 : categoryCount === 1 ? 6 : 0, 15, categoryCount ? `${categoryCount} relevant product categor${categoryCount === 1 ? 'y was' : 'ies were'} selected.` : 'No product categories are supplied.'),
   ];
   const limitations = [];
   if (!sales) limitations.push('Potential relies partly on applicant-stated information because recorded sales are unavailable.');
+  if (sales && summary.salesSnapshot) limitations.push('The Positill total is an imported financial-year snapshot and may not include later transactions.');
   if (has(customer.monthly_spend)) limitations.push('Estimated monthly spend is customer supplied and has not been independently verified.');
   limitations.push('Potential is an opportunity indicator, not a credit limit or forecast.');
   return finishScore(components, limitations);
