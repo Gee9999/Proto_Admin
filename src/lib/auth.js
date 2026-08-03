@@ -1,4 +1,9 @@
 import { supabase } from './supabase';
+import {
+  ADMIN_STARTUP_TIMEOUT_MS,
+  isMissingAuthSession,
+  withStartupTimeout,
+} from './startupReliability';
 
 export const ADMIN_ROLES = Object.freeze({
   OWNER: 'owner',
@@ -31,22 +36,44 @@ export async function getSession() {
 
 /** Validates JWT with Supabase — use on boot instead of getSession() alone. */
 export async function getVerifiedSession() {
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user?.email) return null;
+  const { data: { user }, error } = await withStartupTimeout(
+    () => supabase.auth.getUser(),
+    { timeoutMs: ADMIN_STARTUP_TIMEOUT_MS, label: 'Supabase session verification' },
+  );
+  if (error) {
+    if (isMissingAuthSession(error)) return null;
+    throw error;
+  }
+  if (!user?.email) return null;
   if (!isAllowedAdminEmail(user.email)) {
     await supabase.auth.signOut();
     return null;
   }
-  const { data: { session } } = await supabase.auth.getSession();
+  const { data: { session }, error: sessionError } = await withStartupTimeout(
+    () => supabase.auth.getSession(),
+    { timeoutMs: ADMIN_STARTUP_TIMEOUT_MS, label: 'Admin session loading' },
+  );
+  if (sessionError) throw sessionError;
   return session;
 }
 
 export async function verifyAdminSession() {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ADMIN_STARTUP_TIMEOUT_MS);
   try {
-    const res = await fetch('/api/auth-check', { cache: 'no-store' });
-    return res.ok;
-  } catch {
-    return false;
+    const res = await fetch('/api/auth-check', { cache: 'no-store', signal: controller.signal });
+    if (res.ok) return true;
+    if (res.status === 401 || res.status === 403) return false;
+    throw new Error(`Admin session service returned ${res.status}`);
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      const timeoutError = new Error('Admin session service timed out');
+      timeoutError.code = 'startup_timeout';
+      throw timeoutError;
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

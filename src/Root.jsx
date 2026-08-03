@@ -1,4 +1,4 @@
-import { useEffect, useState, Suspense } from 'react';
+import { useCallback, useEffect, useRef, useState, Suspense } from 'react';
 import { installAuthFetch } from './lib/adminKey';
 import { clearChunkReloadGuard, lazyRetry } from './lib/lazyRetry';
 import {
@@ -13,6 +13,8 @@ import { PROTO_URLS } from './lib/protoUrls';
 import QueryProvider from './components/QueryProvider';
 import AdminLoginPage from './components/AdminLoginPage';
 import AdminResetPasswordPage from './components/AdminResetPasswordPage';
+import AdminStartupBoundary from './components/AdminStartupBoundary';
+import { startupErrorMessage } from './lib/startupReliability';
 
 const AdminPage = lazyRetry(() => import('./pages/AdminPage'));
 const FulfillmentPage = lazyRetry(() => import('./pages/FulfillmentPage'));
@@ -28,11 +30,6 @@ const loadingFallback = (
 );
 
 export default function Root() {
-  // Clear the one-shot chunk-reload guard only AFTER a successful mount, so a
-  // stale-chunk reload that fixed things isn't undone before the app renders
-  // (and a failed initial load can't spin in a reload loop).
-  useEffect(() => { clearChunkReloadGuard(); }, []);
-
   const path = window.location.pathname;
   const isFulfillment = path === '/fulfillment' || path === '/f' || path.startsWith('/f/');
   const isResetPassword = path === '/reset-password';
@@ -55,64 +52,64 @@ export default function Root() {
 function AdminGate({ fulfillment = false }) {
   const [session, setSession] = useState(null);
   const [booting, setBooting] = useState(true);
+  const [startupError, setStartupError] = useState('');
+  const mountedRef = useRef(true);
+  const attemptRef = useRef(0);
 
-  useEffect(() => {
-    let mounted = true;
-
-    async function resolveSession() {
-      try {
-        const verified = await getVerifiedSession();
-        if (!verified?.access_token) {
-          if (mounted) {
-            setSession(null);
-            setBooting(false);
-          }
-          return;
-        }
-        const ok = await verifyAdminSession();
-        if (!ok) {
-          await signOut();
-          if (mounted) {
-            setSession(null);
-            setBooting(false);
-          }
-          return;
-        }
-        if (mounted) {
-          setSession(verified);
-          
-          setBooting(false);
-        }
-      } catch {
-        if (mounted) {
+  const resolveSession = useCallback(async (candidate = null) => {
+    const attempt = ++attemptRef.current;
+    setBooting(true);
+    setStartupError('');
+    try {
+      const verified = candidate?.access_token ? candidate : await getVerifiedSession();
+      if (!verified?.access_token) {
+        if (mountedRef.current && attempt === attemptRef.current) {
           setSession(null);
           setBooting(false);
         }
+        return;
+      }
+      const ok = await verifyAdminSession();
+      if (!ok) {
+        await signOut();
+        if (mountedRef.current && attempt === attemptRef.current) {
+          setSession(null);
+          setBooting(false);
+        }
+        return;
+      }
+      if (mountedRef.current && attempt === attemptRef.current) {
+        setSession(verified);
+        setBooting(false);
+      }
+    } catch (error) {
+      if (mountedRef.current && attempt === attemptRef.current) {
+        setStartupError(startupErrorMessage(error));
+        setBooting(false);
       }
     }
+  }, []);
 
+  useEffect(() => {
+    mountedRef.current = true;
     void resolveSession();
 
     const { data: { subscription } } = onAuthStateChange(async (s) => {
-      if (!mounted) return;
+      if (!mountedRef.current) return;
       if (!s?.access_token) {
         setSession(null);
+        setStartupError('');
+        setBooting(false);
         return;
       }
       const email = s.user?.email || '';
       if (!isAllowedAdminEmail(email)) {
         await signOut();
         setSession(null);
+        setBooting(false);
         return;
       }
-      const ok = await verifyAdminSession();
-      if (!ok) {
-        await signOut();
-        setSession(null);
-        return;
-      }
-      setSession(s);
-      
+      await resolveSession(s);
     });
 
     const onUnauthorized = () => { void signOut().then(() => setSession(null)); };
@@ -127,14 +124,27 @@ function AdminGate({ fulfillment = false }) {
     window.addEventListener('proto-admin-unauthorized', onUnauthorized);
     window.addEventListener('proto-admin-forbidden', onForbidden);
     return () => {
-      mounted = false;
+      mountedRef.current = false;
       subscription.unsubscribe();
       window.removeEventListener('proto-admin-unauthorized', onUnauthorized);
       window.removeEventListener('proto-admin-forbidden', onForbidden);
     };
-  }, []);
+  }, [resolveSession]);
 
   if (booting) return loadingFallback;
+
+  if (startupError) {
+    return (
+      <AdminStartupRecovery
+        message={startupError}
+        onRetry={() => void resolveSession()}
+        onSignOut={() => void signOut().finally(() => {
+          setSession(null);
+          setStartupError('');
+        })}
+      />
+    );
+  }
 
   const email = session?.user?.email || '';
   const allowed = session && isAllowedAdminEmail(email);
@@ -143,22 +153,7 @@ function AdminGate({ fulfillment = false }) {
     return (
       <AdminLoginPage
         forbidden={!!session && !isAllowedAdminEmail(email)}
-        onSignedIn={() => {
-          void getVerifiedSession().then(async (s) => {
-            if (!s) {
-              setSession(null);
-              return;
-            }
-            const ok = await verifyAdminSession();
-            if (!ok) {
-              await signOut();
-              setSession(null);
-              return;
-            }
-            setSession(s);
-            
-          });
-        }}
+        onSignedIn={() => void resolveSession()}
       />
     );
   }
@@ -172,17 +167,47 @@ function AdminGate({ fulfillment = false }) {
 
   return (
     <QueryProvider>
-      <Suspense fallback={loadingFallback}>
-        {fulfillment ? (
-          <FulfillmentPage />
-        ) : (
-          <AdminPage
-            customer={customer}
-            onSignOut={() => void signOut().then(() => setSession(null))}
-            onViewPortal={() => { window.location.href = PROTO_URLS.site; }}
-          />
-        )}
-      </Suspense>
+      <AdminStartupBoundary>
+        <Suspense fallback={loadingFallback}>
+          <LoadedAdminRoute>
+            {fulfillment ? (
+              <FulfillmentPage />
+            ) : (
+              <AdminPage
+                customer={customer}
+                onSignOut={() => void signOut().then(() => setSession(null))}
+                onViewPortal={() => { window.location.href = PROTO_URLS.site; }}
+              />
+            )}
+          </LoadedAdminRoute>
+        </Suspense>
+      </AdminStartupBoundary>
     </QueryProvider>
+  );
+}
+
+function LoadedAdminRoute({ children }) {
+  // Clear the one-shot stale-chunk guard only after the protected route has
+  // rendered successfully. Clearing it at Root mount can create reload loops.
+  useEffect(() => { clearChunkReloadGuard(); }, []);
+  return children;
+}
+
+function AdminStartupRecovery({ message, onRetry, onSignOut }) {
+  return (
+    <div className="adm-login-page">
+      <div className="adm-login-layout">
+        <div className="adm-login-card adm-startup-recovery" role="alert">
+          <div className="adm-login-logo" aria-hidden="true">P</div>
+          <h1>Admin connection interrupted</h1>
+          <p>{message}</p>
+          <p className="adm-muted">No catalogue, customer or order data was changed.</p>
+          <div className="adm-startup-recovery-actions">
+            <button type="button" className="adm-btn-red" onClick={onRetry}>Try again</button>
+            <button type="button" className="adm-btn-ghost" onClick={onSignOut}>Return to sign in</button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

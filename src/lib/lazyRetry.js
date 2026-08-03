@@ -1,11 +1,12 @@
 import { lazy } from 'react';
+import { ADMIN_CHUNK_TIMEOUT_MS, withStartupTimeout } from './startupReliability';
 
 const CHUNK_RELOAD_KEY = 'proto-admin-chunk-reload';
 
 /** Detect dynamic-import / hashed-chunk failures across browsers. */
 export function isChunkLoadError(error) {
   const msg = String(error?.message || error || '');
-  return /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Loading chunk [\d]+ failed|Unable to preload CSS/i.test(msg);
+  return /Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Loading chunk [\d]+ failed|Unable to preload CSS|dashboard module did not finish/i.test(msg);
 }
 
 function reloadOnceForChunkError() {
@@ -36,7 +37,10 @@ export function importWithRetry(importFn) {
 }
 
 export function lazyRetry(importFn) {
-  return lazy(() => importWithRetry(importFn));
+  return lazy(() => withStartupTimeout(
+    () => importWithRetry(importFn),
+    { timeoutMs: ADMIN_CHUNK_TIMEOUT_MS, label: 'Dashboard module' },
+  ));
 }
 
 /** Install global handlers for Vite preload + unhandled dynamic import failures. */
