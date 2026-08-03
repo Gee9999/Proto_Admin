@@ -2156,13 +2156,19 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
             )}
 
             <SectionErrorBoundary name="catalogue" title="Product Manager crashed" resetKey={activeSection}>
-              <div style={{ display: activeSection === 'catalogue' ? 'block' : 'none' }}>
+              <div style={{ display: activeSection === 'catalogue' || activeSection === 'to-order' ? 'block' : 'none' }}>
               <ProductManagerEngine
                 taxonomyTree={taxonomyTree}
                 onShowToast={showToast}
                 onRefreshStats={refreshDashboardStats}
                 initialStatus="live"
+                initialToOrderOnly={activeSection === 'to-order'}
                 statuses={['live']}
+                showCategorySidebar={activeSection !== 'to-order'}
+                title={activeSection === 'to-order' ? 'To-order products' : 'Product Manager'}
+                note={activeSection === 'to-order'
+                  ? 'Every product customers can order when stock is unavailable. Search or edit a product, or use the amber To order button to remove it from this list.'
+                  : undefined}
                 onEditProduct={(item) => openEditProduct(item)}
                 onEditCategory={setEditTaxonomyModal}
                 onAddCategory={() => setNewCategoryModal({ label: '' })}
