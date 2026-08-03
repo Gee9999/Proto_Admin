@@ -112,9 +112,8 @@ import { queryKeys } from '../lib/queryKeys';
 import { dispatchAdminRefresh } from '../lib/adminRefresh';
 import { lazyRetry } from '../lib/lazyRetry';
 import SellingUnitField from '../components/SellingUnitField';
-import CustomerApplicationDetails from '../components/CustomerApplicationDetails';
-import CustomerIqPanel from '../components/CustomerIqPanel';
-import { businessSearchUrl, traderVerificationSummary } from '../lib/traderVerification';
+import CustomerIntelligenceWorkspace from '../components/CustomerIntelligenceWorkspace';
+import { POSITILL_CUSTOMER_SALES_PERIOD } from '../lib/customerIq';
 
 // Section panels — lazy-loaded so the initial admin bundle only ships the
 // default section (Product Manager). Each lazy chunk is fetched on demand
@@ -2415,7 +2414,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 {customerTab === 'proto-active' ? (
                   <div className="adm-list">
                     <div className="adm-list-head" style={{ gridTemplateColumns: '80px 1.2fr 110px 90px 1.1fr 100px 80px 100px 120px' }}>
-                      <span>Code</span><span>Business</span><span>Contact</span><span>First name</span><span>Email</span><span>12mo Sales</span><span>Invoices</span><span>Last purchase</span><span>Actions</span>
+                      <span>Code</span><span>Business</span><span>Contact</span><span>First name</span><span>Email</span><span>{POSITILL_CUSTOMER_SALES_PERIOD.shortLabel} Sales</span><span>Invoices</span><span>Last purchase</span><span>Actions</span>
                     </div>
                     {customerRows.length === 0 && !loading && (
                       <div className="adm-empty" style={{ padding: '24px 0' }}>
@@ -2451,7 +2450,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                           aria-label={`First name for ${row.email}`}
                         />
                         <span data-label="Email" style={{ fontSize: 12 }}>{row.email}</span>
-                        <span data-label="12mo Sales" style={{ fontSize: 12 }}>R{Number(row.sales_last_12_months || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}</span>
+                        <span data-label={`${POSITILL_CUSTOMER_SALES_PERIOD.shortLabel} Sales`} style={{ fontSize: 12 }}>R{Number(row.sales_last_12_months || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}</span>
                         <span data-label="Invoices" style={{ fontSize: 12 }}>{row.invoice_count ?? '—'}</span>
                         <span data-label="Last purchase" style={{ fontSize: 11, color: '#6b7280' }}>{row.last_purchase_date ? new Date(row.last_purchase_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</span>
                         <div data-cell="actions" style={{ display: 'flex', gap: 5 }}>
@@ -2837,68 +2836,28 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
 
       {/* Customer profile drawer */}
       {profileCustomer && (
-        <div className="adm-drawer-backdrop" onClick={closeCustomerProfile}>
-          <div className="adm-drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="adm-drawer-backdrop" onClick={closeCustomerProfile} onKeyDown={(event) => { if (event.key === 'Escape') closeCustomerProfile(); }}>
+          <div className="adm-drawer adm-drawer--intelligence" role="dialog" aria-modal="true" aria-labelledby="customer-profile-heading" onClick={(e) => e.stopPropagation()}>
             <div className="adm-drawer-head">
-              <h3>Customer Profile</h3>
+              <h3 id="customer-profile-heading">Customer Intelligence</h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {!profileEditing && (
                   <button onClick={startEditProfile} className="adm-btn-ghost adm-btn-sm">Edit</button>
                 )}
-                <button onClick={closeCustomerProfile} className="adm-icon-btn"><X size={16} /></button>
+                <button onClick={closeCustomerProfile} className="adm-icon-btn" aria-label="Close customer intelligence"><X size={16} /></button>
               </div>
             </div>
             <div className="adm-drawer-body">
-              <div className="adm-drawer-avatar">{(profileCustomer.business_name || profileCustomer.name || '?')[0].toUpperCase()}</div>
-              <h2 className="adm-drawer-biz" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                {profileCustomer.business_name || profileCustomer.name}
-                <TenThousandClubBadge customer={profileCustomer} />
-                <LastEmailBadge customer={profileCustomer} />
-              </h2>
-
-              <CustomerIqPanel
+              <CustomerIntelligenceWorkspace
                 customer={profileCustomer}
                 orders={profileOrders}
                 totalOrders={profileOrdersTotal}
                 source={profileSource}
                 loading={profileOrdersLoading}
                 loadError={profileOrdersError}
+                onRetry={() => void openCustomerProfile(profileCustomer, profileSource)}
+                headerBadges={<><TenThousandClubBadge customer={profileCustomer} /><LastEmailBadge customer={profileCustomer} /></>}
               />
-
-              {profileSource !== 'proto-active' && !profileCustomer.is_approved && (() => {
-                const verification = traderVerificationSummary(profileCustomer);
-                return (
-                  <section className={`adm-trader-review adm-trader-review--${verification.tone}`} aria-label="Trader verification recommendation">
-                    <div className="adm-trader-review-head">
-                      <div>
-                        <span className="adm-trader-review-kicker">Application evidence</span>
-                        <h3>{verification.recommendation}</h3>
-                      </div>
-                    </div>
-                    <p className="adm-trader-review-note">Evidence summary only — it is not a probability score. A staff member makes the final decision.</p>
-                    <div className="adm-trader-evidence-list">
-                      {verification.evidence.map((item) => (
-                        <div className={`adm-trader-evidence adm-trader-evidence--${item.tone}`} key={item.label}>
-                          {item.tone === 'neutral' || item.tone === 'review'
-                            ? <Search size={15} aria-hidden="true" />
-                            : <CheckCircle size={15} aria-hidden="true" />}
-                          <div><strong>{item.label}</strong><span>{item.detail}</span></div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="adm-trader-research">
-                      <div><strong>Internet &amp; social check</strong><span>Not run automatically in this preview.</span></div>
-                      <a className="adm-btn-ghost adm-btn-sm" href={businessSearchUrl(profileCustomer)} target="_blank" rel="noreferrer">
-                        <Search size={13} /> Research business
-                      </a>
-                    </div>
-                  </section>
-                );
-              })()}
-
-              {profileSource !== 'proto-active' && (
-                <CustomerApplicationDetails customer={profileCustomer} />
-              )}
 
               {profileEditing ? (
                 <div style={{ display: 'grid', gap: 12, marginTop: 4 }}>
@@ -2979,10 +2938,13 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                   <DrawerField icon={Building2} label="Customer code" value={profileCustomer.customer_code || profileCustomer.account_code} />
                   {profileCustomer.first_name && <DrawerField icon={User} label="First name" value={profileCustomer.first_name} />}
                   {profileCustomer.sales_last_12_months != null && (
-                    <DrawerField icon={Store} label="12mo sales" value={`R${Number(profileCustomer.sales_last_12_months).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`} />
+                    <DrawerField icon={Store} label={`${POSITILL_CUSTOMER_SALES_PERIOD.shortLabel} sales (${POSITILL_CUSTOMER_SALES_PERIOD.taxBasis})`} value={`R${Number(profileCustomer.sales_last_12_months).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`} />
                   )}
                   {profileCustomer.invoice_count != null && (
-                    <DrawerField icon={Store} label="Invoices (12mo)" value={String(profileCustomer.invoice_count)} />
+                    <DrawerField icon={Store} label={`${POSITILL_CUSTOMER_SALES_PERIOD.shortLabel} invoices`} value={String(profileCustomer.invoice_count)} />
+                  )}
+                  {profileSource === 'proto-active' && (
+                    <DrawerField icon={Building2} label="Sales period" value={`${POSITILL_CUSTOMER_SALES_PERIOD.start} – ${POSITILL_CUSTOMER_SALES_PERIOD.end} · imported snapshot`} />
                   )}
                   {profileCustomer.last_purchase_date && (
                     <DrawerField icon={Building2} label="Last purchase" value={new Date(profileCustomer.last_purchase_date).toLocaleDateString('en-ZA')} />
@@ -2991,35 +2953,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 </section>
               )}
 
-              {profileSource !== 'proto-active' && (
-              <div style={{ marginTop: 24 }}>
-                <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10, fontFamily: 'Outfit, sans-serif' }}>Order History</div>
-                {profileOrdersLoading && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6b7280', fontSize: 13 }}>
-                    <Loader2 size={14} className="spin" /> Loading orders…
-                  </div>
-                )}
-                {!profileOrdersLoading && profileOrders.length === 0 && (
-                  <div className="adm-muted" style={{ fontSize: 13 }}>No orders found.</div>
-                )}
-                {!profileOrdersLoading && profileOrders.length > 0 && (
-                  <div className="adm-profile-orders">
-                    {profileOrders.map((order) => (
-                      <div key={order.id} className="adm-profile-order">
-                        <div className="adm-profile-order-head">
-                          <span>{order.order_number || order.id.slice(0, 8)}</span>
-                          <span className="adm-pill" style={{ fontSize: 10, padding: '2px 8px' }}>{order.status || 'pending'}</span>
-                          <span className="adm-muted">{new Date(order.created_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                        </div>
-                        <div className="adm-muted" style={{ fontSize: 11, marginTop: 4 }}>
-                          {compactItems(order.original_items || order.items || [])}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              )}
             </div>
             <div className="adm-drawer-footer">
               <button onClick={closeCustomerProfile} className="adm-btn-ghost">Close</button>
