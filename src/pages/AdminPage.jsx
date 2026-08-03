@@ -2488,7 +2488,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                           />
                         </div>
                         <div data-cell="actions" style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
-                          <button onClick={() => void openCustomerProfile(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }}>Edit</button>
+                          <button onClick={() => void openCustomerProfile(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }}>View details</button>
                           <button
                             onClick={() => void approveRequest(person)}
                             className="adm-btn-green adm-btn-sm"
@@ -2535,7 +2535,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                         <span data-label="WhatsApp"><WhatsappOptIn value={person.accept_whatsapp} /></span>
                         <span data-label="Orders">{person.orderCount}</span>
                         <div data-cell="actions" style={{ display: 'flex', gap: 5 }}>
-                          <button onClick={() => void openCustomerProfile(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }}>Edit</button>
+                          <button onClick={() => void openCustomerProfile(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }}>View details</button>
                           <button onClick={() => void removeCustomer(person)} className="adm-btn-ghost adm-btn-sm" disabled={saving === `del-${person.id}`} style={{ color: '#c40000', padding: '4px 8px' }}>
                             {saving === `del-${person.id}` ? '…' : <X size={14} />}
                           </button>

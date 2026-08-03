@@ -25,8 +25,11 @@ function values(value) {
 export function applicationWebsiteHref(value) {
   const raw = text(value);
   if (!raw) return '';
+  const hasExplicitWebScheme = /^https?:\/\//i.test(raw);
+  const looksLikeDomain = /^(?:www\.)?[a-z0-9](?:[a-z0-9-]*\.)+[a-z]{2,}(?:[/:?#].*)?$/i.test(raw);
+  if (!hasExplicitWebScheme && !looksLikeDomain) return '';
   try {
-    const url = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    const url = new URL(hasExplicitWebScheme ? raw : `https://${raw}`);
     return ['http:', 'https:'].includes(url.protocol) ? url.href : '';
   } catch {
     return '';

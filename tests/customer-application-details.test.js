@@ -42,6 +42,7 @@ describe('customer application details', () => {
     expect(applicationAddress({ building_type: 'Shop', unit_number: '4', street_name: 'Main Road', city: 'Durban' }))
       .toBe('Shop 4, Main Road, Durban');
     expect(applicationWebsiteHref('example.co.za')).toBe('https://example.co.za/');
+    expect(applicationWebsiteHref('TLC Pharmacy Porterville')).toBe('');
     expect(applicationWebsiteHref('javascript:alert(1)')).toBe('');
   });
 
