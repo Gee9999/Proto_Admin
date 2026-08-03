@@ -66,7 +66,7 @@ function adapt(row, tree) {
     isSpecial: false,
     isArchived: false,
     sortOrder: 0,
-    minQty: 1,
+    minQty: Math.max(1, Math.min(9999, Math.floor(Number(row.min_order_qty) || 1))),
     casePack: '',
     marginCue: '',
     leadTime: '',

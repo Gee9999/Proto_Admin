@@ -130,6 +130,7 @@ function adapt(row, { archived = false, tree = null } = {}) {
     originalDescription: row.original_description || '',
     packDescription: row.pack_description || '',
     unitsOfIssue: String(row.units_of_issue || '').trim(),
+    minQty: Math.max(1, Math.min(9999, Math.floor(Number(row.min_order_qty) || 1))),
     price: Number(row.price) || 0,
     sellPrice: row.sell_price != null ? Number(row.sell_price) : null,
     images,
@@ -153,7 +154,6 @@ function adapt(row, { archived = false, tree = null } = {}) {
     isSpecial: false,
     isArchived: archived,
     sortOrder: 0,
-    minQty: 1,
     casePack: '',
     marginCue: '',
     leadTime: '',
@@ -495,6 +495,7 @@ export async function createProduct(payload) {
     price: Number(payload.price) || 0,
     units_of_issue: payload.unitsOfIssue || 'EACH',
     pack_description: payload.packDescription || '',
+    min_order_qty: Math.max(1, Math.min(9999, Math.floor(Number(payload.minQty) || 1))),
   };
 
   await stockAction({ action: 'create', row });
@@ -517,6 +518,7 @@ export async function updateProduct(sku, payload) {
   if (payload.description !== undefined) body.description = payload.description;
   if (payload.packDescription !== undefined) body.packDescription = payload.packDescription;
   if (payload.unitsOfIssue !== undefined) body.unitsOfIssue = payload.unitsOfIssue;
+  if (payload.minQty !== undefined) body.minQty = Number(payload.minQty);
   if (payload.name !== undefined) body.title = payload.name;
   if (payload.price !== undefined) body.price = Number(payload.price) || 0;
   // Send node ids, not client-resolved labels — the server resolves them

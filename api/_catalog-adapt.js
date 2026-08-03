@@ -130,6 +130,7 @@ export function adaptCatalogRow(row, tree, { archived = false, placementPaths = 
     originalDescription: row.original_description || '',
     packDescription: row.pack_description || '',
     unitsOfIssue: String(row.units_of_issue || '').trim(),
+    minQty: Math.max(1, Math.min(9999, Math.floor(Number(row.min_order_qty) || 1))),
     price: Number(row.price) || 0,
     sellPrice: row.sell_price != null ? Number(row.sell_price) : null,
     images,

@@ -49,6 +49,7 @@ export default async function handler(req, res) {
     description,
     packDescription,
     unitsOfIssue,
+    minQty,
     title,
     name,
     price,
@@ -78,6 +79,13 @@ export default async function handler(req, res) {
   if (description !== undefined) patch.original_description = String(description).trim();
   if (packDescription !== undefined) patch.pack_description = String(packDescription).trim();
   if (unitsOfIssue !== undefined) patch.units_of_issue = normalizeUnitsOfIssue(unitsOfIssue);
+  if (minQty !== undefined) {
+    const parsedMinQty = Number(minQty);
+    if (!Number.isSafeInteger(parsedMinQty) || parsedMinQty < 1 || parsedMinQty > 9999) {
+      return res.status(400).json({ error: 'Minimum order quantity must be a whole number from 1 to 9,999' });
+    }
+    patch.min_order_qty = parsedMinQty;
+  }
   if (title !== undefined) patch.title = String(title).trim();
   if (name !== undefined) patch.title = String(name).trim();
   if (price !== undefined) patch.price = Number(price) || 0;
