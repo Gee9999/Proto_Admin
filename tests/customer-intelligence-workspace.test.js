@@ -78,6 +78,25 @@ describe('Customer Intelligence Workspace', () => {
     expect(html).not.toContain('12mo');
   });
 
+  it('keeps the imported-snapshot warning after a historical customer registers online', () => {
+    const html = renderToStaticMarkup(
+      React.createElement(CustomerIntelligenceWorkspace, {
+        customer: {
+          id: 'approved-sm-watch',
+          is_approved: true,
+          business_name: 'S.M. Watch Wholesalers',
+          sales_last_12_months: 73580,
+          invoice_count: 0,
+        },
+        source: 'portal',
+      }),
+    );
+
+    expect(html).toContain('2025/26 financial year sales');
+    expect(html).toContain('Imported Positill snapshot');
+    expect(html).toContain('Later transactions may not yet be included');
+  });
+
   it('defines accessible tabs and keeps staff approval outside the workspace', () => {
     expect(source).toContain('role="tablist"');
     expect(source).toContain('role="tab"');
