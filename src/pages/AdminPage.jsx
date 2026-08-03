@@ -112,9 +112,7 @@ import { queryKeys } from '../lib/queryKeys';
 import { dispatchAdminRefresh } from '../lib/adminRefresh';
 import { lazyRetry } from '../lib/lazyRetry';
 import SellingUnitField from '../components/SellingUnitField';
-import CustomerApplicationDetails from '../components/CustomerApplicationDetails';
-import CustomerIqPanel from '../components/CustomerIqPanel';
-import { businessSearchUrl, traderVerificationSummary } from '../lib/traderVerification';
+import CustomerIntelligenceWorkspace from '../components/CustomerIntelligenceWorkspace';
 
 // Section panels — lazy-loaded so the initial admin bundle only ships the
 // default section (Product Manager). Each lazy chunk is fetched on demand
@@ -2837,68 +2835,28 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
 
       {/* Customer profile drawer */}
       {profileCustomer && (
-        <div className="adm-drawer-backdrop" onClick={closeCustomerProfile}>
-          <div className="adm-drawer" onClick={(e) => e.stopPropagation()}>
+        <div className="adm-drawer-backdrop" onClick={closeCustomerProfile} onKeyDown={(event) => { if (event.key === 'Escape') closeCustomerProfile(); }}>
+          <div className="adm-drawer adm-drawer--intelligence" role="dialog" aria-modal="true" aria-labelledby="customer-profile-heading" onClick={(e) => e.stopPropagation()}>
             <div className="adm-drawer-head">
-              <h3>Customer Profile</h3>
+              <h3 id="customer-profile-heading">Customer Intelligence</h3>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 {!profileEditing && (
                   <button onClick={startEditProfile} className="adm-btn-ghost adm-btn-sm">Edit</button>
                 )}
-                <button onClick={closeCustomerProfile} className="adm-icon-btn"><X size={16} /></button>
+                <button onClick={closeCustomerProfile} className="adm-icon-btn" aria-label="Close customer intelligence"><X size={16} /></button>
               </div>
             </div>
             <div className="adm-drawer-body">
-              <div className="adm-drawer-avatar">{(profileCustomer.business_name || profileCustomer.name || '?')[0].toUpperCase()}</div>
-              <h2 className="adm-drawer-biz" style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                {profileCustomer.business_name || profileCustomer.name}
-                <TenThousandClubBadge customer={profileCustomer} />
-                <LastEmailBadge customer={profileCustomer} />
-              </h2>
-
-              <CustomerIqPanel
+              <CustomerIntelligenceWorkspace
                 customer={profileCustomer}
                 orders={profileOrders}
                 totalOrders={profileOrdersTotal}
                 source={profileSource}
                 loading={profileOrdersLoading}
                 loadError={profileOrdersError}
+                onRetry={() => void openCustomerProfile(profileCustomer, profileSource)}
+                headerBadges={<><TenThousandClubBadge customer={profileCustomer} /><LastEmailBadge customer={profileCustomer} /></>}
               />
-
-              {profileSource !== 'proto-active' && !profileCustomer.is_approved && (() => {
-                const verification = traderVerificationSummary(profileCustomer);
-                return (
-                  <section className={`adm-trader-review adm-trader-review--${verification.tone}`} aria-label="Trader verification recommendation">
-                    <div className="adm-trader-review-head">
-                      <div>
-                        <span className="adm-trader-review-kicker">Application evidence</span>
-                        <h3>{verification.recommendation}</h3>
-                      </div>
-                    </div>
-                    <p className="adm-trader-review-note">Evidence summary only — it is not a probability score. A staff member makes the final decision.</p>
-                    <div className="adm-trader-evidence-list">
-                      {verification.evidence.map((item) => (
-                        <div className={`adm-trader-evidence adm-trader-evidence--${item.tone}`} key={item.label}>
-                          {item.tone === 'neutral' || item.tone === 'review'
-                            ? <Search size={15} aria-hidden="true" />
-                            : <CheckCircle size={15} aria-hidden="true" />}
-                          <div><strong>{item.label}</strong><span>{item.detail}</span></div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="adm-trader-research">
-                      <div><strong>Internet &amp; social check</strong><span>Not run automatically in this preview.</span></div>
-                      <a className="adm-btn-ghost adm-btn-sm" href={businessSearchUrl(profileCustomer)} target="_blank" rel="noreferrer">
-                        <Search size={13} /> Research business
-                      </a>
-                    </div>
-                  </section>
-                );
-              })()}
-
-              {profileSource !== 'proto-active' && (
-                <CustomerApplicationDetails customer={profileCustomer} />
-              )}
 
               {profileEditing ? (
                 <div style={{ display: 'grid', gap: 12, marginTop: 4 }}>
@@ -2991,35 +2949,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 </section>
               )}
 
-              {profileSource !== 'proto-active' && (
-              <div style={{ marginTop: 24 }}>
-                <div style={{ fontWeight: 800, fontSize: 14, marginBottom: 10, fontFamily: 'Outfit, sans-serif' }}>Order History</div>
-                {profileOrdersLoading && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#6b7280', fontSize: 13 }}>
-                    <Loader2 size={14} className="spin" /> Loading orders…
-                  </div>
-                )}
-                {!profileOrdersLoading && profileOrders.length === 0 && (
-                  <div className="adm-muted" style={{ fontSize: 13 }}>No orders found.</div>
-                )}
-                {!profileOrdersLoading && profileOrders.length > 0 && (
-                  <div className="adm-profile-orders">
-                    {profileOrders.map((order) => (
-                      <div key={order.id} className="adm-profile-order">
-                        <div className="adm-profile-order-head">
-                          <span>{order.order_number || order.id.slice(0, 8)}</span>
-                          <span className="adm-pill" style={{ fontSize: 10, padding: '2px 8px' }}>{order.status || 'pending'}</span>
-                          <span className="adm-muted">{new Date(order.created_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                        </div>
-                        <div className="adm-muted" style={{ fontSize: 11, marginTop: 4 }}>
-                          {compactItems(order.original_items || order.items || [])}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-              )}
             </div>
             <div className="adm-drawer-footer">
               <button onClick={closeCustomerProfile} className="adm-btn-ghost">Close</button>
