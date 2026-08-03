@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 47527)
-Total output lines: 3861
-
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
@@ -1462,7 +1459,1377 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
             return {
               ...current,
               availabilityLoading: false,
-              availabilitySchemaReady…17527 tokens truncated…le drawer */}
+              availabilitySchemaReady: result?.schemaReady === true,
+              incomingStatus: availability.incomingStatus || 'none',
+              incomingQty: availability.incomingQty > 0 ? String(availability.incomingQty) : '',
+              incomingEta: availability.incomingEta || '',
+              shipmentRef: availability.shipmentRef || '',
+              allowPreorder: !!availability.allowPreorder,
+            };
+          });
+        })
+        .catch((error) => {
+          setProductForm((current) => ({ ...current, availabilityLoading: false }));
+          setEditorError(error.message || 'Could not load incoming-stock status');
+        });
+    }
+  };
+
+  const closeEditor = () => {
+    setEditorOpen(false);
+    setEditingProduct(null);
+    setEditorError('');
+    setEditorImageUploading(false);
+    setEditorImageDragOver('');
+  };
+
+  const swapEditorImageSlots = (index) => {
+    setProductForm((current) => {
+      const keys = PRODUCT_IMAGE_SLOTS.map((s) => s.key);
+      const next = { ...current };
+      const a = keys[index];
+      const b = keys[index + 1];
+      if (!a || !b) return current;
+      next[a] = current[b] || '';
+      next[b] = current[a] || '';
+      return next;
+    });
+  };
+
+  const clearEditorImage = (slotKey) => {
+    setProductForm((current) => ({ ...current, [slotKey]: '' }));
+  };
+
+  const openContentEdit = (product) => {
+    setContentEditProduct(product);
+    setContentEditForm({
+      image: product.image || '',
+      description: product.description || '',
+      packDescription: product.packDescription || '',
+      unitsOfIssue: product.unitsOfIssue || 'EACH',
+      code: product.code || product.barcode || '',
+    });
+    setContentEditError('');
+  };
+
+  const closeContentEdit = () => { setContentEditProduct(null); setContentEditError(''); };
+
+  const saveContentEdit = async () => {
+    if (!contentEditProduct) return;
+    setContentEditSaving(true);
+    setContentEditError('');
+    try {
+      await updateProduct(contentEditProduct.id, {
+        image: contentEditForm.image.trim(),
+        description: contentEditForm.description,
+        packDescription: contentEditForm.packDescription,
+        unitsOfIssue: contentEditForm.unitsOfIssue,
+        code: contentEditForm.code?.trim() || '',
+      });
+      // Update local lists so image/description reflects the change without a full reload
+      const patch = {
+        image: contentEditForm.image.trim(),
+        description: contentEditForm.description,
+        packDescription: contentEditForm.packDescription,
+        unitsOfIssue: contentEditForm.unitsOfIssue,
+        code: contentEditForm.code?.trim() || '',
+        barcode: contentEditForm.code.trim(),
+      };
+      reorderPanelRef.current?.patchProduct?.(contentEditProduct.id, patch);
+      queryClient.invalidateQueries({ queryKey: ['catalog'] });
+      invalidateProductCache();
+      closeContentEdit();
+    } catch (err) {
+      setContentEditError(err.message || 'Save failed');
+    } finally {
+      setContentEditSaving(false);
+    }
+  };
+
+  const refreshCurrentSection = async () => {
+    if (activeSection === 'customers') {
+      return loadCustomers();
+    }
+    if (activeSection === 'reorder') {
+      reorderPanelRef.current?.refresh?.();
+      return reloadTaxonomy();
+    }
+    if (activeSection === 'orders') {
+      return loadOrders();
+    }
+    if (activeSection === 'catalogue') {
+      queryClient.invalidateQueries({ queryKey: ['catalog'] });
+      return reloadTaxonomy();
+    }
+    if (activeSection === 'analytics') {
+      dispatchAdminRefresh('analytics');
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats() });
+      return;
+    }
+    dispatchAdminRefresh(activeSection);
+  };
+
+  const saveProduct = async () => {
+    const categoryPath = [productForm.categoryId, ...(productForm.childIds || [])].filter(Boolean);
+
+    if (!categoryPath.length && !editingProduct?.archivedBy) {
+      setEditorError('Pick a main category before saving — every product needs a category.');
+      return;
+    }
+
+    // Archived rows keep whatever category they had (their category selector is
+    // hidden — a category is chosen at Make live). Their stored path is often a
+    // synthetic "Uncategorised › General" that the live taxonomy can't resolve,
+    // so sending it back would 409 ("Destination category changed") and block a
+    // plain code/price edit. Only live/new products send a category path.
+    const sendCategory = categoryPath.length > 0 && !editingProduct?.archivedBy;
+
+    const payload = {
+      code: productForm.code.trim(),
+      name: productForm.name.trim(),
+      description: productForm.description,
+      packDescription: productForm.packDescription,
+      unitsOfIssue: productForm.unitsOfIssue,
+      minQty: Number(productForm.minQty),
+      image: productForm.image.trim(),
+      secondaryImage: productForm.secondaryImage.trim(),
+      imageThree: productForm.imageThree.trim(),
+      imageFour: productForm.imageFour.trim(),
+      price: Number(productForm.price || 0),
+      ...(sendCategory ? { categoryPath } : {}),
+      ...(editingProduct?.updatedAt ? { expectedUpdatedAt: editingProduct.updatedAt } : {}),
+    };
+    setSaving(editingProduct?.id || 'new-product');
+    try {
+      const result = editingProduct
+        ? await updateProduct(editingProduct.id, payload)
+        : await createProduct(payload);
+      if (result?.relink?.matched) {
+        showToast('Matched to Positill — refresh Archive to see live stock', 'success');
+      }
+      // Live-only flags live in website_stock (separate from the product update):
+      // apply the New-Stock ribbon / To-order toggles when they changed. These
+      // used to be per-row buttons; they now live in this modal.
+      if (editingProduct && !editingProduct.archivedBy) {
+        if (!!productForm.isNewArrival !== !!editingProduct.isNew) {
+          await setNewArrival(editingProduct.id, productForm.isNewArrival);
+        }
+        if (!!productForm.toOrder !== !!editingProduct.toOrder) {
+          await setToOrder(editingProduct.id, productForm.toOrder);
+        }
+        if (productForm.availabilitySchemaReady) {
+          await setProductAvailability(editingProduct.id, {
+            incomingStatus: productForm.incomingStatus,
+            incomingQty: productForm.incomingQty,
+            incomingEta: productForm.incomingEta,
+            shipmentRef: productForm.shipmentRef,
+            allowPreorder: productForm.allowPreorder,
+          });
+        }
+      }
+      closeEditor();
+      queryClient.invalidateQueries({ queryKey: ['catalog'] });
+      invalidateProductCache();
+      invalidateAdminCache();
+    } catch (err) {
+      setEditorError(err.message || 'Save failed');
+    } finally { setSaving(''); }
+  };
+
+
+
+
+  // Banner + Specials editors now live in BannerPanel / SpecialsPanel.
+
+
+
+  const saveTaxonomyRename = async () => {
+    if (!editTaxonomyModal?.label?.trim()) return;
+    setTaxonomySaving(true);
+    try {
+      const renameResult = await renameTaxonomyNode(editTaxonomyModal.id, editTaxonomyModal.label.trim());
+      await reloadTaxonomy({ fresh: true });
+      invalidateAdminCache();
+      queryClient.invalidateQueries({ queryKey: ['catalog'] });
+      await reorderPanelRef.current?.refresh?.();
+      setEditTaxonomyModal(null);
+      // A rename is now all-or-nothing server-side: a product-label failure
+      // rolls the tree back and returns an error, so reaching here means the
+      // category and every one of its products moved together.
+      showToast(
+        renameResult?.productsRenamed
+          ? `Category updated — ${renameResult.productsRenamed} product(s) renamed`
+          : 'Category updated',
+      );
+    } catch (err) {
+      if (await handleTaxonomyConflict(err)) {
+        setEditTaxonomyModal(null);
+        return;
+      }
+      showToast(err.message || 'Update failed', 'error');
+    } finally { setTaxonomySaving(false); }
+  };
+
+  const saveNewSubcategory = async () => {
+    if (!newSubModal?.label?.trim() || !newSubModal?.parentId) return;
+    setTaxonomySaving(true);
+    try {
+      const json = await createSubcategory(newSubModal.parentId, newSubModal.label.trim());
+      await reloadTaxonomy();
+      invalidateAdminCache();
+      queryClient.invalidateQueries({ queryKey: ['catalog'] });
+      setNewSubModal(null);
+      reorderPanelRef.current?.applySubcategoryCreated?.(json, newSubModal.parentId);
+      showToast(json.created ? 'Subcategory created' : 'Subcategory already exists');
+    } catch (err) {
+      if (await handleTaxonomyConflict(err)) {
+        setNewSubModal(null);
+        return;
+      }
+      showToast(err.message || 'Create failed', 'error');
+    } finally { setTaxonomySaving(false); }
+  };
+
+  const saveNewCategory = async () => {
+    if (!newCategoryModal?.label?.trim()) return;
+    setTaxonomySaving(true);
+    try {
+      const json = await createCategory(newCategoryModal.label.trim());
+      await reloadTaxonomy();
+      invalidateAdminCache();
+      queryClient.invalidateQueries({ queryKey: ['catalog'] });
+      setNewCategoryModal(null);
+      showToast(json.created ? 'Category created' : 'Category already exists');
+    } catch (err) {
+      if (await handleTaxonomyConflict(err)) {
+        setNewCategoryModal(null);
+        return;
+      }
+      showToast(err.message || 'Create failed', 'error');
+    } finally { setTaxonomySaving(false); }
+  };
+
+  const openDeleteSubcategory = async (sub) => {
+    setTaxonomySaving(true);
+    try {
+      const productCount = await countSubcategoryProducts(sub.id);
+      setDeleteSubModal({ ...sub, productCount });
+    } catch (err) {
+      // Counting is best-effort — still let the user delete (products are kept).
+      setDeleteSubModal({ ...sub, productCount: 0 });
+    } finally { setTaxonomySaving(false); }
+  };
+
+  const confirmDeleteSubcategory = async () => {
+    if (!deleteSubModal?.id) return;
+    setTaxonomySaving(true);
+    try {
+      const deleteResult = await deleteTaxonomyNode(deleteSubModal.id);
+      await reloadTaxonomy();
+      queryClient.invalidateQueries({ queryKey: ['catalog'] });
+      reorderPanelRef.current?.onPathNodeDeleted?.(deleteSubModal.id);
+      invalidateAdminCache();
+      const isCat = deleteSubModal.type === 'category';
+      setDeleteSubModal(null);
+      if (deleteResult?.archiveError) {
+        showToast(`Deleted, but some products were not archived: ${deleteResult.archiveError}`, 'error');
+      } else if (deleteResult?.productsArchived > 0) {
+        showToast(`${isCat ? 'Category' : 'Subcategory'} deleted — ${deleteResult.productsArchived} product(s) moved to Archive. Restore them from the Archive tab.`);
+      } else {
+        showToast(isCat ? 'Category deleted' : 'Subcategory deleted');
+      }
+    } catch (err) {
+      if (await handleTaxonomyConflict(err)) {
+        setDeleteSubModal(null);
+        return;
+      }
+      showToast(err.message || 'Delete failed', 'error');
+    } finally { setTaxonomySaving(false); }
+  };
+
+  const goHome = () => setActiveSection('orders');
+
+  // Pricing selection + apply moved into PricingPanel.
+
+  const openCustomerProfile = async (person, source = 'portal') => {
+    const requestSeq = ++profileOrdersReqSeqRef.current;
+    setProfileCustomer(person);
+    setProfileSource(source);
+    setProfileEditing(false);
+    setProfileOrders([]);
+    setProfileOrdersTotal(0);
+    setProfileOrdersError('');
+    setProfileOrdersLoading(false);
+    if (source === 'proto-active') return;
+    setProfileOrdersLoading(true);
+    try {
+      const res = await fetch(`/api/admin-orders?customerId=${person.id}&limit=20`);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Could not load order history');
+      if (requestSeq !== profileOrdersReqSeqRef.current) return;
+      setProfileOrders(json.rows || []);
+      setProfileOrdersTotal(Number(json.total) || (json.rows || []).length);
+    } catch (err) {
+      if (requestSeq === profileOrdersReqSeqRef.current) setProfileOrdersError(err.message || 'Could not load order history');
+    } finally {
+      if (requestSeq === profileOrdersReqSeqRef.current) setProfileOrdersLoading(false);
+    }
+  };
+
+  const closeCustomerProfile = () => { profileOrdersReqSeqRef.current += 1; setProfileCustomer(null); setProfileOrders([]); setProfileOrdersTotal(0); setProfileOrdersError(''); setProfileOrdersLoading(false); setProfileEditing(false); setProfileSource('portal'); };
+
+  const SPEND_BANDS = ['R0 – R5,000', 'R5,000 – R10,000', 'R10,000 – R25,000', 'R25,000 – R50,000', 'R50,000+'];
+  const startEditProfile = () => {
+    setProfileForm({
+      name: profileCustomer.name || '',
+      email: profileCustomer.email || '',
+      phone: profileCustomer.phone || '',
+      business_name: profileCustomer.business_name || profileCustomer.name || '',
+      business_type: profileCustomer.business_type || '',
+      business_description: profileCustomer.business_description || '',
+      monthly_spend: profileCustomer.monthly_spend || '',
+      website: profileCustomer.website || '',
+      vat_number: profileCustomer.vat_number || '',
+      company_address: profileCustomer.company_address || '',
+      delivery_address: profileCustomer.delivery_address || '',
+      contact_name: profileCustomer.contact_name || '',
+      first_name: profileCustomer.first_name || '',
+      account_code: profileCustomer.account_code || profileCustomer.customer_code || '',
+      customer_code: profileCustomer.customer_code || '',
+    });
+    setProfileEditing(true);
+  };
+  const saveProfileEdit = async () => {
+    setSavingProfile(true);
+    try {
+      if (profileSource === 'proto-active') {
+        const row = await updateProtoActiveCustomer(profileCustomer.id, {
+          name: profileForm.business_name || profileForm.name,
+          email: profileForm.email,
+          contact_name: profileForm.contact_name,
+          first_name: profileForm.first_name,
+          account_code: profileForm.account_code,
+        });
+        setProfileCustomer(row);
+        setProfileEditing(false);
+        await loadCustomers();
+        showToast('Pre-registration contact updated');
+      } else {
+        const res = await updateCustomerAdmin(profileCustomer.id, profileForm);
+        setProfileCustomer(res.row);
+        setProfileEditing(false);
+        await loadCustomers();
+        if (res.welcomeEmail === 'sent') showToast('Code saved — confirmation email sent');
+        else if (res.welcomeEmail === 'failed') showToast('Saved, but the confirmation email failed to send', 'error');
+        else showToast('Customer profile updated');
+      }
+    } catch (err) {
+      showToast(err.message || 'Update failed', 'error');
+    } finally { setSavingProfile(false); }
+  };
+  const setPf = (key) => (e) => setProfileForm((f) => ({ ...f, [key]: e.target.value }));
+
+  const refreshPendingCount = async () => {
+    try {
+      const data = await fetchCustomersPage({ tab: 'requests', pageSize: 1, searchQuery: '' });
+      setPendingCount(data.total || 0);
+    } catch {}
+  };
+
+  const approveRequest = async (person) => {
+    const customerCode = String(approvalCodes[person.id] || '').trim().toUpperCase();
+    // A code is OPTIONAL at approval — approve now, allocate the code later. If
+    // a code IS typed it must be valid; assigning it sends the confirmation email.
+    if (customerCode && !/^[A-Z0-9]{6}$/.test(customerCode)) {
+      showToast('Code must be 6 letters or numbers — or leave it blank to allocate later', 'error');
+      return;
+    }
+    setSaving(person.id);
+    try {
+      const result = await approveCustomer(person.id, true, customerCode ? { customerCode } : {});
+      setApprovalCodes((prev) => {
+        const next = { ...prev };
+        delete next[person.id];
+        return next;
+      });
+      await refreshPendingCount();
+      await refreshDashboardStats();
+      // Switching the tab re-fires the customers effect, which loads the
+      // Approved list — a direct loadCustomers() here would read the OLD tab
+      // from this closure and fetch the requests list a second time.
+      setCustomerTab('regular');
+      setCustomerPage(1);
+      closeCustomerProfile();
+      const who = person.business_name || person.name || 'Customer';
+      if (result.welcomeEmail === 'sent') showToast(`${who} approved — confirmation email sent`);
+      else if (customerCode) showToast(`${who} approved with code ${customerCode}`);
+      else showToast(`${who} approved — allocate a code later to send the confirmation email`);
+    } catch (err) {
+      showToast(err.message || 'Approval failed', 'error');
+    } finally { setSaving(''); }
+  };
+
+  const removeCustomer = async (person, source = profileSource) => {
+    if (!window.confirm(`Delete ${person.name || person.email}? This cannot be undone.`)) return;
+    const savingKey = source === 'proto-active' ? `del-proto-${person.id}` : `del-${person.id}`;
+    setSaving(savingKey);
+    try {
+      if (source === 'proto-active') {
+        await deleteProtoActiveCustomer(person.id);
+      } else {
+        await deleteCustomer(person.id);
+      }
+      await loadCustomers();
+      closeCustomerProfile();
+      showToast('Customer removed');
+    } catch (err) {
+      if (err.code === 'has_orders') {
+        const who = person.business_name || person.name || person.email;
+        const n = err.orderCount || 0;
+        showToast(
+          `${who} has ${n === 1 ? 'an order' : `${n} orders`} on record, so the account can't be deleted. It stays listed with portal access off until you approve it again.`,
+          'error',
+        );
+      } else {
+        showToast(err.message || 'Delete failed', 'error');
+      }
+    } finally { setSaving(''); }
+  };
+
+  const deactivateCustomer = async (person) => {
+    if (!window.confirm(`Deactivate ${person.name || person.email}? They will lose portal access.`)) return;
+    setSaving(`deact-${person.id}`);
+    try {
+      await updateCustomerAdmin(person.id, { is_approved: false });
+      await loadCustomers();
+      closeCustomerProfile();
+      showToast('Customer deactivated');
+    } catch (err) {
+      showToast(err.message || 'Deactivate failed', 'error');
+    } finally { setSaving(''); }
+  };
+
+  const downloadOrderFile = async (order) => {
+    setSaving(`download-${order.id}`);
+    try {
+      const emailItems = buildEmailItemsFromOrder(order);
+      const autoNotes = deriveAutoNotesFromItems(emailItems).join('\n');
+      const { hasPrices, total, items: pdfItems } = resolveCustomerOrderPricing(emailItems);
+      const pdfBase64 = await generateOrderPdfBase64({
+        order,
+        items: pdfItems,
+        autoNotes,
+        userNotes: order.order_change_notes || '',
+        assignedTo: '',
+        total,
+        hasPrices,
+        checkboxes: true,
+      });
+      const blob = base64ToBlob(pdfBase64, 'application/pdf');
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `order-${order.order_number || order.id}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      showToast(err.message || 'Could not generate order PDF', 'error');
+    } finally {
+      setSaving('');
+    }
+  };
+
+  const deleteOrder = async (order) => {
+    const reason = window.prompt(`Move order ${order.order_number || order.id} to recoverable trash?\n\nEnter the reason (at least 8 characters):`);
+    if (reason === null) return;
+    if (reason.trim().length < 8) {
+      showToast('Provide a deletion reason of at least 8 characters — nothing changed', 'error');
+      return;
+    }
+    setSaving(`del-order-${order.id}`);
+    try {
+      await deleteOrderAdmin(order.id, reason);
+      setOrders((prev) => prev.filter((o) => o.id !== order.id));
+      // Keep the top stats bar in sync — drop the count immediately, then
+      // reconcile with the server in the background.
+      setStatsOrderTotal((n) => Math.max(0, n - 1));
+      void refreshDashboardStats();
+      showToast('Order moved to recoverable trash', 'success');
+    } catch (err) {
+      showToast(err.message || 'Could not move order to trash', 'error');
+    } finally { setSaving(''); }
+  };
+
+  const updateOrder = async (order, patch) => {
+    setSaving(order.id);
+    try {
+      const updated = await updateOrderAdmin(order.id, patch);
+      setOrders((prev) => prev.map((item) => item.id === order.id ? updated : item));
+      return updated;
+    } catch (err) {
+      showToast(err.message || 'Failed to update order', 'error');
+      throw err;
+    } finally { setSaving(''); }
+  };
+
+  const advanceOrderStatus = async (order, targetStatus) => {
+    if ((targetStatus === 'payment received' || targetStatus === 'order sent') && !victorCanSend) {
+      showToast(
+        targetStatus === 'payment received' ? PAYMENT_RECEIVED_FORBIDDEN : CUSTOMER_SEND_FORBIDDEN,
+        'error',
+      );
+      return;
+    }
+    setSaving(`advance-${order.id}`);
+    try {
+      const updated = await advanceOrderWorkflow(order.id, targetStatus, {
+        senderUserId: activeFulfillmentUser?.id,
+        senderName: activeFulfillmentUser?.name,
+      });
+      setOrders((prev) => prev.map((item) => item.id === order.id ? updated : item));
+    } catch (err) {
+      showToast(err.message || 'Could not update order status', 'error');
+    } finally { setSaving(''); }
+  };
+
+  const openFulfillment = (order) => {
+    const items = (order.original_items || order.items || []).map((item) => ({
+      ...item,
+      checked: false,
+      finalQty: item.qty,
+    }));
+    setFulfillmentOrder(order);
+    setFulfillmentItems(items);
+    setFulfillmentNotes(order.order_change_notes || '');
+    setEditingItemIdx(null);
+    setProductSwapSearch('');
+    setProductSwapResults([]);
+  };
+
+  const closeFulfillment = () => {
+    setFulfillmentOrder(null);
+    setFulfillmentItems([]);
+    setFulfillmentNotes('');
+    setEditingItemIdx(null);
+    setProductSwapSearch('');
+    setProductSwapResults([]);
+  };
+
+  const handleSwapSearchChange = (q) => {
+    setProductSwapSearch(q);
+    clearTimeout(swapSearchTimerRef.current);
+    if (!q.trim()) { setProductSwapResults([]); return; }
+    swapSearchTimerRef.current = setTimeout(async () => {
+      setProductSwapLoading(true);
+      try {
+        const data = await fetchAdminProductsPage({ page: 1, pageSize: 8, searchQuery: q });
+        setProductSwapResults(data.rows);
+      } finally { setProductSwapLoading(false); }
+    }, 350);
+  };
+
+  const swapFulfillmentItem = (idx, product) => {
+    setFulfillmentItems((prev) => prev.map((item, i) => i !== idx ? item : {
+      ...item,
+      productId: product.id,
+      code: product.code,
+      name: product.name,
+      image: product.image || '',
+      unitPrice: product.price,
+    }));
+    setEditingItemIdx(null);
+    setProductSwapSearch('');
+    setProductSwapResults([]);
+  };
+
+  const saveFulfillment = async () => {
+    if (!fulfillmentOrder) return;
+    setFulfillmentSaving(true);
+    try {
+      const finalItems = fulfillmentItems.map(({ checked, finalQty, ...rest }) => ({ ...rest, qty: finalQty }));
+      await updateOrderAdmin(fulfillmentOrder.id, {
+        final_items: finalItems,
+        order_change_notes: fulfillmentNotes,
+      });
+      await advanceOrderWorkflow(fulfillmentOrder.id, 'order sent', {
+        senderUserId: activeFulfillmentUser?.id,
+        senderName: activeFulfillmentUser?.name,
+      });
+      await loadOrders();
+      closeFulfillment();
+      showToast('Order saved and moved to Order Confirmation');
+    } catch (err) {
+      showToast(err.message || 'Failed to save fulfillment', 'error');
+    } finally { setFulfillmentSaving(false); }
+  };
+
+  const orderPages = Math.max(1, Math.ceil(orderTotal / ADMIN_PAGE_SIZE));
+
+  const customerPages = Math.max(1, Math.ceil(customerTotal / ADMIN_PAGE_SIZE));
+  // Compact view: first rows only, with an explicit Show all / Minimise
+  // toggle. Collapsing also returns to page 1 so the slice is never taken
+  // from the middle of a paginated set.
+  const visibleCustomerRows = customerListExpanded
+    ? customerRows
+    : customerRows.slice(0, COMPACT_CUSTOMER_ROWS);
+  const toggleCustomerList = () => {
+    setCustomerListExpanded((v) => {
+      if (v) setCustomerPage(1);
+      return !v;
+    });
+  };
+  const fulfillmentNoteSections = buildOrderNoteSections({ userNotes: fulfillmentNotes });
+
+  return (
+    <div className="adm-shell">
+      <a className="adm-skip-link" href="#admin-main">Skip to main content</a>
+      {/* Fixed top loading indicator — doesn't disturb layout */}
+      {(loadingProgress !== null || loading) && (
+        <div className="adm-top-progress" role="progressbar" aria-label="Loading admin data" aria-valuemin="0" aria-valuemax="100" aria-valuenow={loadingProgress ?? 60}>
+          <div className="adm-top-progress-fill" style={{ width: loadingProgress !== null ? `${loadingProgress}%` : '60%' }} />
+        </div>
+      )}
+      <header className="adm-header">
+        <div className="adm-header-inner">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <button onClick={() => setSidebarOpen((s) => !s)} className="adm-hamburger" aria-label="Toggle menu">
+              <Menu size={20} />
+            </button>
+            <div className="adm-brand">
+              <strong>PROTO <span style={{ color: '#dc2626' }}>ADMIN</span></strong>
+              <span className="adm-mobile-section-label">{activeSectionLabel}</span>
+            </div>
+          </div>
+          <div className="adm-header-actions">
+            <BridgeStatusDot />
+            <button type="button" onClick={goHome} className="adm-btn-ghost"><Home size={15} /><span className="adm-btn-text">Home</span></button>
+            <button onClick={() => void refreshCurrentSection()} className="adm-btn-ghost"><RefreshCw size={15} /><span className="adm-btn-text">Refresh</span></button>
+            <button onClick={onViewPortal} className="adm-btn-ghost"><ArrowLeftRight size={15} /><span className="adm-btn-text">Portal</span></button>
+            {onSignOut && (
+              <button type="button" onClick={onSignOut} className="adm-btn-ghost" title={customer?.email || 'Sign out'}>
+                <Lock size={15} /><span className="adm-btn-text">Sign out</span>
+              </button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <div className="adm-body">
+        <div className="adm-stats-bar">
+          <AdminStat label="Live Products" value={stats.products} />
+          <AdminStat label="Archived" value={stats.archived} />
+          <AdminStat label="Customers" value={stats.customers} />
+          <AdminStat label="Orders" value={stats.orders} />
+        </div>
+
+        <div className="adm-layout">
+          {sidebarOpen && <button type="button" className="adm-sidebar-backdrop" onClick={() => setSidebarOpen(false)} aria-label="Close navigation menu" />}
+          <aside className={`adm-sidebar${sidebarOpen ? ' adm-sidebar--open' : ''}`} aria-label="Admin navigation">
+            <GroupedSidebar
+          allowedSectionIds={allowedSectionIds}
+              activeSection={activeSection}
+              onSelectSection={(id) => {
+                if (id === 'team') {
+                  setFulfillmentSettingsOpen(true);
+                  setSidebarOpen(false);
+                  return;
+                }
+                setActiveSection(id);
+                setLoadingError('');
+                setSidebarOpen(false);
+                if (id === 'catalogue' || id === 'reorder') {
+                  window.scrollTo({ top: 0, behavior: 'instant' });
+                }
+              }}
+              pendingCustomerCount={pendingCount}
+              newOrdersCount={activeSection === 'orders' || newOrdersCount <= ordersBadgeSeen ? 0 : newOrdersCount}
+            />
+          </aside>
+
+          <main id="admin-main" className="adm-main" tabIndex="-1">
+            {loadingError && (
+              <div style={{ margin: '12px 0', padding: '10px 16px', background: '#fef2f2', borderRadius: 8, color: '#c40000', fontSize: 13, fontWeight: 600 }}>
+                Error: {loadingError}
+              </div>
+            )}
+
+            <SectionErrorBoundary name="catalogue" title="Product Manager crashed" resetKey={activeSection}>
+              <div style={{ display: activeSection === 'catalogue' ? 'block' : 'none' }}>
+              <ProductManagerEngine
+                taxonomyTree={taxonomyTree}
+                onShowToast={showToast}
+                onRefreshStats={refreshDashboardStats}
+                initialStatus="live"
+                statuses={['live']}
+                onEditProduct={(item) => openEditProduct(item)}
+                onEditCategory={setEditTaxonomyModal}
+                onAddCategory={() => setNewCategoryModal({ label: '' })}
+                onAddSubcategory={(parentId) => setNewSubModal({ parentId, label: '' })}
+                onDeleteSubcategory={(sub) => void openDeleteSubcategory(sub)}
+                onDeleteNode={(node) => void openDeleteSubcategory(node)}
+                onRefreshTaxonomy={reloadTaxonomy}
+                onCategoryReorder={handleCategoryReorder}
+                categoryProductCounts={categoryProductCounts}
+              />
+              </div>
+            </SectionErrorBoundary>
+
+            {activeSection === 'hermes' && (
+              <SectionErrorBoundary name="hermes" title="Hermes crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Loading Hermes…" />}>
+                  <HermesPanel onSelectSection={setActiveSection} />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
+
+            {activeSection === 'product-intelligence' && (
+              <SectionErrorBoundary name="product-intelligence" title="Product Intelligence crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Loading Product Intelligence…" />}>
+                  <ProductIntelligencePanel />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
+
+            {activeSection === 'buying' && (
+              <SectionErrorBoundary name="buying" title="Buying crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Loading Buying…" />}>
+                  <BuyingPanel onOpenProductIntelligence={() => setActiveSection('product-intelligence')} />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
+
+            {/* Archived products — own top-level tab, same engine scoped to the archive. */}
+            {activeSection === 'archive' && (
+              <SectionErrorBoundary name="archive" title="Archive crashed" resetKey={activeSection}>
+                <ProductManagerEngine
+                  taxonomyTree={taxonomyTree}
+                  onShowToast={showToast}
+                  onRefreshStats={refreshDashboardStats}
+                  initialStatus="archived"
+                  statuses={['archived', 'recycle']}
+                  showCategorySidebar={false}
+                  title="Archive"
+                  note="Archived products — set them live from here or fix codes/images before publishing."
+                  onEditProduct={(item) => openEditProduct(item)}
+                  onEditCategory={setEditTaxonomyModal}
+                  onAddCategory={() => setNewCategoryModal({ label: '' })}
+                  onAddSubcategory={(parentId) => setNewSubModal({ parentId, label: '' })}
+                  onDeleteSubcategory={(sub) => void openDeleteSubcategory(sub)}
+                  onDeleteNode={(node) => void openDeleteSubcategory(node)}
+                  onRefreshTaxonomy={reloadTaxonomy}
+                  onCategoryReorder={handleCategoryReorder}
+                  categoryProductCounts={categoryProductCounts}
+                />
+              </SectionErrorBoundary>
+            )}
+
+            {activeSection === 'analytics' && (
+              <SectionErrorBoundary name="analytics" title="Analytics crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Loading Analytics…" />}>
+                  <AnalyticsHub />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
+
+
+            {activeSection === 'backend-health' && (
+              <SectionErrorBoundary name="backend-health" title="Backend Health crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Checking backend health…" />}>
+                  <BackendHealthPanel />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
+
+            {activeSection === 'product-loader' && (
+              <SectionErrorBoundary name="product-loader" title="Product Loader crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Loading Product Loader…" />}>
+                <ProductLoaderPanel
+                  taxonomyTree={taxonomyTree}
+                  onShowToast={showToast}
+                  initialCode={productLoaderCode}
+                  onInitialCodeConsumed={() => setProductLoaderCode('')}
+                  publishedBy={customer?.email || ''}
+                />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
+
+            {activeSection === 'image-replace' && (
+              <SectionErrorBoundary name="image-replace" title="Image Replace crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Loading Image Replace…" />}>
+                  <BulkImageReplacePanel
+                    taxonomyTree={taxonomyTree}
+                    onShowToast={showToast}
+                  />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
+
+
+
+            {/* FEATURED */}
+            {/* SITE CONTENT — Featured, Specials and Banner Editor in one tab */}
+            {activeSection === 'site-content' && (
+              <SectionErrorBoundary name="site-content" title="Site Content crashed" resetKey={activeSection}>
+                <div className="adm-panel">
+                  <div className="adm-section-head">
+                    <div>
+                      <h2 className="adm-section-title">Site Content</h2>
+                      <p className="adm-section-note">Featured products, weekly specials and the homepage banner — everything shown on the trade portal homepage.</p>
+                    </div>
+                  </div>
+                  <div className="adm-customer-tabs" style={{ marginBottom: 16 }}>
+                    <button type="button" onClick={() => setSiteContentTab('featured')} className={`adm-tab${siteContentTab === 'featured' ? ' adm-tab--active' : ''}`}>Featured</button>
+                    <button type="button" onClick={() => setSiteContentTab('specials')} className={`adm-tab${siteContentTab === 'specials' ? ' adm-tab--active' : ''}`}>Specials</button>
+                    <button type="button" onClick={() => setSiteContentTab('banner')} className={`adm-tab${siteContentTab === 'banner' ? ' adm-tab--active' : ''}`}>Banner Editor</button>
+                  </div>
+                  {siteContentTab === 'featured' && (
+                    <Suspense fallback={<SectionSuspenseFallback label="Loading Featured…" />}>
+                      <FeaturedPanel taxonomyTree={taxonomyTree} onShowToast={showToast} />
+                    </Suspense>
+                  )}
+                  {siteContentTab === 'specials' && (
+                    <Suspense fallback={<SectionSuspenseFallback label="Loading Specials…" />}>
+                      <SpecialsPanel specials={specials} onSpecialsChange={setSpecials} onShowToast={showToast} />
+                    </Suspense>
+                  )}
+                  {siteContentTab === 'banner' && (
+                    <Suspense fallback={<SectionSuspenseFallback label="Loading Banner Editor…" />}>
+                      <BannerPanel onShowToast={showToast} />
+                    </Suspense>
+                  )}
+                </div>
+              </SectionErrorBoundary>
+            )}
+
+
+
+            {/* REORDER */}
+            {activeSection === 'reorder' && (
+              <SectionErrorBoundary name="reorder" title="Reorder Grid crashed" resetKey={activeSection}>
+                <Suspense fallback={<SectionSuspenseFallback label="Loading Reorder Grid…" />}>
+                <ReorderPanel
+                  ref={reorderPanelRef}
+                  isActive={activeSection === 'reorder'}
+                  taxonomyTree={taxonomyTree}
+                  categoryProductCounts={categoryProductCounts}
+                  onCategoryReorder={handleCategoryReorder}
+                  onEditSubcategory={setEditTaxonomyModal}
+                  onDeleteSubcategory={(sub) => void openDeleteSubcategory(sub)}
+                  onAddSubcategory={(parentId) => setNewSubModal({ parentId, label: '' })}
+                  onEditProduct={openContentEdit}
+                  onShowToast={showToast}
+                  onRefreshStats={refreshDashboardStats}
+                  onRefreshCategoryCounts={reloadTaxonomy}
+                />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
+
+            {/* CUSTOMERS */}
+            {activeSection === 'customers' && (
+              <SectionErrorBoundary name="customers" title="Customer Management crashed" resetKey={activeSection}>
+              <div className="adm-panel">
+                <div className="adm-section-head">
+                  <div>
+                    <h2 className="adm-section-title">Customer Management</h2>
+                    <p className="adm-section-note">
+                      Review trade applications, manage pre-registration contacts for CRM email, and approved trade portal accounts.
+                    </p>
+                  </div>
+                  <div className="adm-customer-actions">
+                    <input
+                      ref={customerCsvRef}
+                      type="file"
+                      accept=".csv,.xlsx,.xls,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
+                      hidden
+                      onChange={(e) => { void handleCustomerCsvUpload(e.target.files?.[0]); e.target.value = ''; }}
+                    />
+                    {/* Primary actions stay one-click; infrequent data/utility
+                        actions move into a tidy overflow menu. */}
+                    <ActionMenu
+                      items={[
+                        {
+                          label: importingCustomers ? 'Importing…' : 'Upload CSV',
+                          icon: importingCustomers ? <Loader2 size={14} className="spin" /> : <Upload size={14} />,
+                          disabled: importingCustomers,
+                          onClick: () => customerCsvRef.current?.click(),
+                        },
+                        {
+                          label: exportingCustomers ? 'Exporting…' : 'Export all customers',
+                          icon: exportingCustomers ? <Loader2 size={14} className="spin" /> : <Download size={14} />,
+                          disabled: exportingCustomers,
+                          onClick: () => void handleExportAllCustomers(),
+                        },
+                        {
+                          label: 'Delete all pre-registration',
+                          icon: <Trash2 size={14} />,
+                          danger: true,
+                          disabled: saving === 'del-all-proto',
+                          onClick: () => void handleDeleteAllProtoActive(),
+                        },
+                      ]}
+                    />
+                    <button type="button" className="adm-btn-ghost" onClick={() => setAddCustomerOpen(true)} title="Manually add a customer into a chosen section">
+                      <UserPlus size={14} /> Add customer
+                    </button>
+                    <button type="button" className="adm-btn-red" onClick={() => { setComposeTarget(null); setCustomerEmailOpen(true); }}>
+                      <Mail size={14} /> Send email
+                    </button>
+                  </div>
+                </div>
+
+                <div className="adm-customer-tabs">
+                  <button onClick={() => setCustomerTab('requests')} className={`adm-tab${customerTab === 'requests' ? ' adm-tab--active' : ''}`}>Trade Requests</button>
+                  <button onClick={() => setCustomerTab('proto-active')} className={`adm-tab${customerTab === 'proto-active' ? ' adm-tab--active' : ''}`}>Pre-registration</button>
+                  <button onClick={() => setCustomerTab('regular')} className={`adm-tab${customerTab === 'regular' ? ' adm-tab--active' : ''}`}>Approved</button>
+                  <label className="adm-search adm-search--inline"><Search size={14} /><input value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} placeholder="Search…" className="adm-search-input" /></label>
+                  {customerTab !== 'proto-active' && (
+                    <AdminSelect
+                      ariaLabel="Filter by business type"
+                      value={customerBusinessType}
+                      onChange={setCustomerBusinessType}
+                      options={[
+                        { value: '', label: 'All business types' },
+                        { value: '__unspecified__', label: 'Unspecified' },
+                        ...BUSINESS_TYPES.map((type) => ({ value: type, label: type })),
+                      ]}
+                    />
+                  )}
+                </div>
+
+                {customerTab === 'proto-active' && (
+                  <p className="adm-muted adm-tab-helper">
+                    Contacts for CRM email campaigns before trade portal approval.
+                  </p>
+                )}
+
+                {customerTab === 'proto-active' ? (
+                  <div className="adm-list">
+                    <div className="adm-list-head" style={{ gridTemplateColumns: '80px 1.2fr 110px 90px 1.1fr 100px 80px 100px 120px' }}>
+                      <span>Code</span><span>Business</span><span>Contact</span><span>First name</span><span>Email</span><span>12mo Sales</span><span>Invoices</span><span>Last purchase</span><span>Actions</span>
+                    </div>
+                    {customerRows.length === 0 && !loading && (
+                      <div className="adm-empty" style={{ padding: '24px 0' }}>
+                        No pre-registration contacts in this list yet.
+                      </div>
+                    )}
+                    {visibleCustomerRows.map((row) => (
+                      <div key={row.id || row.email} className="adm-list-row" style={{ gridTemplateColumns: '80px 1.2fr 110px 90px 1.1fr 100px 80px 100px 120px', alignItems: 'center' }}>
+                        <span data-label="Code" style={{ fontWeight: 800, fontFamily: 'monospace' }}>{row.account_code}</span>
+                        <span data-label="Business" style={{ fontWeight: 600, fontSize: 13 }}>{row.name}</span>
+                        <input
+                          type="text"
+                          className="adm-tiny-input"
+                          data-label="Contact"
+                          defaultValue={row.contact_name || ''}
+                          placeholder="Contact name"
+                          disabled={protoNameSaving === `${row.id}-contact_name`}
+                          onBlur={(e) => void saveProtoActiveName(row, 'contact_name', e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                          style={{ width: '100%', fontSize: 12, borderColor: row.contact_name ? undefined : '#fca5a5' }}
+                          aria-label={`Contact name for ${row.email}`}
+                        />
+                        <input
+                          type="text"
+                          className="adm-tiny-input"
+                          data-label="First name"
+                          defaultValue={row.first_name || ''}
+                          placeholder="First name"
+                          disabled={protoNameSaving === `${row.id}-first_name`}
+                          onBlur={(e) => void saveProtoActiveName(row, 'first_name', e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                          style={{ width: '100%', fontSize: 12, fontWeight: 600, borderColor: row.first_name ? undefined : '#fca5a5' }}
+                          aria-label={`First name for ${row.email}`}
+                        />
+                        <span data-label="Email" style={{ fontSize: 12 }}>{row.email}</span>
+                        <span data-label="12mo Sales" style={{ fontSize: 12 }}>R{Number(row.sales_last_12_months || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}</span>
+                        <span data-label="Invoices" style={{ fontSize: 12 }}>{row.invoice_count ?? '—'}</span>
+                        <span data-label="Last purchase" style={{ fontSize: 11, color: '#6b7280' }}>{row.last_purchase_date ? new Date(row.last_purchase_date).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</span>
+                        <div data-cell="actions" style={{ display: 'flex', gap: 5 }}>
+                          <button type="button" className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }} onClick={() => openCustomerProfile(row, 'proto-active')}>Edit</button>
+                          <button type="button" className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 7px', color: '#c40000' }} disabled={saving === `del-proto-${row.id}`} onClick={() => void removeProtoActiveCustomer(row)}>
+                            <X size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : customerTab === 'requests' ? (
+                  <div className="adm-list">
+                    <div className="adm-list-head" style={{ gridTemplateColumns: '1.4fr 1fr 0.9fr 1.3fr 0.8fr 90px 200px' }}>
+                      <span>Business Name</span><span>Location</span><span>Date Applied</span><span>Email / Phone</span><span>Whatsapp</span><span>Code</span><span>Actions</span>
+                    </div>
+                    {customerRows.length === 0 && !loading && (
+                      <div className="adm-empty" style={{ padding: '24px 0' }}>No pending trade requests.</div>
+                    )}
+                    {visibleCustomerRows.map((person) => (
+                      <div key={person.id} className="adm-list-row" style={{ gridTemplateColumns: '1.4fr 1fr 0.9fr 1.3fr 0.8fr 90px 200px', alignItems: 'center' }}>
+                        <div data-label="Business">
+                          <div style={{ fontWeight: 700, fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            {person.business_name || person.name || 'Unknown'}
+                            {person.accept_whatsapp === true && (
+                              <Check size={14} color="#15803d" strokeWidth={3} aria-label="WhatsApp opted in" />
+                            )}
+                            <TenThousandClubBadge customer={person} />
+                            <LastEmailBadge customer={person} />
+                          </div>
+                          <div className="adm-muted" style={{ fontSize: 11 }}>{person.name}{person.business_type ? ` · ${person.business_type}` : ''}</div>
+                        </div>
+                        <div data-label="Location" style={{ fontSize: 12 }}>{[person.city, person.province, person.country].filter(Boolean).join(', ') || '—'}</div>
+                        <div data-label="Applied" style={{ fontSize: 11, color: '#6b7280' }}>{new Date(person.created_at).toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                        <div data-label="Contact">
+                          <div style={{ fontSize: 12 }}>{person.email}</div>
+                          <div className="adm-muted" style={{ fontSize: 11 }}>{person.phone || '—'}</div>
+                        </div>
+                        <div data-label="WhatsApp"><WhatsappOptIn value={person.accept_whatsapp} /></div>
+                        <div data-label="Code">
+                          <input
+                            type="text"
+                            className="adm-tiny-input"
+                            placeholder="Code (opt.)"
+                            maxLength={6}
+                            value={approvalCodes[person.id] || ''}
+                            onChange={(e) => setApprovalCodes((prev) => ({
+                              ...prev,
+                              [person.id]: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6),
+                            }))}
+                            title="Optional. A code sends the confirmation email now; leave blank to allocate later."
+                            style={{ width: '84px', fontFamily: 'monospace', fontWeight: 700 }}
+                            aria-label={`Customer code for ${person.email}`}
+                          />
+                        </div>
+                        <div data-cell="actions" style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                          <button onClick={() => void openCustomerProfile(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }}>View details</button>
+                          <button
+                            onClick={() => void approveRequest(person)}
+                            className="adm-btn-green adm-btn-sm"
+                            disabled={saving === person.id
+                              || (!!approvalCodes[person.id] && !/^[A-Z0-9]{6}$/.test(approvalCodes[person.id]))}
+                          >
+                            {saving === person.id ? '…' : <><Check size={12} /> Approve</>}
+                          </button>
+                          <button onClick={() => void removeCustomer(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 7px', color: '#c40000' }} disabled={saving === `del-${person.id}`}>
+                            <X size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="adm-list">
+                    <div className="adm-list-head" style={{ gridTemplateColumns: '80px 1.1fr 1.1fr 1fr 80px 70px 90px' }}>
+                      <span>Code</span><span>Name</span><span>Email</span><span>Phone</span><span>WhatsApp</span><span>Orders</span><span></span>
+                    </div>
+                    {customerRows.length === 0 && !loading && (
+                      <div className="adm-empty" style={{ padding: '24px 0' }}>No approved customers yet.</div>
+                    )}
+                    {visibleCustomerRows.map((person) => (
+                      <div key={person.id} className="adm-list-row" style={{ gridTemplateColumns: '80px 1.1fr 1.1fr 1fr 80px 70px 90px' }}>
+                        <span data-label="Code" style={{ fontWeight: 800, fontFamily: 'monospace', fontSize: 12 }}>{person.customer_code || '—'}</span>
+                        <div data-label="Name">
+                          <span style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                            {person.name || person.business_name || 'Unnamed'}
+                            {person.accept_whatsapp === true && (
+                              <Check size={14} color="#15803d" strokeWidth={3} aria-label="WhatsApp opted in" />
+                            )}
+                            <TenThousandClubBadge customer={person} />
+                            <LastEmailBadge customer={person} />
+                          </span>
+                          {(person.first_name || person.contact_name) && (
+                            <div className="adm-muted" style={{ fontSize: 11 }}>
+                              {[person.first_name, person.contact_name && person.contact_name !== person.name ? person.contact_name : null].filter(Boolean).join(' · ')}
+                            </div>
+                          )}
+                        </div>
+                        <span data-label="Email" style={{ fontSize: 13 }}>{person.email}</span>
+                        <span data-label="Phone" style={{ fontSize: 13 }}>{person.phone || '—'}</span>
+                        <span data-label="WhatsApp"><WhatsappOptIn value={person.accept_whatsapp} /></span>
+                        <span data-label="Orders">{person.orderCount}</span>
+                        <div data-cell="actions" style={{ display: 'flex', gap: 5 }}>
+                          <button onClick={() => void openCustomerProfile(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }}>View details</button>
+                          <button onClick={() => void removeCustomer(person)} className="adm-btn-ghost adm-btn-sm" disabled={saving === `del-${person.id}`} style={{ color: '#c40000', padding: '4px 8px' }}>
+                            {saving === `del-${person.id}` ? '…' : <X size={14} />}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {customerTotal > COMPACT_CUSTOMER_ROWS && (
+                  <div style={{ display: 'flex', justifyContent: 'center', padding: '10px 0 2px' }}>
+                    <button
+                      type="button"
+                      className="adm-btn-ghost"
+                      onClick={toggleCustomerList}
+                      style={{ fontWeight: 700, fontSize: 13 }}
+                    >
+                      {customerListExpanded
+                        ? 'Minimise list'
+                        : `Show all ${customerTotal} ${customerTab === 'requests' ? 'trade requests' : 'customers'}`}
+                    </button>
+                  </div>
+                )}
+                {customerListExpanded && (
+                  <Pager page={customerPage} totalPages={customerPages} onChange={setCustomerPage} />
+                )}
+              </div>
+              </SectionErrorBoundary>
+            )}
+
+            {/* PRICING */}
+            {activeSection === 'pricing' && (
+              <SectionErrorBoundary name="pricing" title="Pricing crashed" resetKey={activeSection}>
+                <Suspense fallback={<SectionSuspenseFallback label="Loading Pricing…" />}>
+                  <PricingPanel
+                    taxonomyTree={taxonomyTree}
+                    specials={specials}
+                    onSpecialsChange={setSpecials}
+                    onShowToast={showToast}
+                  />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
+
+            {/* ORDERS */}
+            {activeSection === 'orders' && (
+              <SectionErrorBoundary name="orders" title="Order Requests crashed" resetKey={activeSection}>
+              <div className="adm-panel">
+                <div className="adm-section-head">
+                  <div>
+                    <h2 className="adm-section-title">Order Requests</h2>
+                    <p className="adm-section-note">
+                      Paginated order list with server-side search and tab filters. Click a row to expand details.
+                    </p>
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <label className="adm-search"><Search size={15} /><input value={orderSearch} onChange={(e) => setOrderSearch(e.target.value)} placeholder="Search orders" className="adm-search-input" /></label>
+                    <button
+                      type="button"
+                      className={`adm-btn-ghost${orderWorkspaceOpen ? ' adm-tab--active' : ''}`}
+                      aria-expanded={orderWorkspaceOpen}
+                      onClick={() => setOrderWorkspaceOpen((v) => !v)}
+                      title="Open the order-building workspace (drafts, customer context, reminders)"
+                    >
+                      <ClipboardList size={15} />
+                      <span className="adm-btn-text">Order Workspace</span>
+                      {orderWorkspaceOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                    </button>
+                  </div>
+                </div>
+
+                {(
+                <>
+                <div className="adm-order-tabs">
+                  {ORDER_TAB_DEFS.map(({ key, label, overview }) => {
+                    const count = orderTabCounts?.[key] ?? (key === 'all'
+                      ? orderTabCounts?.all ?? orderTotal
+                      : 0);
+                    const isActive = orderTab === key;
+                    return (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => { setOrderTab(key); setOrderPage(1); }}
+                        className={[
+                          'adm-order-tab',
+                          isActive ? 'adm-order-tab--active' : '',
+                          overview ? 'adm-order-tab--overview' : '',
+                          isActive && overview ? 'adm-order-tab--overview-active' : '',
+                        ].filter(Boolean).join(' ')}
+                      >
+                        {label}
+                        {count > 0 && (
+                          <span className={[
+                            'adm-order-tab-count',
+                            overview ? 'adm-order-tab-count--muted' : '',
+                            isActive && !overview ? 'adm-order-tab-count--on-dark' : '',
+                          ].filter(Boolean).join(' ')}>
+                            {count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {orderTab === 'all' && (
+                  <p className="adm-muted adm-tab-helper">
+                    Overview only — new orders always start in <strong>New</strong>. Use the workflow tabs above for day-to-day work.
+                  </p>
+                )}
+                {orderTab === 'paid' && (
+                  <p className="adm-muted" style={{ fontSize: 12, margin: '0 0 12px' }}>
+                    Payment tab includes sent confirmations awaiting payment.
+                  </p>
+                )}
+                <div className="adm-list">
+                  <div className="adm-list-head" style={{ gridTemplateColumns: orderListGridCols }}>
+                    <span>Order</span><span>Customer</span><span>Date & Time</span><span>Amount</span><span>{orderTab === 'sent' ? 'Order Confirmation' : orderTab === 'paid' ? 'Payment' : 'Status'}</span><span>Actions</span><span></span>
+                  </div>
+                  {orderRows.map((order) => {
+                    const isExpanded = expandedOrderId === order.id;
+                    const dt = new Date(order.created_at);
+                    const dateStr = dt.toLocaleDateString('en-ZA', { day: 'numeric', month: 'short', year: 'numeric' });
+                    const timeStr = dt.toLocaleTimeString('en-ZA', { hour: '2-digit', minute: '2-digit' });
+                    const isPreSale = normalizeOrderStatus(order.status) === 'order sent';
+                    return (
+                      <div key={order.id}>
+                        {order.__pinned && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px', background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '8px 8px 0 0', color: '#78350f', fontSize: 12, fontWeight: 600 }}>
+                            Picking started, so this order advanced out of the {'\u201C'}{ORDER_TAB_LABELS[orderTab] || orderTab}{'\u201D'} tab.
+                            It stays here while open {'\u2014'} find it under its new status tab afterwards.
+                          </div>
+                        )}
+                        <div
+                          className={`adm-list-row adm-order-row${focusOrderId === order.id ? ' adm-order-row--focus' : ''}`}
+                          style={{ gridTemplateColumns: orderListGridCols, cursor: 'pointer' }}
+                          data-order-id={order.id}
+                          onClick={() => setExpandedOrderId(isExpanded ? null : order.id)}
+                        >
+                          <div data-label="Order">
+                            <div style={{ fontWeight: 800, fontSize: 13 }}>{displayOrderNumber(order)}</div>
+                          </div>
+                          <div data-label="Customer">
+                            <div style={{ fontWeight: 600, fontSize: 13 }}>{order.customers?.name || 'Unknown'}</div>
+                            <div className="adm-muted" style={{ fontSize: 11 }}>{order.customers?.email || ''}</div>
+                          </div>
+                          <div data-label="Date">
+                            <div style={{ fontSize: 13, fontWeight: 600 }}>{dateStr}</div>
+                            <div className="adm-muted" style={{ fontSize: 11 }}>{timeStr}</div>
+                          </div>
+                          <div data-label="Amount">
+                            <div style={{ fontSize: 13, fontWeight: 700 }}>{formatRandAmount(orderAmountExVat(order))}</div>
+                            <div className="adm-muted" style={{ fontSize: 11 }}>ex VAT</div>
+                            {(() => {
+                              const promo = orderPromo(order);
+                              if (!promo) return null;
+                              return (
+                                <div style={{ fontSize: 11, fontWeight: 700, color: '#15803d', marginTop: 2 }}>
+                                  {promo.code}{promo.discountPct != null ? ` −${promo.discountPct}%` : ''}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                          <div data-label="Status" onClick={(e) => e.stopPropagation()} className="adm-presale-col">
+                            {orderTab === 'sent' && isPreSale ? (
+                              renderOrderConfirmationActions(order)
+                            ) : orderTab === 'paid' ? (
+                              renderPaymentActions(order) || <OrderWorkflowBadge order={order} />
+                            ) : (
+                              <OrderWorkflowBadge order={order} />
+                            )}
+                          </div>
+                          <div data-cell="actions" style={{ display: 'flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                            <button onClick={() => window.open(`/fulfillment?id=${order.id}`, '_blank')} className="adm-icon-btn" title="Fulfil order (opens in new tab)" style={{ color: '#15803d' }}><ClipboardList size={14} /></button>
+                            <button onClick={() => void downloadOrderFile(order)} disabled={saving === `download-${order.id}`} className="adm-icon-btn" title="Download order PDF">{saving === `download-${order.id}` ? <Loader2 size={14} className="spin" /> : <FileDown size={14} />}</button>
+                            {orderTrashEnabled && (
+                              <button onClick={() => void deleteOrder(order)} className="adm-icon-btn" style={{ color: '#c40000' }} disabled={saving === `del-order-${order.id}`} title="Move order to recoverable trash">
+                                {saving === `del-order-${order.id}` ? '…' : <Trash2 size={14} />}
+                              </button>
+                            )}
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <span className="adm-muted" style={{ fontSize: 18, lineHeight: 1 }}>{isExpanded ? '↑' : '↓'}</span>
+                          </div>
+                        </div>
+                        {isExpanded && (
+                          <div style={{ background: '#f8fafc', borderTop: '1px solid #f1f5f9', padding: '14px 16px' }}>
+                            <div style={{ marginBottom: 14, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                              <OrderWorkflowBadge order={order} />
+                              {getWorkflowAdvanceOptions(order.status).map(({ label, target }) => (
+                                <button
+                                  key={target}
+                                  type="button"
+                                  className="adm-btn-ghost"
+                                  style={{ fontSize: 12, padding: '4px 10px' }}
+                                  disabled={saving === `advance-${order.id}`}
+                                  onClick={() => void advanceOrderStatus(order, target)}
+                                >
+                                  {saving === `advance-${order.id}` ? 'Updating…' : label}
+                                </button>
+                              ))}
+                            </div>
+                            <OrderEmailNotify orderId={order.id} orderStatus={normalizeOrderStatus(order.status)} />
+                            {(() => {
+                              const promo = orderPromo(order);
+                              if (!promo) return null;
+                              const gross = orderAmountExVat(order);
+                              const net = promo.discountAmount != null ? Math.max(0, gross - promo.discountAmount) : null;
+                              return (
+                                <div style={{ margin: '0 0 14px', padding: '10px 14px', background: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 10, display: 'flex', flexWrap: 'wrap', gap: 16, alignItems: 'center' }}>
+                                  <span style={{ fontSize: 12, fontWeight: 800, color: '#15803d', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Promo applied</span>
+                                  <span style={{ fontSize: 13, fontWeight: 700, color: '#166534' }}>
+                                    {promo.code}{promo.discountPct != null ? ` · ${promo.discountPct}% off` : ''}
+                                  </span>
+                                  {promo.discountAmount != null && (
+                                    <span style={{ fontSize: 13, color: '#166534' }}>Discount −{formatRandAmount(promo.discountAmount)}</span>
+                                  )}
+                                  {net != null && (
+                                    <span style={{ fontSize: 13, color: '#166534' }}>Est. net {formatRandAmount(net)} <span style={{ color: '#4d7c5a' }}>ex VAT</span></span>
+                                  )}
+                                </div>
+                              );
+                            })()}
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
+                              <OrderItemsList label="Order placed" items={order.original_items || order.items || []} />
+                              <OrderItemsList label="Order final" items={order.final_items || order.items || []} />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {loading && orders.length === 0 && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 16px', color: '#6b7280', fontSize: 13 }}>
+                      <Loader2 size={16} className="spin" /> Loading orders…
+                    </div>
+                  )}
+                  {!loading && orderRows.length === 0 && (
+                    <div style={{ padding: '20px 16px', color: '#6b7280', fontSize: 13 }}>
+                      {orderSearch ? 'No orders match your search.' : orderTab === 'all' ? 'No orders yet.' : `No orders in this tab.`}
+                    </div>
+                  )}
+                </div>
+                {orderPages > 1 && (
+                  <Pager page={orderPage} totalPages={orderPages} onChange={setOrderPage} />
+                )}
+                </>
+                )}
+              </div>
+              {orderWorkspaceOpen && (
+                <Suspense fallback={<LazySectionFallback label="Loading Order Workspace…" />}>
+                  <OrdersWorkspacePanel
+                    initialWorkspaceId={initialOrderWorkspaceId}
+                    onShowToast={showToast}
+                  />
+                </Suspense>
+              )}
+              </SectionErrorBoundary>
+            )}
+
+            {/* EMAIL CRM — contacts + composer + campaign analytics in one place */}
+            {activeSection === 'comms' && (
+              <SectionErrorBoundary name="comms" title="Email CRM crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Loading Email CRM…" />}>
+                  <CommsPanel
+                    onCompose={(target) => { setComposeTarget(target || null); setCustomerEmailOpen(true); }}
+                    onShowToast={showToast}
+                  />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
+
+
+            {/* BANNER EDITOR + POPUP SPECIALS — merged into the Site Content tab */}
+
+
+          </main>
+        </div>
+      </div>
+
+      {/* Customer profile drawer */}
       {profileCustomer && (
         <div className="adm-drawer-backdrop" onClick={closeCustomerProfile}>
           <div className="adm-drawer" onClick={(e) => e.stopPropagation()}>
