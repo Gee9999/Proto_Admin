@@ -231,7 +231,7 @@ export async function fetchRecipientsByEmail(sb, emails = []) {
   return [...seen.values()];
 }
 
-export async function fetchCustomerAudience(sb, audience, { businessTypes = [] } = {}) {
+export async function fetchCustomerAudience(sb, audience, { businessTypes = [], importBatch = '' } = {}) {
   const seen = new Map();
   const types = [...new Set((businessTypes || []).map((t) => String(t || '').trim()).filter(Boolean))];
   const matchesBusinessType = (row) => {
@@ -267,7 +267,14 @@ export async function fetchCustomerAudience(sb, audience, { businessTypes = [] }
   }
 
   if (audience === 'proto-active' || audience === 'all-portal') {
-    const protoRows = await fetchAllFromTable(sb, 'proto_active_customers');
+    // Narrow to one CSV upload when asked. proto_active_customers carries no
+    // business_type, so the batch is the only way to segment this audience.
+    const batch = String(importBatch || '').trim();
+    const protoRows = await fetchAllFromTable(
+      sb,
+      'proto_active_customers',
+      batch ? (q) => q.eq('import_batch', batch) : undefined,
+    );
     protoRows.forEach((r) => {
       if (!matchesBusinessType(r)) return;
       upsertRecipient(seen, {

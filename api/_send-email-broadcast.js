@@ -17,7 +17,7 @@ export function getPortalDbClient() {
  * Resolve the audience, send the personalized broadcast, and log the
  * campaign. Shared by the live send endpoint and the scheduled-send cron.
  */
-export async function runEmailBroadcast({ audience, subject, introText = '', htmlBlock = '', businessTypes = [], recipients: recipientEmails = null }) {
+export async function runEmailBroadcast({ audience, subject, introText = '', htmlBlock = '', businessTypes = [], importBatch = '', recipients: recipientEmails = null }) {
   const sb = getPortalDbClient();
   // Explicit recipient list ("Specific people") bypasses audience resolution.
   const useSelected = Array.isArray(recipientEmails) && recipientEmails.length > 0;
@@ -25,6 +25,7 @@ export async function runEmailBroadcast({ audience, subject, introText = '', htm
     ? await fetchRecipientsByEmail(sb, recipientEmails.map((r) => (typeof r === 'string' ? r : r?.email)))
     : await fetchCustomerAudience(sb, audience, {
       businessTypes: Array.isArray(businessTypes) ? businessTypes : [],
+      importBatch,
     });
   if (!recipients.length) {
     return {

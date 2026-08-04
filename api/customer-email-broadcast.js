@@ -26,6 +26,7 @@ export default async function handler(req, res) {
     testEmail,
     businessTypes,
     recipients,
+    importBatch,
   } = req.body || {};
 
   // "Specific people" send — an explicit email list instead of an audience.
@@ -72,6 +73,7 @@ export default async function handler(req, res) {
       introText: intro,
       htmlBlock: html,
       businessTypes: Array.isArray(businessTypes) ? businessTypes : [],
+      importBatch: String(importBatch || '').trim(),
       recipients: isSelected ? selectedEmails : null,
     });
     if (outcome.error && !outcome.total) {
