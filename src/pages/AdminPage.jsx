@@ -91,6 +91,7 @@ import { displayOrderNumber, buildFulfillmentUrl } from '../lib/orderNumber';
 import { fetchPresaleInvoices, uploadPresaleInvoice } from '../lib/presaleInvoice';
 import { fetchConfirmationSent, markConfirmationSent, fetchPaymentRecords, uploadPop, setPaymentStatus } from '../lib/orderPayment';
 import { deleteOrderAdmin, fetchOrdersPage, updateOrderAdmin, advanceOrderWorkflow } from '../lib/orders';
+import { fetchTeamWhatsappSent, sendTeamWhatsapp as sendTeamWhatsappApi } from '../lib/orderTeamWhatsapp';
 import { orderMatchesTab, normalizeOrderStatus, getWorkflowAdvanceOptions, isOrderConfirmationSent } from '../lib/orderStatus';
 import OrderWorkflowBadge from '../components/OrderWorkflowBadge';
 import { fetchFulfillmentUsers, loadActiveUserId } from '../lib/fulfillmentUsers';
@@ -614,6 +615,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   const [presaleInvoices, setPresaleInvoices] = useState({});
   const [presaleUploading, setPresaleUploading] = useState('');
   const [confirmationSent, setConfirmationSent] = useState({});
+  // "Team notified on WhatsApp" per order. Server-held (site-config), so the
+  // tag is the same for every admin and survives a refresh.
+  const [teamWaSent, setTeamWaSent] = useState({});
   const [paymentRecords, setPaymentRecords] = useState({});
   const [popUploading, setPopUploading] = useState('');
 
@@ -921,6 +925,49 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     }
     return ids;
   }, [confirmationSent, orders]);
+
+  // Load the WhatsApp-sent tags for whatever orders are on screen.
+  //
+  // Keyed on the joined id string, not the orders array: the list refreshes on
+  // a 30s timer and on focus, and each refresh hands back a new array identity
+  // even when nothing changed. Depending on `orders` would refetch these tags
+  // every 30 seconds for no reason — the same trap the confirmationSentIds
+  // comment below warns about.
+  const orderIdsKey = useMemo(
+    () => orders.map((o) => o.id).filter(Boolean).join(','),
+    [orders],
+  );
+  useEffect(() => {
+    const ids = orderIdsKey ? orderIdsKey.split(',') : [];
+    if (!ids.length) { setTeamWaSent({}); return undefined; }
+    let alive = true;
+    void (async () => {
+      try {
+        const sent = await fetchTeamWhatsappSent(ids);
+        if (alive) setTeamWaSent(sent);
+      } catch { /* the tag is informational — never block the list on it */ }
+    })();
+    return () => { alive = false; };
+  }, [orderIdsKey]);
+
+  const sendTeamWhatsapp = async (order) => {
+    setSaving(`wa-${order.id}`);
+    try {
+      const json = await sendTeamWhatsappApi(order.id);
+      if (json.record) setTeamWaSent((prev) => ({ ...prev, [order.id]: json.record }));
+      const failed = json.total - json.sentCount;
+      showToast(
+        failed
+          ? `Sent to ${json.sentCount} of ${json.total} — ${failed} failed`
+          : `Sent to all ${json.sentCount} team members`,
+        failed ? 'error' : 'success',
+      );
+    } catch (err) {
+      showToast(err.message || 'WhatsApp broadcast failed', 'error');
+    } finally {
+      setSaving('');
+    }
+  };
 
   const renderOrderConfirmationActions = (order) => {
     if (normalizeOrderStatus(order.status) !== 'order sent') return null;
@@ -2725,8 +2772,27 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                             ) : (
                               <OrderWorkflowBadge order={order} />
                             )}
+                            {teamWaSent[order.id]?.sentAt && (
+                              <span
+                                className="adm-wa-sent-tag"
+                                title={`WhatsApp sent to the team${teamWaSent[order.id].by ? ` by ${teamWaSent[order.id].by}` : ''}`}
+                              >
+                                Sent over
+                              </span>
+                            )}
                           </div>
                           <div data-cell="actions" style={{ display: 'flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                            {orderTab === 'handed' && (
+                              <button
+                                onClick={() => void sendTeamWhatsapp(order)}
+                                disabled={saving === `wa-${order.id}`}
+                                className="adm-icon-btn"
+                                style={{ color: '#15803d' }}
+                                title={teamWaSent[order.id]?.sentAt ? 'Send the team WhatsApp again' : 'WhatsApp this order to the team'}
+                              >
+                                {saving === `wa-${order.id}` ? <Loader2 size={14} className="spin" /> : <MessageCircle size={14} />}
+                              </button>
+                            )}
                             <button onClick={() => window.open(`/fulfillment?id=${order.id}`, '_blank')} className="adm-icon-btn" title="Fulfil order (opens in new tab)" style={{ color: '#15803d' }}><ClipboardList size={14} /></button>
                             <button onClick={() => void downloadOrderFile(order)} disabled={saving === `download-${order.id}`} className="adm-icon-btn" title="Download order PDF">{saving === `download-${order.id}` ? <Loader2 size={14} className="spin" /> : <FileDown size={14} />}</button>
                             {orderTrashEnabled && (

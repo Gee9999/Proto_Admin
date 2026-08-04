@@ -9702,3 +9702,20 @@ html, body { max-width: 100%; overflow-x: hidden; }
   .adm-list-row > [data-label="Select"] { justify-content: flex-start; }
   .adm-list-row input[type="checkbox"] { width: 20px; height: 20px; }
 }
+
+/* "Sent over" — the fulfilment team has been WhatsApped about this order. */
+.adm-wa-sent-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid #bbf7d0;
+  background: #f0fdf4;
+  color: #15803d;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
