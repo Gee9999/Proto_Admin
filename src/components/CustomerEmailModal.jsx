@@ -110,6 +110,7 @@ export default function CustomerEmailModal({
   // the only way to segment that audience.
   const [importBatch, setImportBatch] = useState('');
   const [batches, setBatches] = useState([]);
+  const [batchError, setBatchError] = useState('');
   const [businessTypes, setBusinessTypes] = useState([]);
   const [sending, setSending] = useState(false);
   const [testSending, setTestSending] = useState(false);
@@ -225,8 +226,15 @@ export default function CustomerEmailModal({
     void (async () => {
       try {
         const { batches: list } = await fetchProtoActiveCustomersPage({ page: 1, pageSize: 1 });
-        if (alive) setBatches(list || []);
-      } catch { /* the group filter is optional — never block the composer */ }
+        if (!alive) return;
+        setBatches(list || []);
+        setBatchError('');
+      } catch (err) {
+        // Swallowing this meant the groups silently never appeared, with
+        // nothing on screen to say why. The endpoint is owner-only, so a
+        // non-owner admin sees an empty list and no explanation.
+        if (alive) setBatchError(err?.message || 'Upload groups could not be loaded');
+      }
     })();
     return () => { alive = false; };
   }, [open]);
@@ -434,7 +442,11 @@ export default function CustomerEmailModal({
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
-            <span className="adm-email-field__hint">{selectedAudience.hint}</span>
+            <span className="adm-email-field__hint">
+              {selectedAudience.hint}
+              {batchError ? ` — upload groups unavailable: ${batchError}` : ''}
+              {!batchError && !batches.length ? ' — no upload groups found yet' : ''}
+            </span>
           </label>
 
           {audience === 'selected' && (
