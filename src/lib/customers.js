@@ -8,6 +8,7 @@ export async function fetchCustomersPage({ page = 1, pageSize = 50, tab = 'regul
   return {
     rows: json.rows || [],
     total: json.total || 0,
+    batches: json.batches || [],
     page: json.page || page,
     pageSize: json.pageSize || pageSize,
   };
@@ -45,9 +46,10 @@ export async function approveCustomer(id, approved = true, { customerCode } = {}
   return json;
 }
 
-export async function fetchProtoActiveCustomersPage({ page = 1, pageSize = 50, searchQuery = '' } = {}) {
+export async function fetchProtoActiveCustomersPage({ page = 1, pageSize = 50, searchQuery = '', batch = '' } = {}) {
   const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
   if (searchQuery) params.set('search', searchQuery);
+  if (batch) params.set('batch', batch);
   const res = await fetch(`/api/proto-active-customers?${params}`);
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || 'Failed to fetch proto active customers');
@@ -94,11 +96,11 @@ export async function deleteAllProtoActiveCustomers() {
 }
 
 /** Import CSV rows (Account, CompanyName, ContactName, EmailAddress, TotalSpend) into pre-registration. */
-export async function importProtoActiveCustomers(rows) {
+export async function importProtoActiveCustomers(rows, batchLabel = '') {
   const res = await fetch('/api/proto-active-customers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'import', rows }),
+    body: JSON.stringify({ action: 'import', rows, batchLabel }),
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || 'Customer import failed');

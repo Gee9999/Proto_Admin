@@ -33,9 +33,17 @@ export default async function handler(req, res) {
   if (!(await requireOwner(req, res))) return;
 
   if (req.method === 'POST') {
-    const { action, rows } = req.body || {};
+    const { action, rows, batchLabel } = req.body || {};
     if (action !== 'import') return res.status(400).json({ error: 'action must be import' });
     if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'rows[] required' });
+
+    // Every upload is stamped as a group so it can be found and emailed as a
+    // unit afterwards. created_at alone could not do this: an upsert on an
+    // existing email refreshes the row without moving created_at, so a
+    // re-uploaded contact would stay filed under its first import.
+    const batchAt = new Date();
+    const batch = String(batchLabel || '').trim()
+      || `${batchAt.toISOString().slice(0, 16).replace('T', ' ')} import`;
 
     const seen = new Set();
     const cleaned = [];
@@ -47,7 +55,7 @@ export default async function handler(req, res) {
         continue;
       }
       seen.add(row.email);
-      cleaned.push(row);
+      cleaned.push({ ...row, import_batch: batch, import_batch_at: batchAt.toISOString() });
     }
     if (!cleaned.length) return res.status(400).json({ error: 'No valid rows (need EmailAddress on each row)' });
 
@@ -62,7 +70,7 @@ export default async function handler(req, res) {
         if (error) throw error;
         imported += chunk.length;
       }
-      return res.status(200).json({ ok: true, imported, skipped });
+      return res.status(200).json({ ok: true, imported, skipped, batch });
     } catch (err) {
       console.error('proto-active-customers POST import:', err?.message || err);
       return res.status(500).json({ error: err.message || 'Import failed' });
@@ -141,6 +149,7 @@ export default async function handler(req, res) {
   const page = Math.max(1, parseInt(req.query.page, 10) || 1);
   const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize, 10) || 50));
   const search = String(req.query.search || '').trim();
+  const batchFilter = String(req.query.batch || '').trim();
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
@@ -151,6 +160,8 @@ export default async function handler(req, res) {
       .select('*', { count: 'exact' })
       .order('name', { ascending: true })
       .range(from, to);
+
+    if (batchFilter) q = q.eq('import_batch', batchFilter);
 
     if (search) {
       const safe = search.replace(/[%',()]/g, ' ').trim();
@@ -174,10 +185,31 @@ export default async function handler(req, res) {
       throw error;
     }
 
+    // The batch list drives the group filter. Read separately from the page so
+    // it lists every upload, not just the groups present on the current page.
+    let batches = [];
+    try {
+      const { data: batchRows } = await sb
+        .from('proto_active_customers')
+        .select('import_batch, import_batch_at')
+        .not('import_batch', 'is', null)
+        .order('import_batch_at', { ascending: false });
+      const byLabel = new Map();
+      for (const r of batchRows || []) {
+        const entry = byLabel.get(r.import_batch);
+        if (entry) entry.count += 1;
+        else byLabel.set(r.import_batch, { label: r.import_batch, at: r.import_batch_at, count: 1 });
+      }
+      batches = [...byLabel.values()];
+    } catch {
+      // The group filter is a convenience — never fail the list over it.
+    }
+
     res.setHeader('Cache-Control', 's-maxage=60, stale-while-revalidate=300');
     return res.status(200).json({
       rows: data || [],
       total: count || 0,
+      batches,
       page,
       pageSize,
     });
