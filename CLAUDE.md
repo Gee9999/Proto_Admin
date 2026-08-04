@@ -33,11 +33,17 @@ Email Analytics) · `site-content` (Featured + Specials + Banner Editor) ·
 `analytics` · `pricing` · `team` (opens fulfillment team modal).
 
 Removed features — do NOT reintroduce: **Apollo (the entire tab, engine and
-docs)**, **WhatsApp/WATI outgoing messaging** (order alerts, broadcasts,
-welcome messages, Intercom relay — the customer's `accept_whatsapp` opt-in
-DATA stays), Cost Tracking, product approval tab, reorder mode inside Product
-Manager, product-type dropdown in the edit modal, scheduled send for email
-broadcasts (immediate-send only).
+docs)**, **WhatsApp/WATI outgoing messaging TO CUSTOMERS** (order alerts,
+broadcasts, welcome messages, Intercom relay — the customer's
+`accept_whatsapp` opt-in DATA stays), Cost Tracking, product approval tab,
+reorder mode inside Product Manager, product-type dropdown in the edit modal,
+scheduled send for email broadcasts (immediate-send only).
+
+**Exception — internal team WhatsApp.** Outgoing WhatsApp to the *fulfilment
+team* is deliberate and supported: `api/order-team-whatsapp.js` broadcasts a
+new order to the numbers in `fulfillment/users.json` via WATI. It is
+internal-only and can never reach a customer number. Do not delete it as
+"WATI leftovers".
 
 ## Customers & email
 - **Customer codes are NEVER auto-generated** — always null or an admin-typed
