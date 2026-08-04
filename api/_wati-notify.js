@@ -54,11 +54,21 @@ async function watiFetch(baseUrl, token, path, body, method) {
  */
 export function parseWatiSendResult({ ok, status, json }) {
   const info = String(json?.info || json?.message || json?.error || '').trim();
+  const notWhatsapp = json?.validWhatsAppNumber === false;
   const explicitFail = json?.result === false
-    || json?.validWhatsAppNumber === false
+    || notWhatsapp
     || /undeliverable|invalid phone|not a valid|failed|error/i.test(info);
   if (!ok || explicitFail) {
-    return { success: false, error: info || `WATI send failed (${status})`, response: json };
+    // WATI often rejects a number with a bare `result: false` and no message.
+    // "WATI send failed (200)" told an admin nothing; naming the actual cause
+    // is what points them at the team member whose number needs fixing.
+    let error = info;
+    if (!error) {
+      if (notWhatsapp) error = 'not a WhatsApp number';
+      else if (json?.result === false) error = 'rejected by WATI (number not on WhatsApp, or not reachable)';
+      else error = `WATI send failed (${status})`;
+    }
+    return { success: false, error, response: json };
   }
   return { success: true, response: json, messageId: json?.messageId || json?.whatsappMessageId || null };
 }
