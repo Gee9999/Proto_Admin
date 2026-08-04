@@ -114,6 +114,7 @@ import { dispatchAdminRefresh } from '../lib/adminRefresh';
 import { lazyRetry } from '../lib/lazyRetry';
 import SellingUnitField from '../components/SellingUnitField';
 import CustomerIntelligenceWorkspace from '../components/CustomerIntelligenceWorkspace';
+import CustomerJourneyControlCentre from '../components/CustomerJourneyControlCentre';
 import { POSITILL_CUSTOMER_SALES_PERIOD } from '../lib/customerIq';
 
 // Section panels — lazy-loaded so the initial admin bundle only ships the
@@ -2290,6 +2291,12 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 <Suspense fallback={<LazySectionFallback label="Loading Analytics…" />}>
                   <AnalyticsHub />
                 </Suspense>
+              </SectionErrorBoundary>
+            )}
+
+            {activeSection === 'customer-journey' && (
+              <SectionErrorBoundary name="customer-journey" title="Customer Journey crashed" resetKey={activeSection}>
+                <CustomerJourneyControlCentre />
               </SectionErrorBoundary>
             )}
 

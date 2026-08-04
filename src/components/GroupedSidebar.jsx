@@ -16,6 +16,7 @@ import {
   Sparkles,
   Star,
   HeartPulse,
+  Route,
   User,
   Users,
 } from 'lucide-react';
@@ -36,6 +37,7 @@ const NAV_ITEMS = [
   { id: 'archive', label: 'Archive', icon: Archive },
   { id: 'reorder', label: 'Reorder Grid', icon: Grip },
   { id: 'customers', label: 'Customer Management', icon: Users },
+  { id: 'customer-journey', label: 'Customer Journey', icon: Route },
   { id: 'comms', label: 'Email CRM', icon: Mail },
   { id: 'site-content', label: 'Site Content', icon: Star },
   { id: 'analytics', label: 'Analytics', icon: BarChart2 },
