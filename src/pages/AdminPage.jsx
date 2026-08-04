@@ -955,13 +955,21 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     try {
       const json = await sendTeamWhatsappApi(order.id);
       if (json.record) setTeamWaSent((prev) => ({ ...prev, [order.id]: json.record }));
-      const failed = json.total - json.sentCount;
-      showToast(
-        failed
-          ? `Sent to ${json.sentCount} of ${json.total} — ${failed} failed`
-          : `Sent to all ${json.sentCount} team members`,
-        failed ? 'error' : 'success',
-      );
+      const failures = (json.results || []).filter((r) => !r.ok);
+      if (!failures.length) {
+        showToast(`Sent to all ${json.sentCount} team members`, 'success');
+      } else {
+        // A bare "6 failed" is not actionable — the whole point is knowing WHICH
+        // number and WHY, so the admin can go fix that team member's entry.
+        const names = failures.map((f) => f.name || f.phone).join(', ');
+        const reasons = [...new Set(failures.map((f) => f.error).filter(Boolean))];
+        showToast(
+          `Sent to ${json.sentCount} of ${json.total}. Failed: ${names}`
+            + (reasons.length === 1 ? ` — ${reasons[0]}` : ''),
+          'error',
+        );
+        console.warn('Team WhatsApp failures:', failures);
+      }
     } catch (err) {
       showToast(err.message || 'WhatsApp broadcast failed', 'error');
     } finally {

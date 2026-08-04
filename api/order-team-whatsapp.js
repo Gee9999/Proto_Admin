@@ -1,6 +1,5 @@
 import { requireAdminKey, verifyAdminUser } from './_admin-auth.js';
 import { getPortalAdminClient, readSiteConfigJson } from './_site-config.js';
-import { defaultFulfillmentUsers } from './_fulfillment-defaults.js';
 import { normalizePhone } from './_phone.js';
 import { watiConfig, watiEnsureContact, watiSendNewOrder, NEW_ORDER_TEMPLATE } from './_wati-notify.js';
 import { readTeamWhatsappSentMany, writeTeamWhatsappSent } from './_order-team-whatsapp.js';
@@ -18,8 +17,11 @@ import { readTeamWhatsappSentMany, writeTeamWhatsappSent } from './_order-team-w
 const APP_ORIGIN = (process.env.ADMIN_PUBLIC_URL || 'https://admin.proto.co.za').replace(/\/$/, '');
 
 async function loadTeamRecipients() {
-  let data = await readSiteConfigJson('fulfillment/users.json', null);
-  if (!data?.users?.length) data = defaultFulfillmentUsers();
+  // Deliberately NO fallback to defaultFulfillmentUsers(): its six entries are
+  // placeholders (+27821234501..06). They are harmless as seed data for a
+  // settings form, but sending real order notifications to invented numbers is
+  // not. With no configured team we would rather send nothing and say so.
+  const data = await readSiteConfigJson('fulfillment/users.json', null);
   const seen = new Set();
   const recipients = [];
   for (const user of data.users || []) {
