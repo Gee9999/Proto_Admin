@@ -20,4 +20,4 @@ Until the migration and flag are both present, the API returns `409` instead of 
 
 ## Rollback
 
-Unset `ORDER_TRASH_ENABLED` first. This immediately disables the trash mutation endpoints. Do not drop `admin_order_trash` while it contains unrestored records; export and reconcile them before any schema rollback.
+Set `ORDER_TRASH_ENABLED=false`. This immediately disables the trash mutation endpoints. NOTE: the default is now ON (056 and 057 are applied in production), so *unsetting* the variable no longer disables anything — it must be set to `false` explicitly. Do not drop `admin_order_trash` while it contains unrestored records; export and reconcile them before any schema rollback.

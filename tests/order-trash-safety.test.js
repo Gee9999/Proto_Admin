@@ -4,9 +4,11 @@ import { isOrderTrashEnabled, normalizeOrderTrashReason } from '../lib/order-tra
 
 describe('recoverable order trash gate', () => {
   it('is disabled by default and only enables explicitly', () => {
-    expect(isOrderTrashEnabled({})).toBe(false);
-    expect(isOrderTrashEnabled({ ORDER_TRASH_ENABLED: 'false' })).toBe(false);
+    // On by default now that the migration is applied; 'false' is the switch.
+    expect(isOrderTrashEnabled({})).toBe(true);
     expect(isOrderTrashEnabled({ ORDER_TRASH_ENABLED: 'true' })).toBe(true);
+    expect(isOrderTrashEnabled({ ORDER_TRASH_ENABLED: 'false' })).toBe(false);
+    expect(isOrderTrashEnabled({ ORDER_TRASH_ENABLED: 'FALSE' })).toBe(false);
   });
 
   it('requires an auditable reason', () => {
