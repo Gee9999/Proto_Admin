@@ -194,3 +194,16 @@ export async function updateCustomerAdmin(id, fields) {
   if (!res.ok) throw new Error(json.error || 'Failed to update customer');
   return json;
 }
+
+/**
+ * Pre-registration upload groups for the email composer.
+ *
+ * Uses its own admin-guarded endpoint rather than proto-active-customers,
+ * which is owner-only — a non-owner admin got a 403 there and no groups.
+ */
+export async function fetchCustomerImportBatches() {
+  const res = await fetch('/api/customer-import-batches');
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || 'Failed to load upload groups');
+  return json.batches || [];
+}

@@ -3,7 +3,7 @@ import { BarChart2, Code2, Eye, ImagePlus, Loader2, Mail, Send, X } from 'lucide
 import EmailTemplateTests from './EmailTemplateTests';
 import { PROTO_URLS } from '../lib/protoUrls';
 import { BUSINESS_TYPES } from '../lib/businessTypes';
-import { fetchProtoActiveCustomersPage } from '../lib/customers';
+import { fetchCustomerImportBatches } from '../lib/customers';
 import {
   MERGE_TAGS,
   PREVIEW_MERGE_VARS,
@@ -225,7 +225,7 @@ export default function CustomerEmailModal({
     let alive = true;
     void (async () => {
       try {
-        const { batches: list } = await fetchProtoActiveCustomersPage({ page: 1, pageSize: 1 });
+        const list = await fetchCustomerImportBatches();
         if (!alive) return;
         setBatches(list || []);
         setBatchError('');

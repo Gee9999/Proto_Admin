@@ -20,9 +20,19 @@ describe('pre-registration upload-group filter', () => {
     expect(page).toMatch(/setCustomerPage\(1\); \}, \[customerBatch, customerTab/);
   });
 
-  it('keeps the picker populated while a group is selected', () => {
-    // Filtering to one batch still returns the full batch list, but guard
-    // against an empty response blanking the dropdown.
-    expect(page).toMatch(/if \(data\.batches\?\.length\) setCustomerBatches\(data\.batches\)/);
+  it('loads the picker from its own endpoint, not the filtered page', () => {
+    // Deriving the options from the page response meant a filtered page could
+    // blank the dropdown that filtered it, and that endpoint is owner-only so
+    // a non-owner admin got no options at all. A dedicated admin-guarded read
+    // has neither problem.
+    expect(page).toMatch(/fetchCustomerImportBatches\(\)/);
+    expect(page).not.toMatch(/data\.batches/);
+  });
+
+  it('the groups endpoint is admin-guarded, not owner-only', () => {
+    const api = fs.readFileSync(new URL('../api/customer-import-batches.js', import.meta.url), 'utf8');
+    expect(api).toMatch(/if \(!\(await requireAdminKey\(req, res\)\)\) return;/);
+    // The word appears in the comment explaining why; the guard must not use it.
+    expect(api).not.toMatch(/await requireOwner\(/);
   });
 });

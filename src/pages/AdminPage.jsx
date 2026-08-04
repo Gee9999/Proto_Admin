@@ -83,7 +83,7 @@ import {
   replaceFullTaxonomy,
   subcategoryOptionsFromTree,
 } from '../lib/taxonomyAdmin';
-import { approveCustomer, deleteCustomer, fetchCustomersPage, fetchProtoActiveCustomersPage, updateProtoActiveCustomer, updateCustomerAdmin, deleteProtoActiveCustomer, deleteAllProtoActiveCustomers, importProtoActiveCustomers, sendCustomerEmailBroadcast, fetchCrmContactsPage } from '../lib/customers';
+import { fetchCustomerImportBatches, approveCustomer, deleteCustomer, fetchCustomersPage, fetchProtoActiveCustomersPage, updateProtoActiveCustomer, updateCustomerAdmin, deleteProtoActiveCustomer, deleteAllProtoActiveCustomers, importProtoActiveCustomers, sendCustomerEmailBroadcast, fetchCrmContactsPage } from '../lib/customers';
 import { BUSINESS_TYPES } from '../lib/businessTypes';
 import { supabase } from '../lib/supabase';
 import { buildOrderNoteSections, createEmailOrderItems, generateOrderPdfBase64, buildEmailItemsFromOrder, base64ToBlob, resolveCustomerOrderPricing, deriveAutoNotesFromItems } from '../lib/orderDocuments';
@@ -542,6 +542,18 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   // Which CSV upload to show in Pre-registration. '' = every contact.
   const [customerBatch, setCustomerBatch] = useState('');
   const [customerBatches, setCustomerBatches] = useState([]);
+  // Upload groups for the Pre-registration filter. Read from the admin-guarded
+  // endpoint rather than the owner-only customer list, so a non-owner admin
+  // still gets the picker.
+  useEffect(() => {
+    if (activeSection !== 'customers' || customerTab !== 'proto-active') return undefined;
+    let alive = true;
+    void fetchCustomerImportBatches()
+      .then((list) => { if (alive) setCustomerBatches(list || []); })
+      .catch(() => { /* the filter is a convenience — never block the list */ });
+    return () => { alive = false; };
+  }, [activeSection, customerTab]);
+
   const [customerSearchDebounced, setCustomerSearchDebounced] = useState('');
   const [customerBusinessType, setCustomerBusinessType] = useState('');
   const [customerPage, setCustomerPage] = useState(1);
@@ -700,9 +712,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         });
       if (seq !== customersReqSeqRef.current) return; // superseded — drop it
       customersCacheRef.current.set(key, { rows: data.rows, total: data.total });
-      // The batch list comes back with every pre-registration page. Keep the
-      // last non-empty one so filtering to a group does not empty the picker.
-      if (data.batches?.length) setCustomerBatches(data.batches);
       setCustomerRows(data.rows);
       setCustomerTotal(data.total);
       if (data.migrationRequired && data.message) showToast(data.message, 'warning');
