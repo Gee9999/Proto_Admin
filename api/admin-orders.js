@@ -214,9 +214,33 @@ async function fetchAdminOrdersPage(supabase, {
   else if (tab === 'handed') q = q.eq('status', 'handed over');
   else if (tab === 'progress') q = q.eq('status', 'order in progress');
 
-  q = q.range(from, to);
-  const { data, error, count } = await q;
+  const runPage = async (pageNo) => {
+    const lo = (pageNo - 1) * pageSize;
+    let pq = supabase.from('orders').select(ORDER_SELECT, { count: 'exact' }).order('created_at', { ascending: false });
+    pq = applyOrderSearch(pq, term, customerIds, { useItemsSearch });
+    if (tab === 'new') pq = pq.eq('status', 'pending');
+    else if (tab === 'handed') pq = pq.eq('status', 'handed over');
+    else if (tab === 'progress') pq = pq.eq('status', 'order in progress');
+    return pq.range(lo, lo + pageSize - 1);
+  };
+
+  let { data, error, count } = await runPage(page);
+
+  // PostgREST answers 416 whenever the requested window starts past the end of
+  // the result set. Returning rows: [] for that looked identical to "this tab
+  // is empty" — no error, no message — and left the tab badge, which is a
+  // separate query, still showing a count. That is the "my orders vanished
+  // until I refreshed" report: the page was out of range, and a refresh only
+  // helped because it happened to reset the page.
+  //
+  // A window past the end is not an empty tab. Fall back to the first page.
+  if (error && isRangeNotSatisfiable(error) && page > 1) {
+    ({ data, error, count } = await runPage(1));
+    page = 1;
+  }
+
   if (error && !isRangeNotSatisfiable(error)) throw error;
+  // A genuine 416 on page 1 means there really is nothing to show.
   return { rows: error ? [] : (data || []), total: count || 0, page, pageSize };
 }
 
