@@ -539,6 +539,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
 
   const [customerTab, setCustomerTab] = useState('regular');
   const [customerSearch, setCustomerSearch] = useState('');
+  // Which CSV upload to show in Pre-registration. '' = every contact.
+  const [customerBatch, setCustomerBatch] = useState('');
+  const [customerBatches, setCustomerBatches] = useState([]);
   const [customerSearchDebounced, setCustomerSearchDebounced] = useState('');
   const [customerBusinessType, setCustomerBusinessType] = useState('');
   const [customerPage, setCustomerPage] = useState(1);
@@ -650,7 +653,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     const timer = setTimeout(() => setCustomerSearchDebounced(customerSearch.trim()), 300);
     return () => clearTimeout(timer);
   }, [customerSearch]);
-  useEffect(() => { setCustomerPage(1); }, [customerTab, customerSearchDebounced, customerBusinessType]);
+  useEffect(() => { setCustomerPage(1); }, [customerBatch, customerTab, customerSearchDebounced, customerBusinessType]);
   useEffect(() => {
     const timer = setTimeout(() => setOrderSearchDebounced(orderSearch.trim()), 300);
     return () => clearTimeout(timer);
@@ -674,7 +677,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     // can never repaint over a newer one, and paint revisited tabs instantly
     // from cache while revalidating — the section used to blank on every tab,
     // page and search change, which is what made it feel choppy.
-    const key = `${customerTab}|${customerPage}|${customerSearchDebounced}|${customerBusinessType}`;
+    const key = `${customerTab}|${customerPage}|${customerSearchDebounced}|${customerBusinessType}|${customerBatch}`;
     const seq = (customersReqSeqRef.current += 1);
     const cached = customersCacheRef.current.get(key);
     if (cached) {
@@ -687,7 +690,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     setLoading(true);
     try {
       const data = customerTab === 'proto-active'
-        ? await fetchProtoActiveCustomersPage({ page: customerPage, pageSize: ADMIN_PAGE_SIZE, searchQuery: customerSearchDebounced })
+        ? await fetchProtoActiveCustomersPage({ page: customerPage, pageSize: ADMIN_PAGE_SIZE, searchQuery: customerSearchDebounced, batch: customerBatch })
         : await fetchCustomersPage({
           page: customerPage,
           pageSize: ADMIN_PAGE_SIZE,
@@ -697,6 +700,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         });
       if (seq !== customersReqSeqRef.current) return; // superseded — drop it
       customersCacheRef.current.set(key, { rows: data.rows, total: data.total });
+      // The batch list comes back with every pre-registration page. Keep the
+      // last non-empty one so filtering to a group does not empty the picker.
+      if (data.batches?.length) setCustomerBatches(data.batches);
       setCustomerRows(data.rows);
       setCustomerTotal(data.total);
       if (data.migrationRequired && data.message) showToast(data.message, 'warning');
@@ -2478,9 +2484,27 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 </div>
 
                 {customerTab === 'proto-active' && (
-                  <p className="adm-muted adm-tab-helper">
-                    Contacts for CRM email campaigns before trade portal approval.
-                  </p>
+                  <>
+                    {customerBatches.length > 0 && (
+                      <div className="adm-toolbar" style={{ gridTemplateColumns: 'minmax(0, 320px)' }}>
+                        <AdminSelect
+                          value={customerBatch}
+                          onChange={setCustomerBatch}
+                          options={[
+                            { value: '', label: `All uploads — ${customerBatches.reduce((n, b) => n + b.count, 0)} contacts` },
+                            ...customerBatches.map((b) => ({
+                              value: b.label,
+                              label: `${b.label} — ${b.count} contact${b.count === 1 ? '' : 's'}`,
+                            })),
+                          ]}
+                        />
+                      </div>
+                    )}
+                    <p className="adm-muted adm-tab-helper">
+                      Contacts for CRM email campaigns before trade portal approval.
+                      {customerBatch ? ` Showing the ${customerBatch} upload only.` : ''}
+                    </p>
+                  </>
                 )}
 
                 {customerTab === 'proto-active' ? (
