@@ -11,7 +11,7 @@
 
 const DEFAULT_BASE_URL = 'https://live-mt-server.wati.io/10138950';
 
-export const NEW_ORDER_TEMPLATE = process.env.WATI_NEW_ORDER_TEMPLATE || 'proto_new_order_team';
+export const NEW_ORDER_TEMPLATE = process.env.WATI_NEW_ORDER_TEMPLATE || 'order_received_team';
 
 export function watiConfig() {
   const baseUrl = (process.env.WATI_API_URL || DEFAULT_BASE_URL).replace(/\/$/, '');
@@ -80,7 +80,7 @@ export async function watiEnsureContact(baseUrl, token, phone, name) {
 /**
  * Send the new-order template.
  *
- * Body (template `proto_new_order_team`, category UTILITY, no buttons):
+ * Body (template `order_received_team`, category UTILITY, no buttons):
  *   New order received
  *   Order from {{1}}
  *   Fulfilment link {{2}}
