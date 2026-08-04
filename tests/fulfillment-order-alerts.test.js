@@ -34,7 +34,27 @@ test('a missing or oversized PDF never cancels the alert', () => {
 test('no WATI/WhatsApp sends remain in the order-notify path', () => {
   assert.doesNotMatch(notifySource, /watiSend|sendTemplateMessage|whatsappNumber/, 'no WATI calls');
   assert.ok(!fs.existsSync(new URL('../api/_wati.js', import.meta.url).pathname), '_wati.js deleted');
-  assert.ok(!fs.existsSync(new URL('../api/_wati-notify.js', import.meta.url).pathname), '_wati-notify.js deleted');
   assert.ok(!fs.existsSync(new URL('../api/team-whatsapp-test.js', import.meta.url).pathname), 'team WhatsApp test deleted');
   assert.match(notifySource, /email is the notification/i);
+});
+
+// WATI came back for ONE purpose: broadcasting a new order to the fulfilment
+// team. The original rule — no WhatsApp anywhere near the order-notify path,
+// and never to a customer — still holds, so assert the boundary rather than
+// the absence of the file.
+test('WATI is reachable only from the internal team broadcast', () => {
+  const wati = new URL('../api/_wati-notify.js', import.meta.url).pathname;
+  assert.ok(fs.existsSync(wati), 'the team broadcast helper exists');
+
+  const importers = fs.readdirSync(new URL('../api/', import.meta.url).pathname)
+    .filter((f) => f.endsWith('.js'))
+    .filter((f) => /from '\.\/_wati-notify\.js'/.test(
+      fs.readFileSync(new URL(`../api/${f}`, import.meta.url), 'utf8'),
+    ));
+  assert.deepEqual(importers, ['order-team-whatsapp.js'], 'only the team broadcast imports WATI');
+
+  // Recipients must come from the fulfilment team store, never from customers.
+  const broadcast = fs.readFileSync(new URL('../api/order-team-whatsapp.js', import.meta.url), 'utf8');
+  assert.match(broadcast, /fulfillment\/users\.json/, 'recipients are team members');
+  assert.doesNotMatch(broadcast, /accept_whatsapp|customers\.phone/, 'never targets a customer number');
 });

@@ -1,5 +1,5 @@
 import { resolvePathLabels } from '../components/CategorySidebar';
-import { fetchAdminProductsPage, setLiveTaxonomyTree } from './products';
+import { applyPathFilter, fetchAdminProductsPage, setLiveTaxonomyTree } from './products';
 
 const STATUS_LABELS = {
   live: 'Live',
@@ -219,14 +219,15 @@ export async function exportProductsCatalogXlsx({ status = 'live', taxonomyTree 
   setLiveTaxonomyTree(tree);
 
   let products = await fetchProductsForStatus(status);
-  // Scope to the currently-selected category (and its subcategories) when set.
-  const want = (Array.isArray(categoryPath) ? categoryPath : []).map(String).filter(Boolean);
-  if (want.length) {
-    products = products.filter((p) => {
-      const path = (Array.isArray(p.categoryPath) ? p.categoryPath : []).map(String);
-      return want.every((id, i) => path[i] === id);
-    });
-  }
+  // Scope to the currently-selected category using the SAME matcher the
+  // Product Manager grid uses. This used to be an inline prefix comparison
+  // over product.categoryPath, which disagreed with the grid in two ways:
+  // it dropped products recorded only against the main category when a
+  // subcategory was selected, and it compared raw ids, so rows whose path
+  // holds labels (as several loader paths produce) never matched at all.
+  // Both showed up as an export missing products that were plainly on screen.
+  // setLiveTaxonomyTree(tree) above means this resolves through the taxonomy.
+  products = applyPathFilter(products, Array.isArray(categoryPath) ? categoryPath : []);
   const sheetRows = sortCatalogRows(products.map((p) => productToCatalogRow(p, tree, status)));
 
   const wb = XLSX.utils.book_new();
