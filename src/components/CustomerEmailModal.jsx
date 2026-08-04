@@ -3,6 +3,7 @@ import { BarChart2, Code2, Eye, ImagePlus, Loader2, Mail, Send, X } from 'lucide
 import EmailTemplateTests from './EmailTemplateTests';
 import { PROTO_URLS } from '../lib/protoUrls';
 import { BUSINESS_TYPES } from '../lib/businessTypes';
+import { fetchProtoActiveCustomersPage } from '../lib/customers';
 import {
   MERGE_TAGS,
   PREVIEW_MERGE_VARS,
@@ -105,6 +106,10 @@ export default function CustomerEmailModal({
   const [htmlPane, setHtmlPane] = useState('split');
   const [showHtml, setShowHtml] = useState(false);
   const [audience, setAudience] = useState('all-approved');
+  // Pre-registration contacts have no business_type, so an import batch is
+  // the only way to segment that audience.
+  const [importBatch, setImportBatch] = useState('');
+  const [batches, setBatches] = useState([]);
   const [businessTypes, setBusinessTypes] = useState([]);
   const [sending, setSending] = useState(false);
   const [testSending, setTestSending] = useState(false);
@@ -214,6 +219,23 @@ export default function CustomerEmailModal({
     }
   };
 
+  useEffect(() => {
+    if (audience !== 'proto-active') return undefined;
+    let alive = true;
+    void (async () => {
+      try {
+        const { batches: list } = await fetchProtoActiveCustomersPage({ page: 1, pageSize: 1 });
+        if (alive) setBatches(list || []);
+      } catch { /* the group filter is optional — never block the composer */ }
+    })();
+    return () => { alive = false; };
+  }, [audience]);
+
+  // A batch only means anything for the pre-registration audience.
+  useEffect(() => {
+    if (audience !== 'proto-active' && importBatch) setImportBatch('');
+  }, [audience, importBatch]);
+
   const selectedAudience = useMemo(
     () => AUDIENCE_OPTIONS.find((opt) => opt.value === audience) || AUDIENCE_OPTIONS[0],
     [audience],
@@ -275,10 +297,13 @@ export default function CustomerEmailModal({
       return;
     }
 
+    // Name the group in the confirm dialog — sending to 246 contacts instead
+    // of all 593 should not be a silent difference.
+    const batchNote = audience === 'proto-active' && importBatch ? ` (group: ${importBatch})` : '';
     const audienceLabel = isSelected
       ? `${selectedEmails.length} specific ${selectedEmails.length === 1 ? 'person' : 'people'}`
       : `${selectedAudience.label}${businessTypes.length ? ` · ${businessTypes.join(', ')} only` : ' · all business types'}`;
-    if (!test && !window.confirm(`Send this email to: ${audienceLabel}?`)) return;
+    if (!test && !window.confirm(`Send this email to: ${audienceLabel}${batchNote}?`)) return;
 
     if (test) {
       // A test is a self-preview with sample merge data + a [TEST] subject, so
@@ -296,6 +321,7 @@ export default function CustomerEmailModal({
           htmlBlock: htmlBody.trim(),
           testEmail: testEmail.trim(),
           businessTypes: isSelected ? [] : businessTypes,
+          importBatch: audience === 'proto-active' ? importBatch : '',
         });
         onShowToast?.(`Test email sent to ${testEmail.trim()}`, 'success');
       } catch (err) {
@@ -314,6 +340,7 @@ export default function CustomerEmailModal({
         introText: introBody.trim(),
         htmlBlock: htmlBody.trim(),
         businessTypes: isSelected ? [] : businessTypes,
+        importBatch: audience === 'proto-active' ? importBatch : '',
         ...(isSelected ? { recipients: selectedEmails } : {}),
       });
       onShowToast?.(
@@ -388,6 +415,29 @@ export default function CustomerEmailModal({
             </select>
             <span className="adm-email-field__hint">{selectedAudience.hint}</span>
           </label>
+
+          {audience === 'proto-active' && batches.length > 0 && (
+            <label className="adm-email-field">
+              <span className="adm-email-field__label">Upload group</span>
+              <select
+                className="adm-field-input adm-select--enhanced"
+                value={importBatch}
+                onChange={(e) => setImportBatch(e.target.value)}
+              >
+                <option value="">All pre-registration contacts</option>
+                {batches.map((b) => (
+                  <option key={b.label} value={b.label}>
+                    {b.label} — {b.count} contact{b.count === 1 ? '' : 's'}
+                  </option>
+                ))}
+              </select>
+              <span className="adm-email-field__hint">
+                {importBatch
+                  ? 'Only the contacts from this CSV upload will receive the email.'
+                  : 'Every pre-registration contact will receive the email.'}
+              </span>
+            </label>
+          )}
 
           {audience === 'selected' && (
             <label className="adm-email-field">

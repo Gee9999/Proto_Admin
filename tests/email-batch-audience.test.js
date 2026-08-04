@@ -34,3 +34,26 @@ describe('broadcast to one import batch', () => {
     expect(brevo).toMatch(/const batch = String\(importBatch \|\| ''\)\.trim\(\);/);
   });
 });
+
+describe('composer group picker', () => {
+  const modal = fs.readFileSync(new URL('../src/components/CustomerEmailModal.jsx', import.meta.url), 'utf8');
+
+  it('sends the batch on BOTH the test and the real send', () => {
+    // The real send is the one that matters; an early edit reached only the
+    // test payload, which would have filtered the preview and not the send.
+    const hits = modal.match(/importBatch: audience === 'proto-active' \? importBatch : ''/g) || [];
+    expect(hits.length).toBe(2);
+  });
+
+  it('only offers the picker for the pre-registration audience', () => {
+    expect(modal).toMatch(/audience === 'proto-active' && batches\.length > 0/);
+  });
+
+  it('clears the batch when the audience changes', () => {
+    expect(modal).toMatch(/if \(audience !== 'proto-active' && importBatch\) setImportBatch\(''\)/);
+  });
+
+  it('names the group in the confirm dialog', () => {
+    expect(modal).toMatch(/group: \$\{importBatch\}/);
+  });
+});
