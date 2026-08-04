@@ -1,5 +1,6 @@
 import { resolvePathLabels } from '../components/CategorySidebar';
 import { fetchAdminProductsPage, setLiveTaxonomyTree } from './products';
+import { fetchAllCatalogRows } from '../hooks/useCatalog';
 
 const STATUS_LABELS = {
   live: 'Live',
@@ -216,13 +217,39 @@ export async function exportSelectedProductsXlsx(products, {
   return sheetRows.length;
 }
 
-/** Export catalogue with full DB + taxonomy categories and all product fields. */
-export async function exportProductsCatalogXlsx({ status = 'live', taxonomyTree = [] } = {}) {
+/**
+ * Export catalogue with full DB + taxonomy categories and all product fields.
+ *
+ * When a `categoryPath` (or `search`) is supplied, the export is scoped to
+ * exactly what the grid is showing — mirroring the app's own rule that an
+ * active search spans all categories. Without either, the whole tab exports.
+ */
+export async function exportProductsCatalogXlsx({
+  status = 'live',
+  taxonomyTree = [],
+  categoryPath = [],
+  search = '',
+} = {}) {
   const XLSX = await import('xlsx');
   const tree = Array.isArray(taxonomyTree) ? taxonomyTree : [];
   setLiveTaxonomyTree(tree);
 
-  const products = await fetchProductsForStatus(status);
+  const trimmedSearch = String(search || '').trim();
+  const path = Array.isArray(categoryPath) ? categoryPath.filter(Boolean) : [];
+  const isFiltered = path.length > 0 || Boolean(trimmedSearch);
+
+  // A category (or search) selection must be honoured — the previous export
+  // always pulled the entire catalogue, so a category export returned every
+  // product. Mirror the grid: search overrides the category path.
+  const products = isFiltered
+    ? await fetchAllCatalogRows({
+      status,
+      categoryPath: trimmedSearch ? [] : path,
+      search: trimmedSearch,
+      onlyInStock: false,
+    })
+    : await fetchProductsForStatus(status);
+
   const sheetRows = sortCatalogRows(products.map((p) => productToCatalogRow(p, tree, status)));
 
   const wb = XLSX.utils.book_new();
@@ -238,7 +265,13 @@ export async function exportProductsCatalogXlsx({ status = 'live', taxonomyTree 
 
   const stamp = new Date().toISOString().slice(0, 10);
   const statusSlug = String(status).replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-  XLSX.writeFile(wb, `proto-products-${statusSlug}-${stamp}.xlsx`);
+  // Name the file after the category being exported so it's obvious which slice
+  // it holds (e.g. proto-products-live-textiles-ribbons-2026-08-04.xlsx).
+  const catLabels = path.length ? resolvePathLabels(tree, path) : [];
+  const catSlug = catLabels.length
+    ? `-${catLabels.join('-').replace(/[^a-z0-9]+/gi, '-').toLowerCase().replace(/^-+|-+$/g, '')}`
+    : '';
+  XLSX.writeFile(wb, `proto-products-${statusSlug}${catSlug}-${stamp}.xlsx`);
   return sheetRows.length;
 }
 

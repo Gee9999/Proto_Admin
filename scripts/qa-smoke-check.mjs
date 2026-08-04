@@ -1230,4 +1230,14 @@ assert.match(bulkHardenSrc, /emailFailed/, 'bulk approve surfaces email failures
 assert.match(bulkHardenSrc, /EMAIL_CONCURRENCY = 5/, 'bulk approve throttles Brevo sends');
 console.log('✓ Review hardening: bulk-approve decoupled + throttled, atomic approve claim, subcat preserve');
 
+// Category → Excel export must scope to the selected category, not dump the
+// whole catalogue (previous export ignored categoryPath entirely).
+const exportLibSrc = readSrc('src/lib/exportLiveProducts.js');
+assert.match(exportLibSrc, /export async function exportProductsCatalogXlsx\(\{[\s\S]*?categoryPath = \[\],[\s\S]*?search = '',/, 'catalogue export accepts categoryPath + search');
+assert.match(exportLibSrc, /fetchAllCatalogRows\(\{\s*\n?\s*status,\s*\n?\s*categoryPath: trimmedSearch \? \[\] : path/, 'catalogue export fetches only the selected category (search overrides)');
+assert.match(exportLibSrc, /const isFiltered = path\.length > 0 \|\| Boolean\(trimmedSearch\)/, 'catalogue export only pulls the whole catalogue when nothing is selected');
+const pmExportSrc = readSrc('src/components/ProductManagerEngine.jsx');
+assert.match(pmExportSrc, /exportProductsCatalogXlsx\(\{[\s\S]*?categoryPath: debouncedSearch \? \[\] : categoryPath,[\s\S]*?search: debouncedSearch,/, 'export button passes the on-screen category + search');
+console.log('✓ Category → Excel export is scoped to the selected category');
+
 console.log('\nAll smoke checks passed.');

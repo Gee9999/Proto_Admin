@@ -1226,7 +1226,14 @@ export default function ProductManagerEngine({
     try {
       const count = allStatuses
         ? await exportAllProductsCatalogXlsx({ taxonomyTree })
-        : await exportProductsCatalogXlsx({ status, taxonomyTree });
+        : await exportProductsCatalogXlsx({
+          status,
+          taxonomyTree,
+          // Export exactly what's on screen: the selected category (or the
+          // active search, which the grid treats as spanning all categories).
+          categoryPath: debouncedSearch ? [] : categoryPath,
+          search: debouncedSearch,
+        });
       onShowToast?.(`Exported ${count} product${count === 1 ? '' : 's'} with full categories`, 'success');
     } catch (err) {
       onShowToast?.(err.message || 'Export failed', 'error');
