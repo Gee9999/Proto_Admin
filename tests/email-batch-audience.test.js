@@ -45,12 +45,21 @@ describe('composer group picker', () => {
     expect(hits.length).toBe(2);
   });
 
-  it('only offers the picker for the pre-registration audience', () => {
-    expect(modal).toMatch(/audience === 'proto-active' && batches\.length > 0/);
+  it('lists each upload group inside the Audience dropdown', () => {
+    // A separate "which upload?" field only appeared once Pre-registration was
+    // already chosen, so nobody found it. One dropdown, groups visible in it.
+    expect(modal).toMatch(/value: `proto-active::\$\{b\.label\}`/);
+    expect(modal).toMatch(/label: `Pre-registration — \$\{b\.label\} \(\$\{b\.count\}\)`/);
+    expect(modal).toMatch(/audienceOptions\.map\(\(opt\) =>/);
   });
 
-  it('clears the batch when the audience changes', () => {
-    expect(modal).toMatch(/if \(audience !== 'proto-active' && importBatch\) setImportBatch\(''\)/);
+  it('splits the composite value back into audience and batch', () => {
+    expect(modal).toMatch(/const \[aud, batch = ''\] = String\(raw\)\.split\('::'\)/);
+    expect(modal).toMatch(/setImportBatch\(batch\)/);
+  });
+
+  it('loads the groups when the modal opens, not only on one audience', () => {
+    expect(modal).toMatch(/\}, \[open\]\);/);
   });
 
   it('names the group in the confirm dialog', () => {

@@ -220,7 +220,7 @@ export default function CustomerEmailModal({
   };
 
   useEffect(() => {
-    if (audience !== 'proto-active') return undefined;
+    if (!open) return undefined;
     let alive = true;
     void (async () => {
       try {
@@ -229,16 +229,37 @@ export default function CustomerEmailModal({
       } catch { /* the group filter is optional — never block the composer */ }
     })();
     return () => { alive = false; };
-  }, [audience]);
+  }, [open]);
 
-  // A batch only means anything for the pre-registration audience.
-  useEffect(() => {
-    if (audience !== 'proto-active' && importBatch) setImportBatch('');
-  }, [audience, importBatch]);
+  // Groups appear directly in the Audience list. A separate "which upload?"
+  // field only showed up once Pre-registration was already selected, so it was
+  // invisible to anyone who did not already know to go looking for it.
+  const audienceOptions = useMemo(() => {
+    const base = AUDIENCE_OPTIONS.map((o) => ({ ...o }));
+    if (!batches.length) return base;
+    const groupOptions = batches.map((b) => ({
+      value: `proto-active::${b.label}`,
+      label: `Pre-registration — ${b.label} (${b.count})`,
+      hint: `Only the ${b.count} contact${b.count === 1 ? '' : 's'} from the ${b.label} upload`,
+    }));
+    const at = base.findIndex((o) => o.value === 'proto-active');
+    if (at === -1) return [...base, ...groupOptions];
+    return [...base.slice(0, at + 1), ...groupOptions, ...base.slice(at + 1)];
+  }, [batches]);
+
+  const audienceValue = audience === 'proto-active' && importBatch
+    ? `proto-active::${importBatch}`
+    : audience;
+
+  const onAudienceChange = (raw) => {
+    const [aud, batch = ''] = String(raw).split('::');
+    setAudience(aud);
+    setImportBatch(batch);
+  };
 
   const selectedAudience = useMemo(
-    () => AUDIENCE_OPTIONS.find((opt) => opt.value === audience) || AUDIENCE_OPTIONS[0],
-    [audience],
+    () => audienceOptions.find((opt) => opt.value === audienceValue) || audienceOptions[0],
+    [audienceOptions, audienceValue],
   );
 
   const previewSubject = useMemo(
@@ -406,38 +427,15 @@ export default function CustomerEmailModal({
             <span className="adm-email-field__label">Audience</span>
             <select
               className="adm-field-input adm-select--enhanced"
-              value={audience}
-              onChange={(e) => setAudience(e.target.value)}
+              value={audienceValue}
+              onChange={(e) => onAudienceChange(e.target.value)}
             >
-              {AUDIENCE_OPTIONS.map((opt) => (
+              {audienceOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>{opt.label}</option>
               ))}
             </select>
             <span className="adm-email-field__hint">{selectedAudience.hint}</span>
           </label>
-
-          {audience === 'proto-active' && batches.length > 0 && (
-            <label className="adm-email-field">
-              <span className="adm-email-field__label">Upload group</span>
-              <select
-                className="adm-field-input adm-select--enhanced"
-                value={importBatch}
-                onChange={(e) => setImportBatch(e.target.value)}
-              >
-                <option value="">All pre-registration contacts</option>
-                {batches.map((b) => (
-                  <option key={b.label} value={b.label}>
-                    {b.label} — {b.count} contact{b.count === 1 ? '' : 's'}
-                  </option>
-                ))}
-              </select>
-              <span className="adm-email-field__hint">
-                {importBatch
-                  ? 'Only the contacts from this CSV upload will receive the email.'
-                  : 'Every pre-registration contact will receive the email.'}
-              </span>
-            </label>
-          )}
 
           {audience === 'selected' && (
             <label className="adm-email-field">
