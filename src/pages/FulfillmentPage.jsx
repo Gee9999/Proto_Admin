@@ -288,10 +288,19 @@ export default function FulfillmentPage() {
         itemKey: key,
         checked: next,
       });
+      // Bump the watermark to the RESPONSE time, not just the request time.
+      // A poll that started while this tick was in flight carries pre-tick
+      // state; once the pending entry below is dropped there is nothing left
+      // to overlay it with, so that poll would untick the item on screen.
+      // Comparing against the response time discards exactly those polls.
+      lastTickAtRef.current = Date.now();
       pendingTicksRef.current.delete(key);
       // Overlay OTHER in-flight ticks so this response cannot untick them.
       setProgress(overlayPendingTicks(data));
     } catch (e) {
+      // Same watermark bump on failure: the revert below is the truth, and a
+      // poll still in flight must not resurrect the optimistic value.
+      lastTickAtRef.current = Date.now();
       pendingTicksRef.current.delete(key);
       setProgress((prev) => {
         const map = { ...(prev.items || {}) };

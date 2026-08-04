@@ -591,6 +591,10 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
 
   const [orders, setOrders] = useState([]);
   const ordersReqSeqRef = useRef(0);
+  // What is actually painted right now. loadOrders runs from a 30s timer
+  // and a focus handler, whose closures capture whatever `orders` was when
+  // they were created — reading the state variable there is unreliable.
+  const paintedOrdersRef = useRef([]);
   const ordersCacheRef = useRef(new Map());
   const ordersCacheKeyRef = useRef('');
   const orderTabCountsSigRef = useRef('');
@@ -862,10 +866,12 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     const cached = ordersCacheRef.current.get(key);
     if (cached) {
       setOrders(cached.rows);
+      paintedOrdersRef.current = cached.rows;
       setOrderTotal(cached.total);
     } else if (ordersCacheKeyRef.current !== key) {
       // Unseen tab: clear rather than leave the previous tab's rows on screen.
       setOrders([]);
+      paintedOrdersRef.current = [];
     }
     ordersCacheKeyRef.current = key;
     setLoading(true);
@@ -886,10 +892,21 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       // refresh. If nothing changed, change nothing.
       const sig = JSON.stringify([data.total, data.rows.map((r) => [r.id, r.status, r.updated_at, r.confirmation_sent_at ?? null])]);
       const prevEntry = ordersCacheRef.current.get(key);
-      const unchanged = prevEntry?.sig === sig && ordersCacheKeyRef.current === key && orders.length === data.rows.length;
+      // `orders` used to be read here. In the timer/focus callbacks that value
+      // is whatever it was when the closure was made, so a stale length could
+      // match data.rows.length and mark the response "unchanged" while the
+      // screen was actually showing nothing — the rows then never painted and
+      // only a manual refresh brought them back. Compare against what is
+      // genuinely on screen, and never skip the paint when nothing is.
+      const painted = paintedOrdersRef.current;
+      const unchanged = prevEntry?.sig === sig
+        && ordersCacheKeyRef.current === key
+        && painted.length === data.rows.length
+        && (painted.length > 0 || data.rows.length === 0);
       ordersCacheRef.current.set(key, { rows: data.rows, total: data.total, sig });
       if (!unchanged) {
         setOrders(data.rows);
+        paintedOrdersRef.current = data.rows;
         setOrderTotal(data.total);
       }
       if (data.tabCounts) {

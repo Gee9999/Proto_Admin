@@ -326,7 +326,10 @@ export async function generateOrderPdfBase64({
   };
 
   const blockStartY = y;
-  const leftEnd = drawAddressBlock('Invoice To', invoiceLines, margin, blockStartY);
+  // The block heading was already uppercased by drawAddressBlock; it is the
+  // billing party itself that has to read as all caps on the printed invoice.
+  const invoiceLinesCaps = invoiceLines.map((line) => String(line ?? '').toUpperCase());
+  const leftEnd = drawAddressBlock('Invoice To', invoiceLinesCaps, margin, blockStartY);
   const rightEnd = drawAddressBlock('Delivery Address', deliverLines, rightX, blockStartY);
   y = Math.max(leftEnd, rightEnd) + 14;
 
