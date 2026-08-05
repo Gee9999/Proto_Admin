@@ -39,11 +39,12 @@ export async function runEmailBroadcast({ audience, subject, introText = '', htm
     };
   }
 
-  const { sent, failed, errors, messageIds } = await sendBroadcastBatch(recipients, {
+  const { sent, failed, errors, failedEmails, messageIds } = await sendBroadcastBatch(recipients, {
     subject,
     introText,
     htmlBlock,
   });
+  const failedRecipientEmails = new Set((failedEmails || []).filter(Boolean));
 
   try {
     await appendEmailCampaign({
@@ -54,6 +55,12 @@ export async function runEmailBroadcast({ audience, subject, introText = '', htm
       recipientCount: recipients.length,
       sent,
       failed,
+      // Snapshot successful recipients so the analytics screen can form a
+      // trustworthy "no recorded open" follow-up audience later. Event lists
+      // alone cannot tell us who did not open an older campaign.
+      recipientEmails: recipients
+        .map((recipient) => String(recipient.email || '').trim().toLowerCase())
+        .filter((email) => email && !failedRecipientEmails.has(email)),
       messageIds: messageIds || [],
       events: {},
     });
