@@ -53,7 +53,7 @@ const SORTS = {
   clicked: (a, b) => b.clickRate - a.clickRate,
 };
 
-export default function EmailAnalyticsPanel({ onShowToast }) {
+export default function EmailAnalyticsPanel({ onShowToast, onCompose }) {
   const [campaigns, setCampaigns] = useState([]);
   const [loading, setLoading] = useState(false);
   const [sort, setSort] = useState('date');
@@ -242,7 +242,7 @@ export default function EmailAnalyticsPanel({ onShowToast }) {
         still show zeros.
       </p>
 
-      {detail && <CampaignDetail campaign={detail} onClose={() => setDetail(null)} />}
+      {detail && <CampaignDetail campaign={detail} onClose={() => setDetail(null)} onCompose={onCompose} />}
     </div>
   );
 }
@@ -258,14 +258,48 @@ function Headline({ label, value, sub, tone }) {
 }
 
 /** Per-campaign recipient detail — one address per line, exportable. */
-function CampaignDetail({ campaign, onClose }) {
+function uniqueEmails(values) {
+  return [...new Set((values || [])
+    .map((email) => String(email || '').trim().toLowerCase())
+    .filter(Boolean))];
+}
+
+function CampaignDetail({ campaign, onClose, onCompose }) {
+  const snapshotEmails = uniqueEmails(campaign.recipientEmails);
+  const opened = uniqueEmails(campaign.eventEmails?.opened);
+  const clicked = uniqueEmails(campaign.eventEmails?.clicked);
+  const excluded = uniqueEmails([
+    ...(campaign.eventEmails?.bounced || []),
+    ...(campaign.eventEmails?.unsubscribed || []),
+    ...(campaign.eventEmails?.complained || []),
+  ]);
+  const activeEmails = new Set([...opened, ...clicked, ...excluded]);
+  const noRecordedOpen = snapshotEmails.filter((email) => !activeEmails.has(email));
+  const openedNoClick = opened.filter((email) => !clicked.includes(email) && !excluded.includes(email));
+  const legacyKnownEmails = uniqueEmails([...opened, ...clicked, ...excluded]);
+  const hasRecipientSnapshot = snapshotEmails.length > 0;
   const groups = [
-    { key: 'clicked', label: 'Clicked', emails: campaign.eventEmails?.clicked || [] },
-    { key: 'opened', label: 'Opened', emails: campaign.eventEmails?.opened || [] },
-    { key: 'bounced', label: 'Bounced', emails: campaign.eventEmails?.bounced || [] },
-  ].filter((g) => g.emails.length);
+    {
+      key: 'all',
+      label: 'All recipients',
+      emails: hasRecipientSnapshot ? snapshotEmails : legacyKnownEmails,
+      note: hasRecipientSnapshot ? '' : 'Legacy campaign: the original recipient snapshot was not saved. Showing tracked addresses only.',
+    },
+    {
+      key: 'no-open',
+      label: 'No recorded open',
+      emails: noRecordedOpen,
+      unavailable: !hasRecipientSnapshot,
+      note: hasRecipientSnapshot
+        ? 'Use this as a once-only follow-up list. Image blocking and mail privacy can hide genuine reads.'
+        : 'Available for campaigns sent after this follow-up feature was added.',
+    },
+    { key: 'opened-no-click', label: 'Opened, no click', emails: openedNoClick, note: 'Opened at least once, but no tracked link click.' },
+    { key: 'clicked', label: 'Clicked', emails: clicked, note: 'Clicked at least one tracked link.' },
+    { key: 'excluded', label: 'Bounced / excluded', emails: excluded, note: 'Bounced, unsubscribed, or complained contacts. Do not resend from this list.' },
+  ];
   const links = Object.entries(campaign.clickedLinks || {});
-  const [tab, setTab] = useState(groups[0]?.key || 'links');
+  const [tab, setTab] = useState('all');
   const active = groups.find((g) => g.key === tab);
 
   const exportRecipients = () => {
@@ -314,21 +348,36 @@ function CampaignDetail({ campaign, onClose }) {
               </table>
             </div>
           ) : active ? (
-            <div className="adm-table-scroll" style={{ maxHeight: '50vh' }}>
-              <table className="adm-sheet">
-                <thead><tr><th style={{ width: 48 }}>#</th><th>Email address</th></tr></thead>
-                <tbody>
-                  {active.emails.map((email, i) => (
-                    <tr key={email}><td className="adm-muted">{i + 1}</td><td>{email}</td></tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <>
+              {active.note && <p className="adm-modal-note" style={{ marginTop: 0 }}>{active.note}</p>}
+              {active.unavailable ? null : (
+                <div className="adm-table-scroll" style={{ maxHeight: '50vh' }}>
+                  <table className="adm-sheet">
+                    <thead><tr><th style={{ width: 48 }}>#</th><th>Email address</th></tr></thead>
+                    <tbody>
+                      {active.emails.map((email, i) => (
+                        <tr key={email}><td className="adm-muted">{i + 1}</td><td>{email}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
           ) : (
             <div className="adm-empty" style={{ padding: 24 }}>No recipient detail recorded for this campaign.</div>
           )}
         </div>
         <div className="adm-modal-footer adm-modal-footer--end">
+          {tab === 'no-open' && active && !active.unavailable && (
+            <button
+              type="button"
+              className="adm-btn-red"
+              disabled={!active.emails.length}
+              onClick={() => onCompose?.({ audience: 'selected', recipients: active.emails })}
+            >
+              Create follow-up email ({active.emails.length})
+            </button>
+          )}
           <button type="button" className="adm-btn-ghost" onClick={exportRecipients} disabled={!groups.length}>
             <Download size={13} style={{ marginRight: 5, verticalAlign: -2 }} /> Export recipients
           </button>

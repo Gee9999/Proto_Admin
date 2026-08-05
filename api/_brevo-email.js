@@ -301,6 +301,7 @@ export async function sendBroadcastBatch(recipients, { subject, introText = '', 
   let sent = 0;
   let failed = 0;
   const errors = [];
+  const failedEmails = [];
   const messageIds = [];
 
   let cursor = 0;
@@ -327,6 +328,7 @@ export async function sendBroadcastBatch(recipients, { subject, introText = '', 
         if (onProgress) onProgress({ sent, failed, total: recipients.length });
       } catch (err) {
         failed += 1;
+        failedEmails.push(String(recipient.email || '').trim().toLowerCase());
         if (errors.length < 20) errors.push({ email: recipient.email, error: err.message });
       }
     }
@@ -335,5 +337,5 @@ export async function sendBroadcastBatch(recipients, { subject, introText = '', 
   const workers = Math.min(BROADCAST_CONCURRENCY, recipients.length);
   await Promise.all(Array.from({ length: workers }, () => worker()));
 
-  return { sent, failed, errors, messageIds };
+  return { sent, failed, errors, failedEmails, messageIds };
 }

@@ -190,7 +190,7 @@ export default function CommsPanel({ onCompose, onShowToast }) {
 
       {tab === 'analytics' ? (
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 4px', color: '#6b7280', fontSize: 13 }}><Loader2 size={16} className="spin" /> Loading Email Analytics…</div>}>
-          <EmailAnalyticsPanel onShowToast={onShowToast} />
+          <EmailAnalyticsPanel onShowToast={onShowToast} onCompose={onCompose} />
         </Suspense>
       ) : (
         <>
