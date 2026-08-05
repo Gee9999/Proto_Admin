@@ -27,6 +27,7 @@ export default async function handler(req, res) {
     businessTypes,
     recipients,
     importBatch,
+    followUpOf,
   } = req.body || {};
 
   // "Specific people" send — an explicit email list instead of an audience.
@@ -75,6 +76,7 @@ export default async function handler(req, res) {
       businessTypes: Array.isArray(businessTypes) ? businessTypes : [],
       importBatch: String(importBatch || '').trim(),
       recipients: isSelected ? selectedEmails : null,
+      followUpOf: String(followUpOf || '').trim(),
     });
     if (outcome.error && !outcome.total) {
       return res.status(400).json({ error: outcome.error });

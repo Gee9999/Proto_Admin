@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { fetchCustomerAudience, fetchRecipientsByEmail, sendBroadcastBatch } from './_brevo-email.js';
-import { appendEmailCampaign } from './_email-campaigns.js';
+import { appendEmailCampaign, getCampaignFollowUpEligibility, markCampaignFollowUp } from './_email-campaigns.js';
 import { markCustomersEmailed } from './_customer-email-status.js';
 
 export const VALID_EMAIL_AUDIENCE = new Set(['requests', 'regular', 'proto-active', 'all-portal', 'all-approved', 'selected']);
@@ -17,8 +17,14 @@ export function getPortalDbClient() {
  * Resolve the audience, send the personalized broadcast, and log the
  * campaign. Shared by the live send endpoint and the scheduled-send cron.
  */
-export async function runEmailBroadcast({ audience, subject, introText = '', htmlBlock = '', businessTypes = [], importBatch = '', recipients: recipientEmails = null }) {
+export async function runEmailBroadcast({ audience, subject, introText = '', htmlBlock = '', businessTypes = [], importBatch = '', recipients: recipientEmails = null, followUpOf = '' }) {
   const sb = getPortalDbClient();
+  let followUp = null;
+  if (followUpOf) {
+    followUp = await getCampaignFollowUpEligibility(String(followUpOf));
+    if (!followUp.ok) return { ok: false, sent: 0, failed: 0, total: 0, error: followUp.error };
+    recipientEmails = followUp.emails;
+  }
   // Explicit recipient list ("Specific people") bypasses audience resolution.
   const useSelected = Array.isArray(recipientEmails) && recipientEmails.length > 0;
   const recipients = useSelected
@@ -47,7 +53,7 @@ export async function runEmailBroadcast({ audience, subject, introText = '', htm
   const failedRecipientEmails = new Set((failedEmails || []).filter(Boolean));
 
   try {
-    await appendEmailCampaign({
+    const logged = await appendEmailCampaign({
       subject,
       audience,
       businessTypes: Array.isArray(businessTypes) ? businessTypes.filter(Boolean) : [],
@@ -61,9 +67,20 @@ export async function runEmailBroadcast({ audience, subject, introText = '', htm
       recipientEmails: recipients
         .map((recipient) => String(recipient.email || '').trim().toLowerCase())
         .filter((email) => email && !failedRecipientEmails.has(email)),
+      ...(followUpOf ? { followUpOf: String(followUpOf) } : {}),
       messageIds: messageIds || [],
       events: {},
     });
+    if (followUpOf && logged?.campaign) {
+      const successful = recipients
+        .map((recipient) => String(recipient.email || '').trim().toLowerCase())
+        .filter((email) => email && !failedRecipientEmails.has(email));
+      await markCampaignFollowUp(String(followUpOf), {
+        campaignId: logged.campaign.id,
+        sentAt: logged.campaign.sentAt,
+        recipientEmails: successful,
+      });
+    }
   } catch (logErr) {
     console.error('runEmailBroadcast: campaign log failed:', logErr?.message || logErr);
   }
@@ -73,5 +90,5 @@ export async function runEmailBroadcast({ audience, subject, introText = '', htm
     await markCustomersEmailed(sb, recipients.map((r) => r.email), 'campaign');
   } catch { /* best effort */ }
 
-  return { ok: failed === 0, total: recipients.length, sent, failed, errors };
+  return { ok: failed === 0, total: recipients.length, sent, failed, errors, followUp: Boolean(followUpOf) };
 }

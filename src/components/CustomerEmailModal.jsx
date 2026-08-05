@@ -99,6 +99,7 @@ export default function CustomerEmailModal({
   initialAudience = null,
   initialBusinessTypes = null,
   initialRecipients = null,
+  initialFollowUpOf = '',
 }) {
   const [subject, setSubject] = useState('');
   const [introBody, setIntroBody] = useState('');
@@ -371,6 +372,7 @@ export default function CustomerEmailModal({
         businessTypes: isSelected ? [] : businessTypes,
         importBatch: audience === 'proto-active' ? importBatch : '',
         ...(isSelected ? { recipients: selectedEmails } : {}),
+        ...(initialFollowUpOf ? { followUpOf: initialFollowUpOf } : {}),
       });
       onShowToast?.(
         `Sent to ${result.sent} ${isSelected ? 'recipient' : 'customer'}(s)${result.failed ? ` — ${result.failed} failed` : ''}`,
@@ -408,6 +410,11 @@ export default function CustomerEmailModal({
         </div>
 
         <div className="adm-modal-body adm-email-modal__body">
+          {initialFollowUpOf && (
+            <div className="adm-email-field" style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '10px 12px', color: '#92400e' }}>
+              <strong>One-time follow-up</strong> — this audience was prepared from customers with no recorded open. Sending is recorded against the original campaign and cannot be repeated from it.
+            </div>
+          )}
           {recentCampaigns.length > 0 && (
             <div className="adm-email-field" style={{ background: '#f8fafc', border: '1px solid #e5e7eb', borderRadius: 8, padding: '10px 12px' }}>
               <span className="adm-email-field__label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
