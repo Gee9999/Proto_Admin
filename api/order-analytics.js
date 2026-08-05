@@ -222,7 +222,7 @@ export default async function handler(req, res) {
     events.filter((e) => e.event_type === type).forEach((e) => {
       const label = (e.entity_label || e.entity_id || 'unknown').trim();
       const key = label.toLowerCase();
-      const row = map.get(key) || { id: e.entity_id || key, label, views: 0 };
+      const row = map.get(key) || { id: e.entity_id || key, code: e.entity_id || '', label, views: 0 };
       row.views += 1;
       map.set(key, row);
     });
