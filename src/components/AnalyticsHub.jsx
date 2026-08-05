@@ -5,13 +5,21 @@ import { lazyRetry } from '../lib/lazyRetry';
 const OrderAnalyticsDashboard = lazyRetry(() => import('./OrderAnalyticsDashboard'));
 const SearchAnalyticsDashboard = lazyRetry(() => import('./SearchAnalyticsDashboard'));
 const ApolloRecommendations = lazyRetry(() => import('./ApolloRecommendations'));
+const AnalyticsControlCentre = lazyRetry(() => import('./AnalyticsControlCentre'));
 
 export default function AnalyticsHub() {
-  const [view, setView] = useState('orders');
+  const [view, setView] = useState('overview');
 
   return (
     <div className="oa-hub">
       <div className="adm-customer-tabs oa-hub-tabs">
+        <button
+          type="button"
+          onClick={() => setView('overview')}
+          className={`adm-tab${view === 'overview' ? ' adm-tab--active' : ''}`}
+        >
+          Control Centre
+        </button>
         <button
           type="button"
           onClick={() => setView('orders')}
@@ -42,7 +50,7 @@ export default function AnalyticsHub() {
         </div>
       )}
       >
-        {view === 'orders' ? <OrderAnalyticsDashboard /> : view === 'search' ? <SearchAnalyticsDashboard /> : <ApolloRecommendations />}
+        {view === 'overview' ? <AnalyticsControlCentre /> : view === 'orders' ? <OrderAnalyticsDashboard /> : view === 'search' ? <SearchAnalyticsDashboard /> : <ApolloRecommendations />}
       </Suspense>
     </div>
   );
