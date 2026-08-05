@@ -96,11 +96,11 @@ export async function deleteAllProtoActiveCustomers() {
 }
 
 /** Import CSV rows (Account, CompanyName, ContactName, EmailAddress, TotalSpend) into pre-registration. */
-export async function importProtoActiveCustomers(rows, batchLabel = '') {
+export async function importProtoActiveCustomers(rows, batchLabel = '', tags = []) {
   const res = await fetch('/api/proto-active-customers', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'import', rows, batchLabel }),
+    body: JSON.stringify({ action: 'import', rows, batchLabel, tags }),
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || 'Customer import failed');

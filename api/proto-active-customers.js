@@ -33,7 +33,7 @@ export default async function handler(req, res) {
   if (!(await requireOwner(req, res))) return;
 
   if (req.method === 'POST') {
-    const { action, rows, batchLabel } = req.body || {};
+    const { action, rows, batchLabel, tags } = req.body || {};
     if (action !== 'import') return res.status(400).json({ error: 'action must be import' });
     if (!Array.isArray(rows) || !rows.length) return res.status(400).json({ error: 'rows[] required' });
 
@@ -44,6 +44,13 @@ export default async function handler(req, res) {
     const batchAt = new Date();
     const batch = String(batchLabel || '').trim()
       || `${batchAt.toISOString().slice(0, 16).replace('T', ' ')} import`;
+    // Tags arrive as a list or a comma-separated string; normalise, dedupe and
+    // cap so one bad paste cannot write hundreds of junk tags onto every row.
+    const cleanTags = [...new Set(
+      (Array.isArray(tags) ? tags : String(tags || '').split(','))
+        .map((t) => String(t || '').trim())
+        .filter(Boolean),
+    )].slice(0, 20);
 
     const seen = new Set();
     const cleaned = [];
@@ -55,7 +62,7 @@ export default async function handler(req, res) {
         continue;
       }
       seen.add(row.email);
-      cleaned.push({ ...row, import_batch: batch, import_batch_at: batchAt.toISOString() });
+      cleaned.push({ ...row, import_batch: batch, import_batch_at: batchAt.toISOString(), tags: cleanTags });
     }
     if (!cleaned.length) return res.status(400).json({ error: 'No valid rows (need EmailAddress on each row)' });
 
@@ -70,7 +77,7 @@ export default async function handler(req, res) {
         if (error) throw error;
         imported += chunk.length;
       }
-      return res.status(200).json({ ok: true, imported, skipped, batch });
+      return res.status(200).json({ ok: true, imported, skipped, batch, tags: cleanTags });
     } catch (err) {
       console.error('proto-active-customers POST import:', err?.message || err);
       return res.status(500).json({ error: err.message || 'Import failed' });

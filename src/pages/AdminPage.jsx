@@ -762,6 +762,23 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
 
   const handleCustomerCsvUpload = async (file) => {
     if (!file) return;
+
+    // Ask before importing, not after: the group label and tags are what make
+    // the batch findable and emailable later, and there is no way to attribute
+    // rows to an upload retrospectively once several share a timestamp.
+    const defaultLabel = `${new Date().toISOString().slice(0, 16).replace('T', ' ')} import`;
+    const batchLabel = window.prompt(
+      'Name this upload group (used to find and email these contacts later):',
+      defaultLabel,
+    );
+    if (batchLabel === null) return; // cancelled — import nothing
+    const tagsInput = window.prompt(
+      'Tags for everyone in this upload, comma separated (leave blank for none):',
+      '10000 club',
+    );
+    if (tagsInput === null) return;
+    const tags = tagsInput.split(',').map((t) => t.trim()).filter(Boolean);
+
     setImportingCustomers(true);
     try {
       const { parseCustomerFile } = await import('../lib/customerCsvImport');
@@ -775,12 +792,12 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       let imported = 0;
       let skipped = 0;
       for (let i = 0; i < rows.length; i += CHUNK) {
-        const result = await importProtoActiveCustomers(rows.slice(i, i + CHUNK));
+        const result = await importProtoActiveCustomers(rows.slice(i, i + CHUNK), batchLabel.trim() || defaultLabel, tags);
         imported += result.imported || 0;
         skipped += result.skipped || 0;
       }
       showToast(
-        `Imported ${imported} customer(s) into Pre-registration${skipped ? ` — ${skipped} skipped (duplicates/invalid)` : ''}${errors.length ? ` — ${errors.length} row(s) had errors` : ''}`,
+        `Imported ${imported} contact(s) as "${batchLabel.trim() || defaultLabel}"${tags.length ? ` · tags: ${tags.join(', ')}` : ''}${skipped ? ` — ${skipped} skipped (duplicates/invalid)` : ''}${errors.length ? ` — ${errors.length} row(s) had errors` : ''}`,
         errors.length || skipped ? 'warning' : 'success',
       );
       await loadCustomers();
@@ -2475,7 +2492,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
 
                 <div className="adm-customer-tabs">
                   <button onClick={() => setCustomerTab('requests')} className={`adm-tab${customerTab === 'requests' ? ' adm-tab--active' : ''}`}>Trade Requests</button>
-                  <button onClick={() => setCustomerTab('proto-active')} className={`adm-tab${customerTab === 'proto-active' ? ' adm-tab--active' : ''}`}>Pre-registration</button>
+                  {/* Pre-registration is database-only by request. The contacts
+                      are still imported, tagged, grouped and emailable from the
+                      composer's Audience list — they are simply not browsed here. */}
                   <button onClick={() => setCustomerTab('regular')} className={`adm-tab${customerTab === 'regular' ? ' adm-tab--active' : ''}`}>Approved</button>
                   <label className="adm-search adm-search--inline"><Search size={14} /><input value={customerSearch} onChange={(e) => setCustomerSearch(e.target.value)} placeholder="Search…" className="adm-search-input" /></label>
                   {customerTab !== 'proto-active' && (
