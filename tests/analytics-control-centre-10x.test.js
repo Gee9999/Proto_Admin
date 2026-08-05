@@ -17,3 +17,5 @@ describe('analytics control centre 10x workflow', () => {
     expect(source).toContain('SKU / ID');
   });
 });
+
+// Preview-only validation contract.
