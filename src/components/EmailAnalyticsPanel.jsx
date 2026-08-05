@@ -87,11 +87,16 @@ export default function EmailAnalyticsPanel({ onShowToast }) {
   const rows = useMemo(() => {
     const mapped = (campaigns || []).map((c) => {
       const e = c.events || {};
-      const sent = c.sent || c.recipientCount || 0;
-      const delivered = e.delivered || 0;
+      // Brevo accepts each send synchronously, but its optional `delivered`
+      // webhook is not emitted consistently for this transactional send path.
+      // Using that event made a campaign with hundreds of opens/clicks appear
+      // to have delivered only a handful of emails. A send accepted by Brevo
+      // is treated as delivered unless a subsequent bounce says otherwise.
+      const sent = Number.isFinite(c.sent) ? c.sent : (c.recipientCount || 0);
       const opened = e.opened || 0;
       const clicked = e.clicked || 0;
       const bounced = e.bounced || 0;
+      const delivered = Math.max(0, sent - bounced);
       // Opens/clicks are counted per EVENT (one person opening 3 times is 3),
       // so rates are measured against unique recipients where we have them and
       // capped at 100% — a "300% open rate" is meaningless to read.
@@ -232,8 +237,9 @@ export default function EmailAnalyticsPanel({ onShowToast }) {
       )}
 
       <p className="adm-section-note" style={{ marginTop: 12 }}>
-        Open and click rates count each PERSON once, measured against recipients. Stats arrive from Brevo webhooks —
-        a campaign sent moments ago may still show zeros.
+        Delivered means emails accepted by Brevo, less recorded bounces. Open and click rates count each PERSON once,
+        measured against recipients. Engagement stats arrive from Brevo webhooks, so a campaign sent moments ago may
+        still show zeros.
       </p>
 
       {detail && <CampaignDetail campaign={detail} onClose={() => setDetail(null)} />}
