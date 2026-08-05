@@ -4,6 +4,7 @@ import { lazyRetry } from '../lib/lazyRetry';
 
 const OrderAnalyticsDashboard = lazyRetry(() => import('./OrderAnalyticsDashboard'));
 const SearchAnalyticsDashboard = lazyRetry(() => import('./SearchAnalyticsDashboard'));
+const ApolloRecommendations = lazyRetry(() => import('./ApolloRecommendations'));
 
 export default function AnalyticsHub() {
   const [view, setView] = useState('orders');
@@ -25,6 +26,13 @@ export default function AnalyticsHub() {
         >
           Search Analytics
         </button>
+        <button
+          type="button"
+          onClick={() => setView('apollo')}
+          className={`adm-tab${view === 'apollo' ? ' adm-tab--active' : ''}`}
+        >
+          Apollo Insights
+        </button>
       </div>
 
       <Suspense fallback={(
@@ -34,7 +42,7 @@ export default function AnalyticsHub() {
         </div>
       )}
       >
-        {view === 'orders' ? <OrderAnalyticsDashboard /> : <SearchAnalyticsDashboard />}
+        {view === 'orders' ? <OrderAnalyticsDashboard /> : view === 'search' ? <SearchAnalyticsDashboard /> : <ApolloRecommendations />}
       </Suspense>
     </div>
   );
