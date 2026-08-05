@@ -160,6 +160,10 @@ export default function CommsPanel({ onCompose, onShowToast }) {
           <BarChart2 size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
           Email Analytics
         </button>
+        <button type="button" onClick={() => setTab('engagement')} className={`adm-tab${tab === 'engagement' ? ' adm-tab--active' : ''}`}>
+          <Users size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
+          Engagement
+        </button>
         {tab === 'contacts' && (
           <>
             <AdminSelect
