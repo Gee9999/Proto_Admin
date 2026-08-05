@@ -5,7 +5,7 @@ import { lazyRetry } from '../lib/lazyRetry';
 import { BUSINESS_TYPES } from '../lib/businessTypes';
 import AdminSelect from './AdminSelect';
 
-const EmailAnalyticsPanel = lazyRetry(() => import('./EmailAnalyticsPanel'));
+const EmailAnalyticsPanel = lazyRetry(() => import('./EmailAnalyticsPanel'));\nimport EngagementAnalyticsTabs from './EngagementAnalyticsTabs';
 
 const PAGE_SIZE = 50;
 
@@ -188,7 +188,7 @@ export default function CommsPanel({ onCompose, onShowToast }) {
         )}
       </div>
 
-      {tab === 'analytics' ? (
+      {tab === 'engagement' ? (\n        <EngagementAnalyticsTabs onShowToast={onShowToast} />\n      ) : tab === 'analytics' ? (
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 4px', color: '#6b7280', fontSize: 13 }}><Loader2 size={16} className="spin" /> Loading Email Analytics…</div>}>
           <EmailAnalyticsPanel onShowToast={onShowToast} onCompose={onCompose} />
         </Suspense>
