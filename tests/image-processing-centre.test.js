@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createNutstoreImageJobs,
+  createUploadedImageJobs,
   normalizeImageProcessingJob,
   summarizeImageProcessingJobs,
   updateImageProcessingJob,
@@ -66,6 +67,22 @@ describe('Product Loader handoff and owner visibility', () => {
   it('shows the centre tab only for owners', () => {
     expect(panelSource).toContain("...(isOwner ? [{ id: 'image-processing'");
     expect(adminSource).toContain("isOwner={customer?.role === 'owner'}");
+  });
+
+  it('queues local uploads through the JSON API path used by Vercel functions', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ jobs: [{ id: 'j-upload', status: 'queued' }] }));
+    const file = {
+      name: 'DISPOSABLE.png', type: 'image/png', size: 4,
+      arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer,
+    };
+    await createUploadedImageJobs([file]);
+    expect(fetchMock).toHaveBeenCalledWith('/api/image-processing-jobs', expect.objectContaining({
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+    }));
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      source: 'upload',
+      items: [{ filename: 'DISPOSABLE.png', contentType: 'image/png', base64: 'iVBORw==' }],
+    });
   });
 
   it('offers a dedicated sidebar entry without replacing the legacy Image Replace screen', () => {

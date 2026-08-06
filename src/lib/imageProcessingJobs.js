@@ -79,14 +79,34 @@ export async function createUploadedImageJobs(files) {
 
   const created = [];
   for (const batch of batches) {
-    const body = new FormData();
-    body.set('source', 'upload');
-    for (const file of batch) body.append('images', file, file.webkitRelativePath || file.name);
-    const res = await fetch(JOBS_ENDPOINT, { method: 'POST', body });
+    // Send uploads as JSON rather than multipart. The API accepts both, but
+    // JSON avoids multipart parsing differences between local Vite and Vercel
+    // functions that previously let a selected image reach the request without
+    // creating a queue item.
+    const items = await Promise.all(batch.map(async (file) => ({
+      filename: file.webkitRelativePath || file.name,
+      contentType: file.type || 'image/jpeg',
+      base64: await fileToBase64(file),
+    })));
+    const res = await fetch(JOBS_ENDPOINT, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source: 'upload', items }),
+    });
     const json = await readApiJson(res, { fallback: 'Could not upload images for processing' });
     created.push(...normalizePayload(json));
   }
   return created;
+}
+
+async function fileToBase64(file) {
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let start = 0; start < bytes.length; start += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(start, start + chunkSize));
+  }
+  return btoa(binary);
 }
 
 export async function updateImageProcessingJob(id, action, details = {}) {
