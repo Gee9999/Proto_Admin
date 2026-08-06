@@ -22,6 +22,7 @@ import {
   deriveJobStatus,
   imageFieldForSlot,
   normalizeImageSlot,
+  qualityScoreFromMetrics,
   summarizeJob,
 } from '../lib/image-processing-centre.mjs';
 import { fetchUsdToZarRate, resolveImageGenCost } from './_image-gen-cost.js';
