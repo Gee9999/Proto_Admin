@@ -2366,6 +2366,20 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
               </SectionErrorBoundary>
             )}
 
+            {activeSection === 'image-processing' && (
+              <SectionErrorBoundary name="image-processing" title="Image Processing Centre crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Loading Image Processing Centre…" />}>
+                  <ProductLoaderPanel
+                    taxonomyTree={taxonomyTree}
+                    onShowToast={showToast}
+                    publishedBy={customer?.email || ''}
+                    isOwner={customer?.role === 'owner'}
+                    initialTab="image-processing"
+                  />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
+
             {activeSection === 'image-replace' && (
               <SectionErrorBoundary name="image-replace" title="Image Replace crashed" resetKey={activeSection}>
                 <Suspense fallback={<LazySectionFallback label="Loading Image Replace…" />}>

@@ -156,8 +156,11 @@ export default function ProductLoaderPanel({
   mainSiteUrl = 'https://site.proto.co.za',
   publishedBy = '',
   isOwner = false,
+  initialTab = 'nutstore',
 }) {
-  const [activeTab, setActiveTab] = useState('nutstore');
+  const [activeTab, setActiveTab] = useState(() => (
+    initialTab === 'image-processing' && isOwner ? 'image-processing' : 'nutstore'
+  ));
   const [processingNutstoreSelection, setProcessingNutstoreSelection] = useState([]);
   const [processingUploadSelection, setProcessingUploadSelection] = useState([]);
   const [publishSuccess, setPublishSuccess] = useState(null);

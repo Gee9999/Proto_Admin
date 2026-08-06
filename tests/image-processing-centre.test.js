@@ -11,6 +11,7 @@ const panelSource = fs.readFileSync(new URL('../src/components/ProductLoaderPane
 const nutstoreSource = fs.readFileSync(new URL('../src/components/productLoader/ProductLoaderNutstore.jsx', import.meta.url), 'utf8');
 const uploadSource = fs.readFileSync(new URL('../src/components/productLoader/ProductLoaderUpload.jsx', import.meta.url), 'utf8');
 const adminSource = fs.readFileSync(new URL('../src/pages/AdminPage.jsx', import.meta.url), 'utf8');
+const sidebarSource = fs.readFileSync(new URL('../src/components/GroupedSidebar.jsx', import.meta.url), 'utf8');
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -65,6 +66,13 @@ describe('Product Loader handoff and owner visibility', () => {
   it('shows the centre tab only for owners', () => {
     expect(panelSource).toContain("...(isOwner ? [{ id: 'image-processing'");
     expect(adminSource).toContain("isOwner={customer?.role === 'owner'}");
+  });
+
+  it('offers a dedicated sidebar entry without replacing the legacy Image Replace screen', () => {
+    expect(sidebarSource).toContain("{ id: 'image-processing', label: 'Image Processing Centre'");
+    expect(sidebarSource).toContain("{ id: 'image-replace', label: 'Image Replace'");
+    expect(adminSource).toContain("activeSection === 'image-processing'");
+    expect(adminSource).toContain('initialTab="image-processing"');
   });
 
   it('hands off selected Nutstore paths and selected upload files', () => {
