@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createNutstoreImageJobs,
   createUploadedImageJobs,
+  executeImageProcessingJob,
   fetchImageProcessingJobs,
   normalizeImageProcessingJob,
   summarizeImageProcessingJobs,
@@ -15,7 +16,10 @@ const uploadSource = fs.readFileSync(new URL('../src/components/productLoader/Pr
 const adminSource = fs.readFileSync(new URL('../src/pages/AdminPage.jsx', import.meta.url), 'utf8');
 const sidebarSource = fs.readFileSync(new URL('../src/components/GroupedSidebar.jsx', import.meta.url), 'utf8');
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.restoreAllMocks();
+});
 
 function jsonResponse(body, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
@@ -73,12 +77,37 @@ describe('Product Loader handoff and owner visibility', () => {
   it('turns a stalled queue request into a retryable error', async () => {
     vi.useFakeTimers();
     vi.spyOn(globalThis, 'fetch').mockImplementation((_url, options) => new Promise((_resolve, reject) => {
-      options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+      options.signal.addEventListener('abort', () => reject(new globalThis.DOMException('Aborted', 'AbortError')));
     }));
     const pending = fetchImageProcessingJobs();
     const assertion = expect(pending).rejects.toThrow('The image queue did not respond. Please retry.');
     await vi.advanceTimersByTimeAsync(15_000);
     await assertion;
+    vi.useRealTimers();
+  });
+
+  it('does not abort a legitimate paid execution at the generic 15-second queue timeout', async () => {
+    vi.useFakeTimers();
+    let aborted = false;
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_url, options) => new Promise((resolve, reject) => {
+      options.signal.addEventListener('abort', () => {
+        aborted = true;
+        reject(new globalThis.DOMException('Aborted', 'AbortError'));
+      }, { once: true });
+      setTimeout(() => resolve(jsonResponse({
+        job: { id: 'job-async', status: 'review', after_url: '/processed/job-async.png' },
+      })), 20_000);
+    }));
+
+    const execution = executeImageProcessingJob('job-async')
+      .then((job) => ({ job }), (error) => ({ error }));
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await execution).toMatchObject({
+      job: { id: 'job-async', status: 'review', afterUrl: '/processed/job-async.png' },
+    });
     vi.useRealTimers();
   });
 

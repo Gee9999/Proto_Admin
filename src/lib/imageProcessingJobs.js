@@ -2,20 +2,31 @@ import { readApiJson } from './apiError.js';
 
 const JOBS_ENDPOINT = '/api/image-processing-jobs';
 const REQUEST_TIMEOUT_MS = 15_000;
+const EXECUTION_TIMEOUT_MS = 4 * 60_000;
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
 async function requestImageJobs(url, options = {}) {
+  const { timeoutMs = REQUEST_TIMEOUT_MS, ...fetchOptions } = options;
   const controller = new AbortController();
-  const externalSignal = options.signal;
+  const externalSignal = fetchOptions.signal;
   const abortFromCaller = () => controller.abort(externalSignal?.reason);
   externalSignal?.addEventListener?.('abort', abortFromCaller, { once: true });
-  const timer = setTimeout(() => controller.abort(new Error('timeout')), REQUEST_TIMEOUT_MS);
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    controller.abort(new Error('timeout'));
+  }, timeoutMs);
   try {
-    return await fetch(url, { ...options, signal: controller.signal });
+    return await fetch(url, { ...fetchOptions, signal: controller.signal });
   } catch (error) {
+    if (timedOut && timeoutMs === EXECUTION_TIMEOUT_MS) {
+      const pendingError = new Error('Image processing is taking longer than expected. The queue will keep checking for the result.');
+      pendingError.code = 'IMAGE_EXECUTION_PENDING';
+      throw pendingError;
+    }
     if (controller.signal.aborted) throw new Error('The image queue did not respond. Please retry.');
     throw error;
   } finally {
@@ -127,15 +138,25 @@ async function fileToBase64(file) {
   return btoa(binary);
 }
 
-export async function updateImageProcessingJob(id, action, details = {}) {
+export async function updateImageProcessingJob(id, action, details = {}, { signal } = {}) {
   if (!id) throw new Error('Image job is missing an ID');
+  const isExecution = action === 'execute';
   const res = await requestImageJobs(`${JOBS_ENDPOINT}?id=${encodeURIComponent(id)}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(isExecution ? { 'Idempotency-Key': `image-execute:${id}` } : {}),
+    },
     body: JSON.stringify({ action, ...details }),
+    signal,
+    timeoutMs: isExecution ? EXECUTION_TIMEOUT_MS : REQUEST_TIMEOUT_MS,
   });
   const json = await readApiJson(res, { fallback: `Could not ${action} this image` });
-  return normalizeImageProcessingJob({ id, ...(json.job || json) });
+  return normalizeImageProcessingJob({ id, ...(isExecution ? { status: 'processing' } : {}), ...(json.job || json) });
+}
+
+export async function executeImageProcessingJob(id, { signal } = {}) {
+  return updateImageProcessingJob(id, 'execute', {}, { signal });
 }
 
 export function summarizeImageProcessingJobs(jobs) {

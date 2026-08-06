@@ -17,14 +17,39 @@ import {
 import {
   createNutstoreImageJobs,
   createUploadedImageJobs,
+  executeImageProcessingJob,
   fetchImageProcessingJobs,
   summarizeImageProcessingJobs,
   updateImageProcessingJob,
 } from '../../lib/imageProcessingJobs.js';
 
 const ACTIVE_STATUSES = new Set(['queued', 'processing', 'retrying']);
+const EXECUTABLE_STATUSES = new Set(['processing', 'retrying']);
 const REVIEW_STATUSES = new Set(['review', 'ready', 'completed']);
 const APPROVED_STATUSES = new Set(['approved']);
+const EXECUTION_MARKER_PREFIX = 'proto:image-processing:execute:';
+const EXECUTION_MARKER_TTL_MS = 10 * 60_000;
+
+function executionMarkerKey(id) {
+  return `${EXECUTION_MARKER_PREFIX}${id}`;
+}
+
+function hasRecentExecutionMarker(id) {
+  try {
+    const startedAt = Number(window.localStorage.getItem(executionMarkerKey(id)) || 0);
+    if (startedAt && Date.now() - startedAt < EXECUTION_MARKER_TTL_MS) return true;
+    window.localStorage.removeItem(executionMarkerKey(id));
+  } catch { /* polling and the backend claim still guard execution */ }
+  return false;
+}
+
+function markExecutionStarted(id) {
+  try { window.localStorage.setItem(executionMarkerKey(id), String(Date.now())); } catch { /* ignore */ }
+}
+
+function clearExecutionMarker(id) {
+  try { window.localStorage.removeItem(executionMarkerKey(id)); } catch { /* ignore */ }
+}
 
 function statusLabel(status) {
   return ({
@@ -60,6 +85,7 @@ export default function ImageProcessingCentre({
   const folderRef = useRef(null);
   const fileRef = useRef(null);
   const processInFlightRef = useRef('');
+  const executionInFlightRef = useRef(new Set());
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [workerUnavailable, setWorkerUnavailable] = useState(false);
@@ -99,9 +125,24 @@ export default function ImageProcessingCentre({
 
   useEffect(() => {
     if (!hasActiveJobs) return undefined;
-    const timer = window.setInterval(() => void loadJobs({ quiet: true }), 8000);
-    return () => window.clearInterval(timer);
+    let stopped = false;
+    let timer;
+    const poll = async () => {
+      await loadJobs({ quiet: true });
+      if (!stopped) timer = window.setTimeout(poll, 5000);
+    };
+    timer = window.setTimeout(poll, 3000);
+    return () => {
+      stopped = true;
+      window.clearTimeout(timer);
+    };
   }, [hasActiveJobs, loadJobs]);
+
+  useEffect(() => {
+    for (const job of jobs) {
+      if (!ACTIVE_STATUSES.has(job.status)) clearExecutionMarker(job.id);
+    }
+  }, [jobs]);
 
   useEffect(() => {
     if (!selectedJobId && jobs[0]?.id) setSelectedJobId(jobs[0].id);
@@ -170,26 +211,44 @@ export default function ImageProcessingCentre({
 
   useEffect(() => {
     if (busy || processInFlightRef.current) return undefined;
-    const queued = jobs.find((job) => job.status === 'queued');
-    if (!queued) return undefined;
+    const resumable = jobs.find((job) => (
+      EXECUTABLE_STATUSES.has(job.status)
+      && !executionInFlightRef.current.has(job.id)
+      && !hasRecentExecutionMarker(job.id)
+    ));
+    const candidate = resumable || jobs.find((job) => job.status === 'queued');
+    if (!candidate) return undefined;
 
-    processInFlightRef.current = queued.id;
-    setBusy(`process:${queued.id}`);
+    processInFlightRef.current = candidate.id;
+    setBusy(`${candidate.status === 'queued' ? 'process' : 'execute'}:${candidate.id}`);
     setError('');
-    void updateImageProcessingJob(queued.id, 'process')
-      .then((updated) => {
-        mergeJobs([updated]);
+    void (async () => {
+      try {
+        let updated = candidate;
+        if (candidate.status === 'queued') {
+          updated = await updateImageProcessingJob(candidate.id, 'process');
+          mergeJobs([updated]);
+        }
+
+        if (EXECUTABLE_STATUSES.has(updated.status)) {
+          executionInFlightRef.current.add(candidate.id);
+          markExecutionStarted(candidate.id);
+          setBusy(`execute:${candidate.id}`);
+          updated = await executeImageProcessingJob(candidate.id);
+          mergeJobs([updated]);
+        }
         setWorkerUnavailable(false);
-      })
-      .catch(async (err) => {
-        setWorkerUnavailable(true);
-        setError(err.message || `Could not process ${queued.filename}`);
+      } catch (err) {
+        const stillPolling = err.code === 'IMAGE_EXECUTION_PENDING';
+        setWorkerUnavailable(!stillPolling);
+        setError(err.message || `Could not process ${candidate.filename}`);
         await loadJobs({ quiet: true });
-      })
-      .finally(() => {
+      } finally {
+        executionInFlightRef.current.delete(candidate.id);
         processInFlightRef.current = '';
         setBusy('');
-      });
+      }
+    })();
     return undefined;
   }, [busy, jobs, loadJobs, mergeJobs]);
 

@@ -29,6 +29,15 @@ import {
 
 export const config = { api: { bodyParser: false } };
 
+const FAL_CLAIM_TTL_SECONDS = 900;
+const FAL_START_CLAIM_JOB = 'fal-processing-starts';
+const FAL_RUN_CLAIM_JOB = 'fal-processing-runs';
+const LEGACY_FAL_RECOVERY_DELAY_MS = 6 * 60_000;
+
+function falClaimScope(jobId, imageId) {
+  return `${jobId}-${imageId}`;
+}
+
 async function requestActor(req) {
   if (hasAdminKey(req)) return 'server-admin';
   const user = await verifyAdminUser(req);
@@ -70,6 +79,286 @@ function publicImageJob(job, image) {
     created_at: image.createdAt || job.createdAt,
     updated_at: job.updatedAt,
   };
+}
+
+function falProcessorContract(job, image) {
+  return {
+    endpoint: `/api/image-processing-jobs?id=${encodeURIComponent(`${job.id}~${image.id}`)}`,
+    method: 'PATCH',
+    body: { action: 'execute' },
+  };
+}
+
+async function startFalProcessing(res, actor, job, index) {
+  const image = job.images[index];
+  if (image.status === 'processing') {
+    if (image.processing?.provider !== 'fal.ai' || !image.processing?.claimId) {
+      return res.status(409).json({
+        error: 'A previous processing attempt has an unknown outcome. Wait for it to finish or use Retry after it is marked failed.',
+      });
+    }
+    return res.status(202).json({
+      ok: true,
+      accepted: true,
+      idempotent: true,
+      job: publicImageJob(job, image),
+      processor: falProcessorContract(job, image),
+    });
+  }
+  if (image.status !== 'queued') {
+    return res.status(409).json({ error: 'Only a queued image can start processing' });
+  }
+
+  const scope = falClaimScope(job.id, image.id);
+  const claim = await claimImageObject(FAL_START_CLAIM_JOB, scope, {
+    workerId: `fal:${actor}`,
+    ttlSeconds: FAL_CLAIM_TTL_SECONDS,
+  });
+  if (!claim) {
+    const current = await readImageJob(job.id);
+    const currentImage = current?.images?.find((row) => row.id === image.id);
+    if (currentImage?.status === 'processing' && currentImage.processing?.claimId) {
+      return res.status(202).json({
+        ok: true,
+        accepted: true,
+        idempotent: true,
+        job: publicImageJob(current, currentImage),
+        processor: falProcessorContract(current, currentImage),
+      });
+    }
+    return res.status(202).json({
+      ok: true,
+      accepted: true,
+      idempotent: true,
+      pending: true,
+      job: publicImageJob(job, image),
+    });
+  }
+
+  try {
+    const current = await readImageJob(job.id);
+    const currentIndex = current?.images?.findIndex((row) => row.id === image.id) ?? -1;
+    if (!current || currentIndex < 0) throw new Error('Image processing item disappeared while it was being claimed');
+    const currentImage = current.images[currentIndex];
+    if (currentImage.status !== 'queued') {
+      await releaseImageObjectClaim(FAL_START_CLAIM_JOB, scope, claim.id).catch(() => {});
+      if (currentImage.status === 'processing' && currentImage.processing?.claimId) {
+        return res.status(202).json({
+          ok: true,
+          accepted: true,
+          idempotent: true,
+          job: publicImageJob(current, currentImage),
+          processor: falProcessorContract(current, currentImage),
+        });
+      }
+      return res.status(409).json({ error: 'Only a queued image can start processing' });
+    }
+
+    current.images[currentIndex] = {
+      ...currentImage,
+      status: 'processing',
+      processing: {
+        provider: 'fal.ai',
+        state: 'awaiting_dispatch',
+        claimId: claim.id,
+        claimedBy: `fal:${actor}`,
+        startedAt: new Date().toISOString(),
+        expiresAt: claim.expiresAt,
+      },
+      error: null,
+    };
+    const saved = await persistJob(current);
+    const savedImage = saved.images[currentIndex];
+    return res.status(202).json({
+      ok: true,
+      accepted: true,
+      idempotent: false,
+      job: publicImageJob(saved, savedImage),
+      processor: falProcessorContract(saved, savedImage),
+    });
+  } catch (error) {
+    await releaseImageObjectClaim(FAL_START_CLAIM_JOB, scope, claim.id).catch(() => {});
+    throw error;
+  }
+}
+
+async function runFalProcessing(res, actor, job, index) {
+  let image = job.images[index];
+  if (image.status === 'review') {
+    return res.status(200).json({ ok: true, idempotent: true, job: publicImageJob(job, image) });
+  }
+
+  // Preview builds before the asynchronous contract saved `processing`
+  // without a durable claim, then performed fal.ai work inside the browser's
+  // 15-second request. If that request was interrupted the manifest can remain
+  // stuck forever. Adopt only an attempt older than the previous function's
+  // five-minute maximum, so recovery cannot overlap the original paid call.
+  if (image.status === 'processing' && image.processing?.provider === 'fal.ai' && !image.processing?.claimId) {
+    const startedAt = new Date(image.processing?.startedAt || 0).getTime();
+    const safelyStale = Number.isFinite(startedAt)
+      && startedAt > 0
+      && (Date.now() - startedAt) >= LEGACY_FAL_RECOVERY_DELAY_MS;
+    if (!safelyStale) {
+      return res.status(202).json({
+        ok: true,
+        accepted: true,
+        idempotent: true,
+        alreadyRunning: true,
+        job: publicImageJob(job, image),
+      });
+    }
+
+    const scope = falClaimScope(job.id, image.id);
+    const recoveryClaim = await claimImageObject(FAL_START_CLAIM_JOB, scope, {
+      workerId: `fal-recovery:${actor}`,
+      ttlSeconds: FAL_CLAIM_TTL_SECONDS,
+    });
+    if (!recoveryClaim) {
+      const current = await readImageJob(job.id);
+      const currentImage = current?.images?.find((row) => row.id === image.id);
+      return res.status(202).json({
+        ok: true,
+        accepted: true,
+        idempotent: true,
+        alreadyRunning: true,
+        job: publicImageJob(current || job, currentImage || image),
+      });
+    }
+
+    const current = await readImageJob(job.id);
+    const currentIndex = current?.images?.findIndex((row) => row.id === image.id) ?? -1;
+    const currentImage = currentIndex >= 0 ? current.images[currentIndex] : null;
+    if (!current || !currentImage) {
+      await releaseImageObjectClaim(FAL_START_CLAIM_JOB, scope, recoveryClaim.id).catch(() => {});
+      throw new Error('Image processing item disappeared during recovery');
+    }
+    if (currentImage.status === 'review') {
+      await releaseImageObjectClaim(FAL_START_CLAIM_JOB, scope, recoveryClaim.id).catch(() => {});
+      return res.status(200).json({ ok: true, idempotent: true, job: publicImageJob(current, currentImage) });
+    }
+    if (currentImage.status !== 'processing' || currentImage.processing?.claimId) {
+      await releaseImageObjectClaim(FAL_START_CLAIM_JOB, scope, recoveryClaim.id).catch(() => {});
+      return res.status(202).json({
+        ok: true,
+        accepted: true,
+        idempotent: true,
+        alreadyRunning: true,
+        job: publicImageJob(current, currentImage),
+      });
+    }
+
+    current.images[currentIndex] = {
+      ...currentImage,
+      processing: {
+        ...currentImage.processing,
+        state: 'awaiting_dispatch',
+        claimId: recoveryClaim.id,
+        claimedBy: `fal-recovery:${actor}`,
+        recoveredAt: new Date().toISOString(),
+        expiresAt: recoveryClaim.expiresAt,
+      },
+      error: null,
+    };
+    job = await persistJob(current);
+    index = currentIndex;
+    image = job.images[index];
+  }
+
+  if (image.status !== 'processing' || image.processing?.provider !== 'fal.ai' || !image.processing?.claimId) {
+    return res.status(409).json({ error: 'This image does not have an active fal.ai processing claim' });
+  }
+
+  const scope = falClaimScope(job.id, image.id);
+  const runClaim = await claimImageObject(FAL_RUN_CLAIM_JOB, scope, {
+    workerId: `fal-run:${actor}`,
+    ttlSeconds: FAL_CLAIM_TTL_SECONDS,
+  });
+  if (!runClaim) {
+    return res.status(202).json({
+      ok: true,
+      accepted: true,
+      idempotent: true,
+      alreadyRunning: true,
+      job: publicImageJob(job, image),
+    });
+  }
+
+  let terminalPersisted = false;
+  let runningJob;
+  let runningIndex;
+  try {
+    runningJob = await readImageJob(job.id);
+    runningIndex = runningJob?.images?.findIndex((row) => row.id === image.id) ?? -1;
+    if (!runningJob || runningIndex < 0) throw new Error('Image processing item disappeared before dispatch');
+    const currentImage = runningJob.images[runningIndex];
+
+    if (currentImage.status === 'review') {
+      terminalPersisted = true;
+      return res.status(200).json({ ok: true, idempotent: true, job: publicImageJob(runningJob, currentImage) });
+    }
+    if (currentImage.status !== 'processing' || currentImage.processing?.claimId !== image.processing.claimId) {
+      return res.status(409).json({ error: 'The fal.ai processing claim is stale' });
+    }
+    if (currentImage.processing?.dispatchedAt) {
+      runningJob.images[runningIndex] = {
+        ...currentImage,
+        status: 'failed',
+        error: 'The previous fal.ai request has an unknown outcome and was not repeated to avoid a duplicate charge.',
+        processing: {
+          ...currentImage.processing,
+          state: 'outcome_unknown',
+          failedAt: new Date().toISOString(),
+        },
+      };
+      const failed = await persistJob(runningJob);
+      terminalPersisted = true;
+      return res.status(409).json({
+        error: failed.images[runningIndex].error,
+        job: publicImageJob(failed, failed.images[runningIndex]),
+      });
+    }
+
+    runningJob.images[runningIndex] = {
+      ...currentImage,
+      processing: {
+        ...currentImage.processing,
+        state: 'dispatched',
+        dispatchClaimId: runClaim.id,
+        dispatchedAt: new Date().toISOString(),
+      },
+    };
+    runningJob = await persistJob(runningJob);
+
+    try {
+      runningJob.images[runningIndex] = await processImageWithFal(runningJob, runningJob.images[runningIndex]);
+    } catch (error) {
+      runningJob.images[runningIndex] = {
+        ...runningJob.images[runningIndex],
+        status: 'failed',
+        error: error.message || 'fal.ai processing failed',
+        processing: {
+          ...(runningJob.images[runningIndex].processing || {}),
+          state: 'failed',
+          failedAt: new Date().toISOString(),
+        },
+      };
+      const failed = await persistJob(runningJob);
+      terminalPersisted = true;
+      return res.status(502).json({
+        error: failed.images[runningIndex].error,
+        job: publicImageJob(failed, failed.images[runningIndex]),
+      });
+    }
+
+    const saved = await persistJob(runningJob);
+    terminalPersisted = true;
+    return res.status(200).json({ ok: true, job: publicImageJob(saved, saved.images[runningIndex]) });
+  } finally {
+    if (terminalPersisted) {
+      await releaseImageObjectClaim(FAL_RUN_CLAIM_JOB, scope, runClaim.id).catch(() => {});
+      await releaseImageObjectClaim(FAL_START_CLAIM_JOB, scope, image.processing.claimId).catch(() => {});
+    }
+  }
 }
 
 async function publicJobItemsWithSource(job, images = job?.images || []) {
@@ -189,48 +478,9 @@ async function reviewAction(req, res, actor, action) {
 
   try {
     if (action === 'process') {
-      if (job.images[index].status !== 'queued') {
-        return res.status(409).json({ error: 'Only a queued image can start processing' });
-      }
-      const claim = await claimImageObject(job.id, job.images[index].id, {
-        workerId: `fal:${actor}`,
-        ttlSeconds: 300,
-      });
-      if (!claim) return res.status(409).json({ error: 'This image is already being processed' });
-      try {
-        job.images[index] = {
-          ...job.images[index],
-          status: 'processing',
-          processing: {
-            provider: 'fal.ai',
-            startedAt: new Date().toISOString(),
-          },
-          error: null,
-        };
-        let processingJob = await persistJob(job);
-        try {
-          processingJob.images[index] = await processImageWithFal(processingJob, processingJob.images[index]);
-        } catch (error) {
-          processingJob.images[index] = {
-            ...processingJob.images[index],
-            status: 'failed',
-            error: error.message || 'fal.ai processing failed',
-            processing: {
-              ...(processingJob.images[index].processing || {}),
-              failedAt: new Date().toISOString(),
-            },
-          };
-          const failed = await persistJob(processingJob);
-          return res.status(502).json({
-            error: processingJob.images[index].error,
-            job: publicImageJob(failed, failed.images[index]),
-          });
-        }
-        const saved = await persistJob(processingJob);
-        return res.status(200).json({ ok: true, job: publicImageJob(saved, saved.images[index]) });
-      } finally {
-        await releaseImageObjectClaim(job.id, job.images[index].id, claim.id).catch(() => {});
-      }
+      return await startFalProcessing(res, actor, job, index);
+    } else if (action === 'execute') {
+      return await runFalProcessing(res, actor, job, index);
     } else if (action === 'approve') {
       job.images[index] = markImageApproved(job.images[index], { actor });
     } else if (action === 'publish') {
@@ -292,7 +542,7 @@ export default async function handler(req, res) {
 
     const action = String(req.body?.action || 'create').trim().toLowerCase();
     if (action === 'create') return await createJob(req, res, actor);
-    if (['process', 'approve', 'publish', 'reject', 'retry', 'restore'].includes(action)) return await reviewAction(req, res, actor, action);
+    if (['process', 'execute', 'approve', 'publish', 'reject', 'retry', 'restore'].includes(action)) return await reviewAction(req, res, actor, action);
     return res.status(400).json({ error: 'Unsupported image processing action' });
   } catch (error) {
     console.error('image-processing-jobs:', error?.message || error);
