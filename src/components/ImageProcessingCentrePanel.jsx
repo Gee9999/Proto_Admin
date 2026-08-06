@@ -150,6 +150,19 @@ function loadImageFromFile(file) {
   });
 }
 
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = String(reader.result || '');
+      const base64 = result.includes(',') ? result.split(',')[1] : result;
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error(`Unable to read ${file.name}`));
+    reader.readAsDataURL(file);
+  });
+}
+
 function nextFrame() {
   return new Promise((resolve) => {
     window.setTimeout(() => resolve(), 0);
@@ -313,58 +326,30 @@ function renderSquareOutput(foregroundCanvas, bounds, size, paddingRatio = 0.1) 
 }
 
 async function processAsset(file) {
-  const { image, objectUrl } = await loadImageFromFile(file);
+  const base64 = await fileToBase64(file);
+  const response = await fetch('/api/process-product-image', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filename: file.name,
+      contentType: file.type || 'image/jpeg',
+      base64,
+    }),
+  });
 
-  try {
-    await nextFrame();
-
-    const sourceWidth = image.naturalWidth || image.width || 1;
-    const sourceHeight = image.naturalHeight || image.height || 1;
-    const sourceSize = fitWithinBounds(sourceWidth, sourceHeight, 1400);
-
-    const baseCanvas = document.createElement('canvas');
-    baseCanvas.width = sourceSize.width;
-    baseCanvas.height = sourceSize.height;
-    const baseCtx = baseCanvas.getContext('2d', { willReadFrequently: true });
-    if (!baseCtx) throw new Error('Canvas unavailable');
-    baseCtx.drawImage(image, 0, 0, baseCanvas.width, baseCanvas.height);
-
-    await nextFrame();
-
-    const imageData = baseCtx.getImageData(0, 0, baseCanvas.width, baseCanvas.height);
-    const maskInfo = analyzeCoarseSubject(imageData, baseCanvas.width, baseCanvas.height);
-    await nextFrame();
-
-    const processedSrc = renderSquareOutput(baseCanvas, maskInfo.bounds, 1600, 0.12);
-    const previewSrc = renderSquareOutput(baseCanvas, maskInfo.bounds, 760, 0.12);
-
-    const foregroundRatio = maskInfo.foreground / (baseCanvas.width * baseCanvas.height);
-    const lowConfidence = maskInfo.confidence < 0.58 || !maskInfo.bounds || maskInfo.touchesEdge || foregroundRatio < 0.03 || foregroundRatio > 0.95;
-    const notes = [];
-    if (maskInfo.foreground > 0) notes.push('Background trimmed');
-    if (maskInfo.bounds) notes.push('Cropped to subject bounds');
-    notes.push('Centered on square ecommerce canvas');
-    if (lowConfidence) notes.push('Needs human review');
-
-    return {
-      processedSrc,
-      previewSrc,
-      sourceUrl: objectUrl,
-      metrics: {
-        width: baseCanvas.width,
-        height: baseCanvas.height,
-        backgroundRatio: maskInfo.backgroundPixels / (baseCanvas.width * baseCanvas.height),
-        foregroundRatio,
-        confidence: maskInfo.confidence,
-        touchesEdge: maskInfo.touchesEdge,
-      },
-      notes,
-      needsReview: lowConfidence,
-    };
-  } catch (error) {
-    URL.revokeObjectURL(objectUrl);
-    throw error;
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(json.error || 'Processing failed');
   }
+
+  const outputType = json.contentType || 'image/jpeg';
+  return {
+    processedSrc: `data:${outputType};base64,${json.processedBase64 || ''}`,
+    previewSrc: `data:${outputType};base64,${json.previewBase64 || json.processedBase64 || ''}`,
+    metrics: json.metrics || {},
+    notes: Array.isArray(json.notes) ? json.notes : [],
+    needsReview: Boolean(json.needsReview),
+  };
 }
 
 function statusLabel(status) {
@@ -498,7 +483,6 @@ export default function ImageProcessingCentrePanel({ onShowToast }) {
       try {
         const result = await processAsset(next.file);
         if (cancelled) return;
-        objectUrlsRef.current.add(result.sourceUrl);
         setJobs((current) => current.map((job) => (
           job.id === next.id
             ? {
