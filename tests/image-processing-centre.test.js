@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createNutstoreImageJobs,
   createUploadedImageJobs,
+  fetchImageProcessingJobs,
   normalizeImageProcessingJob,
   summarizeImageProcessingJobs,
   updateImageProcessingJob,
@@ -67,6 +68,18 @@ describe('Product Loader handoff and owner visibility', () => {
   it('shows the centre tab only for owners', () => {
     expect(panelSource).toContain("...(isOwner ? [{ id: 'image-processing'");
     expect(adminSource).toContain("isOwner={customer?.role === 'owner'}");
+  });
+
+  it('turns a stalled queue request into a retryable error', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_url, options) => new Promise((_resolve, reject) => {
+      options.signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+    }));
+    const pending = fetchImageProcessingJobs();
+    const assertion = expect(pending).rejects.toThrow('The image queue did not respond. Please retry.');
+    await vi.advanceTimersByTimeAsync(15_000);
+    await assertion;
+    vi.useRealTimers();
   });
 
   it('queues local uploads through the JSON API path used by Vercel functions', async () => {

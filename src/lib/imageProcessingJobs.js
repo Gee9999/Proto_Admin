@@ -1,9 +1,27 @@
 import { readApiJson } from './apiError.js';
 
 const JOBS_ENDPOINT = '/api/image-processing-jobs';
+const REQUEST_TIMEOUT_MS = 15_000;
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+async function requestImageJobs(url, options = {}) {
+  const controller = new AbortController();
+  const externalSignal = options.signal;
+  const abortFromCaller = () => controller.abort(externalSignal?.reason);
+  externalSignal?.addEventListener?.('abort', abortFromCaller, { once: true });
+  const timer = setTimeout(() => controller.abort(new Error('timeout')), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error('The image queue did not respond. Please retry.');
+    throw error;
+  } finally {
+    clearTimeout(timer);
+    externalSignal?.removeEventListener?.('abort', abortFromCaller);
+  }
 }
 
 export function normalizeImageProcessingJob(job = {}) {
@@ -35,7 +53,7 @@ function normalizePayload(payload) {
 }
 
 export async function fetchImageProcessingJobs({ signal } = {}) {
-  const res = await fetch(JOBS_ENDPOINT, { cache: 'no-store', signal });
+  const res = await requestImageJobs(JOBS_ENDPOINT, { cache: 'no-store', signal });
   const json = await readApiJson(res, { fallback: 'Could not load the image queue' });
   return normalizePayload(json);
 }
@@ -48,7 +66,7 @@ export async function createNutstoreImageJobs(items) {
 
   const created = [];
   for (let index = 0; index < cleanItems.length; index += 50) {
-    const res = await fetch(JOBS_ENDPOINT, {
+    const res = await requestImageJobs(JOBS_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ source: 'nutstore', items: cleanItems.slice(index, index + 50) }),
@@ -88,7 +106,7 @@ export async function createUploadedImageJobs(files) {
       contentType: file.type || 'image/jpeg',
       base64: await fileToBase64(file),
     })));
-    const res = await fetch(JOBS_ENDPOINT, {
+    const res = await requestImageJobs(JOBS_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ source: 'upload', items }),
@@ -111,7 +129,7 @@ async function fileToBase64(file) {
 
 export async function updateImageProcessingJob(id, action, details = {}) {
   if (!id) throw new Error('Image job is missing an ID');
-  const res = await fetch(`${JOBS_ENDPOINT}?id=${encodeURIComponent(id)}`, {
+  const res = await requestImageJobs(`${JOBS_ENDPOINT}?id=${encodeURIComponent(id)}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ action, ...details }),
