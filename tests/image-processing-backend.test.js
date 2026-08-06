@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
+import { Jimp } from 'jimp';
 import { describe, expect, it } from 'vitest';
 import { parseImageProcessingRequest } from '../api/_image-processing-request.js';
-import { estimatedImageCostUsd, markImageApproved } from '../api/_image-processing-service.js';
+import { analyzeImageQuality, estimatedImageCostUsd, markImageApproved } from '../api/_image-processing-service.js';
 import {
   deriveJobStatus,
   imageFieldForSlot,
@@ -121,6 +122,18 @@ describe('Image Processing Centre backend contracts', () => {
     expect(noisy.score).toBeLessThan(60);
   });
 
+  it('treats transparent canvas edges as a clean unclipped background', async () => {
+    const png = new Jimp({ width: 800, height: 800, color: 0x00000000 });
+    for (let y = 200; y < 600; y += 1) {
+      for (let x = 250; x < 550; x += 1) png.setPixelColor(0x204060ff, x, y);
+    }
+    const quality = await analyzeImageQuality(await png.getBuffer('image/png'));
+
+    expect(quality.whiteBorderRatio).toBe(1);
+    expect(quality.borderNoise).toBe(0);
+    expect(quality.clippedEdgeRatio).toBe(0);
+  });
+
   it('keeps flat Vercel routes and separates owner and worker authentication', () => {
     const ownerRoute = readFileSync(join(ROOT, 'api/image-processing-jobs.js'), 'utf8');
     const workerRoute = readFileSync(join(ROOT, 'api/image-processing-worker.js'), 'utf8');
@@ -171,6 +184,7 @@ describe('Image Processing Centre backend contracts', () => {
     expect(service).toContain("if (image.status !== 'approved')");
     expect(service).toContain("if (image.status !== 'review')");
     expect(service).toContain('.update({ [field]: liveUrl');
+    expect(service).toContain("endsWith('.png') ? 'png' : 'jpg'");
     expect(service).toContain('export async function restorePublishedOriginal');
     expect(route).toContain("action === 'process'");
     expect(route).not.toContain("action === 'process_next'");

@@ -131,9 +131,9 @@ export async function standardizeFalOutput(buffer, { size = 1600, paddingRatio =
     align: HorizontalAlign.CENTER | VerticalAlign.MIDDLE,
     background: cssColorToHex('#00000000'),
   });
-  const canvas = new Jimp({ width: size, height: size, color: cssColorToHex('#ffffffff') });
+  const canvas = new Jimp({ width: size, height: size, color: cssColorToHex('#00000000') });
   canvas.composite(image, padding, padding);
-  const output = await canvas.getBuffer('image/jpeg', { quality: 90 });
+  const output = await canvas.getBuffer('image/png');
   return {
     buffer: output,
     warnings: detachedForeground

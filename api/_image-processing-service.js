@@ -173,11 +173,13 @@ export async function analyzeImageQuality(buffer) {
       const r = data[idx];
       const g = data[idx + 1];
       const b = data[idx + 2];
-      const deviation = ((255 - r) + (255 - g) + (255 - b)) / (3 * 255);
+      const alpha = data[idx + 3];
+      const transparent = alpha <= 16;
+      const deviation = transparent ? 0 : ((255 - r) + (255 - g) + (255 - b)) / (3 * 255);
       borderPixels += 1;
       borderDeviation += deviation;
-      if (r >= 245 && g >= 245 && b >= 245) whiteBorderPixels += 1;
-      if ((x === 0 || y === 0 || x === width - 1 || y === height - 1) && (r < 235 || g < 235 || b < 235)) {
+      if (transparent || (r >= 245 && g >= 245 && b >= 245)) whiteBorderPixels += 1;
+      if (!transparent && (x === 0 || y === 0 || x === width - 1 || y === height - 1) && (r < 235 || g < 235 || b < 235)) {
         clippedPixels += 1;
       }
     }
@@ -244,9 +246,9 @@ export async function processImageWithFal(job, image, providerOptions = {}) {
 
   const stock = getStockClient();
   await stock.storage.createBucket(PRODUCT_BUCKET, { public: true }).catch(() => {});
-  const outputPath = `staging/image-processing/outputs/${job.id}/${image.id}.jpg`;
+  const outputPath = `staging/image-processing/outputs/${job.id}/${image.id}.png`;
   const { error } = await stock.storage.from(PRODUCT_BUCKET).upload(outputPath, standardized.buffer, {
-    contentType: 'image/jpeg',
+    contentType: 'image/png',
     cacheControl: '0',
     upsert: true,
   });
@@ -324,7 +326,8 @@ export async function publishApprovedImage(job, image, { actor, slot = image.slo
   if (!sourcePath?.startsWith('staging/')) throw new Error('Approved output is not in staging storage');
   const safeJob = job.id.replace(/[^a-zA-Z0-9_-]/g, '').slice(-16);
   const safeImage = image.id.replace(/[^a-zA-Z0-9_-]/g, '').slice(-16);
-  const livePath = `${image.sku}/${slot}-${safeJob}-${safeImage}.jpg`;
+  const outputExtension = sourcePath.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
+  const livePath = `${image.sku}/${slot}-${safeJob}-${safeImage}.${outputExtension}`;
   const bucket = stock.storage.from(PRODUCT_BUCKET);
   const { error: moveError } = await bucket.move(sourcePath, livePath);
   if (moveError && !(await objectExists(bucket, livePath))) throw new Error(`Could not promote approved image: ${moveError.message}`);
