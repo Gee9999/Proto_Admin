@@ -152,7 +152,7 @@ function loadImageFromFile(file) {
 
 function nextFrame() {
   return new Promise((resolve) => {
-    window.requestAnimationFrame(() => resolve());
+    window.setTimeout(() => resolve(), 0);
   });
 }
 
@@ -353,7 +353,7 @@ async function processAsset(file) {
 
     const sourceWidth = image.naturalWidth || image.width || 1;
     const sourceHeight = image.naturalHeight || image.height || 1;
-    const sourceSize = fitWithinBounds(sourceWidth, sourceHeight, 2400);
+    const sourceSize = fitWithinBounds(sourceWidth, sourceHeight, 1800);
 
     const baseCanvas = document.createElement('canvas');
     baseCanvas.width = sourceSize.width;
