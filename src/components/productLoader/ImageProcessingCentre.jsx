@@ -89,6 +89,8 @@ export default function ImageProcessingCentre({
   const fileRef = useRef(null);
   const processInFlightRef = useRef('');
   const executionInFlightRef = useRef(new Set());
+  const queueMutationVersionRef = useRef(0);
+  const queueLoadSequenceRef = useRef(0);
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [workerUnavailable, setWorkerUnavailable] = useState(false);
@@ -109,14 +111,28 @@ export default function ImageProcessingCentre({
     });
   }, []);
 
+  const markQueueMutation = useCallback(() => {
+    queueMutationVersionRef.current += 1;
+  }, []);
+
   const loadJobs = useCallback(async ({ quiet = false } = {}) => {
+    const loadSequence = ++queueLoadSequenceRef.current;
+    const mutationVersion = queueMutationVersionRef.current;
     if (!quiet) setLoading(true);
     try {
       const rows = await fetchImageProcessingJobs();
+      if (
+        loadSequence !== queueLoadSequenceRef.current
+        || mutationVersion !== queueMutationVersionRef.current
+      ) return;
       setJobs(rows);
       setWorkerUnavailable(false);
       setError('');
     } catch (err) {
+      if (
+        loadSequence !== queueLoadSequenceRef.current
+        || mutationVersion !== queueMutationVersionRef.current
+      ) return;
       setWorkerUnavailable(true);
       setError(err.message || 'The image worker is unavailable');
     } finally {
@@ -153,10 +169,12 @@ export default function ImageProcessingCentre({
 
   const queueNutstore = async () => {
     if (!nutstoreSelection.length) return;
+    markQueueMutation();
     setBusy('nutstore');
     setError('');
     try {
       const created = await createNutstoreImageJobs(nutstoreSelection);
+      markQueueMutation();
       mergeJobs(created);
       setWorkerUnavailable(false);
       onNutstoreSelectionConsumed?.();
@@ -175,10 +193,12 @@ export default function ImageProcessingCentre({
       setError('No supported image files were found in that selection.');
       return;
     }
+    markQueueMutation();
     setBusy('upload');
     setError('');
     try {
       const created = await createUploadedImageJobs(files);
+      markQueueMutation();
       mergeJobs(created);
       setWorkerUnavailable(false);
       if (consumeHandoff) onUploadSelectionConsumed?.();
@@ -194,10 +214,12 @@ export default function ImageProcessingCentre({
   };
 
   const runAction = async (job, action, details = {}) => {
+    markQueueMutation();
     setBusy(`${action}:${job.id}`);
     setError('');
     try {
       const updated = await updateImageProcessingJob(job.id, action, details);
+      markQueueMutation();
       mergeJobs([updated]);
       setWorkerUnavailable(false);
       onShowToast?.(
@@ -215,10 +237,12 @@ export default function ImageProcessingCentre({
   const clearJob = async (job) => {
     const confirmed = window.confirm(`Clear ${job.filename} from the queue? This removes its private upload and staged processed preview. It does not change any product or Nutstore image.`);
     if (!confirmed) return;
+    markQueueMutation();
     setBusy(`clear:${job.id}`);
     setError('');
     try {
       await clearImageProcessingJob(job.id);
+      markQueueMutation();
       setJobs((current) => current.filter((row) => row.id !== job.id));
       setSelectedJobId('');
       clearExecutionMarker(job.id);
@@ -243,6 +267,7 @@ export default function ImageProcessingCentre({
     if (!candidate) return undefined;
 
     processInFlightRef.current = candidate.id;
+    markQueueMutation();
     setBusy(`${candidate.status === 'queued' ? 'process' : 'execute'}:${candidate.id}`);
     setError('');
     void (async () => {
@@ -250,6 +275,7 @@ export default function ImageProcessingCentre({
         let updated = candidate;
         if (candidate.status === 'queued') {
           updated = await updateImageProcessingJob(candidate.id, 'process');
+          markQueueMutation();
           mergeJobs([updated]);
         }
 
@@ -258,6 +284,7 @@ export default function ImageProcessingCentre({
           markExecutionStarted(candidate.id);
           setBusy(`execute:${candidate.id}`);
           updated = await executeImageProcessingJob(candidate.id);
+          markQueueMutation();
           mergeJobs([updated]);
         }
         setWorkerUnavailable(false);
@@ -273,11 +300,12 @@ export default function ImageProcessingCentre({
       }
     })();
     return undefined;
-  }, [busy, jobs, loadJobs, mergeJobs]);
+  }, [busy, jobs, loadJobs, markQueueMutation, mergeJobs]);
 
   const runBulkReviewAction = async (action) => {
     const candidates = jobs.filter((job) => REVIEW_STATUSES.has(job.status));
     if (!candidates.length) return;
+    markQueueMutation();
     setBusy(`bulk:${action}`);
     setError('');
     try {
@@ -285,6 +313,7 @@ export default function ImageProcessingCentre({
       for (const job of candidates) {
         updated.push(await updateImageProcessingJob(job.id, action));
       }
+      markQueueMutation();
       mergeJobs(updated);
       setWorkerUnavailable(false);
       onShowToast?.(`${action === 'approve' ? 'Approved' : 'Rejected'} ${updated.length} reviewed image${updated.length === 1 ? '' : 's'}`, 'success');

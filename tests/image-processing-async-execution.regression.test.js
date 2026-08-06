@@ -230,6 +230,60 @@ describe('Image Processing Centre asynchronous fal execution contract', () => {
       container.remove();
     }
   });
+
+  it('keeps a newly uploaded image when an older queue refresh finishes afterward', async () => {
+    let resolveInitialQueue;
+    const initialQueue = new Promise((resolve) => { resolveInitialQueue = resolve; });
+    const uploaded = {
+      id: 'manifest-new~image-new',
+      filename: 'NEW-PHOTO.png',
+      sku: 'NEW-PHOTO',
+      status: 'review',
+      before_url: '/original/NEW-PHOTO.png',
+      after_url: '/processed/NEW-PHOTO.png',
+    };
+
+    vi.spyOn(globalThis, 'fetch').mockImplementation((_url, options = {}) => {
+      if (!options.method || options.method === 'GET') return initialQueue;
+      if (options.method === 'POST') return Promise.resolve(jsonResponse({ jobs: [uploaded] }, 201));
+      throw new Error(`Unexpected request method: ${options.method}`);
+    });
+
+    const container = document.createElement('div');
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    try {
+      await act(async () => {
+        root.render(React.createElement(ImageProcessingCentre));
+        await Promise.resolve();
+      });
+
+      const imageInput = container.querySelectorAll('.ipc-file-input')[1];
+      const file = {
+        name: 'NEW-PHOTO.png',
+        type: 'image/png',
+        size: 4,
+        arrayBuffer: async () => new Uint8Array([137, 80, 78, 71]).buffer,
+      };
+      Object.defineProperty(imageInput, 'files', { configurable: true, value: [file] });
+      await act(async () => {
+        imageInput.dispatchEvent(new window.Event('change', { bubbles: true }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(container.textContent).toContain('NEW-PHOTO.png');
+
+      await act(async () => {
+        resolveInitialQueue(jsonResponse({ jobs: [] }));
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+      expect(container.textContent).toContain('NEW-PHOTO.png');
+    } finally {
+      act(() => root.unmount());
+      container.remove();
+    }
+  });
 });
 
 function jsonResponse(body, status = 200) {
