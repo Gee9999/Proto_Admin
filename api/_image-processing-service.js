@@ -7,6 +7,8 @@ import {
   claimImageObject,
   createPrivateSourceUrl,
   downloadPrivateSource,
+  readImageJob,
+  readImageJobIndex,
   releaseImageObjectClaim,
   saveAndIndexImageJob,
   storePrivateSource,
