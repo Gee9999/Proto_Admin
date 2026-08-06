@@ -97,6 +97,31 @@ function lockPath(jobId, imageId) {
   return `${ROOT}/claims/${jobId}/${imageId}.json`;
 }
 
+export async function removePrivateImageArtifacts(job, image) {
+  const supabase = getPortalAdminClient();
+  const scope = `${job.id}-${image.id}`;
+  const paths = [...new Set([
+    image.source?.privatePath,
+    lockPath('fal-processing-starts', scope),
+    lockPath('fal-processing-runs', scope),
+  ].filter(Boolean))];
+  if (!paths.length) return;
+  const { error } = await supabase.storage.from(SITE_CONFIG_BUCKET).remove(paths);
+  if (error) throw error;
+}
+
+export async function removeImageJobRecord(id) {
+  if (!id) throw new Error('Image job id is required');
+  const supabase = getPortalAdminClient();
+  const { error } = await supabase.storage.from(SITE_CONFIG_BUCKET).remove([jobFile(id)]);
+  if (error) throw error;
+  const current = await readImageJobIndex();
+  await writeSiteConfigJson(INDEX_FILE, {
+    version: 1,
+    jobs: current.filter((row) => row.id !== id),
+  });
+}
+
 export async function claimImageObject(jobId, imageId, { workerId, ttlSeconds = 300 } = {}) {
   const supabase = getPortalAdminClient();
   const path = lockPath(jobId, imageId);

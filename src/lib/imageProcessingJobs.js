@@ -159,6 +159,17 @@ export async function executeImageProcessingJob(id, { signal } = {}) {
   return updateImageProcessingJob(id, 'execute', {}, { signal });
 }
 
+export async function clearImageProcessingJob(id) {
+  if (!id) throw new Error('Image job is missing an ID');
+  const res = await requestImageJobs(`${JOBS_ENDPOINT}?id=${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action: 'clear' }),
+  });
+  const json = await readApiJson(res, { fallback: 'Could not clear this image from the queue' });
+  return String(json.removed || id);
+}
+
 export function summarizeImageProcessingJobs(jobs) {
   const rows = asArray(jobs);
   return {

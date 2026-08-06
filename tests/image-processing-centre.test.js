@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   createNutstoreImageJobs,
   createUploadedImageJobs,
+  clearImageProcessingJob,
   executeImageProcessingJob,
   fetchImageProcessingJobs,
   normalizeImageProcessingJob,
@@ -56,6 +57,15 @@ describe('Image Processing Centre API adapter', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/image-processing-jobs?id=job%2F7', expect.objectContaining({
       method: 'PATCH',
       body: JSON.stringify({ action: 'publish', imageSlot: 3, publishToExistingSlot: true }),
+    }));
+  });
+
+  it('clears an unpublished image through an explicit queue action', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ removed: 'job-7~image-2' }));
+    await expect(clearImageProcessingJob('job-7~image-2')).resolves.toBe('job-7~image-2');
+    expect(fetchMock).toHaveBeenCalledWith('/api/image-processing-jobs?id=job-7~image-2', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ action: 'clear' }),
     }));
   });
 
@@ -149,6 +159,7 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(centre).toContain('publishToExistingSlot: true');
     expect(centre).toContain("runBulkReviewAction('approve')");
     expect(centre).toContain("runAction(selectedJob, 'restore')");
+    expect(centre).toContain('Clear from queue');
     expect(centre).toContain('manual human review');
   });
 });

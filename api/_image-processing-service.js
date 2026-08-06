@@ -5,6 +5,8 @@ import { storagePathFromPublicUrl } from './_staging-storage.js';
 import { logProductLoaderAudit } from './_product-loader-audit.js';
 import {
   createPrivateSourceUrl,
+  removeImageJobRecord,
+  removePrivateImageArtifacts,
   saveAndIndexImageJob,
   storePrivateSource,
 } from './_image-processing-store.js';
@@ -282,6 +284,37 @@ export async function processImageWithFal(job, image, providerOptions = {}) {
     },
     error: null,
   };
+}
+
+const CLEARABLE_IMAGE_STATUSES = new Set(['review', 'ready', 'completed', 'failed', 'error', 'rejected']);
+
+export async function clearUnpublishedImage(job, image) {
+  if (!CLEARABLE_IMAGE_STATUSES.has(image.status)) {
+    throw new Error('Only an unapproved image awaiting review, rejected, or failed can be cleared');
+  }
+  if (image.publishedUrl || image.publishedAt || image.approvedAt) {
+    throw new Error('Approved or published images cannot be cleared from this queue');
+  }
+
+  const outputPrefix = `staging/image-processing/outputs/${job.id}/${image.id}.`;
+  const outputPaths = [...new Set([
+    image.outputStoragePath,
+    `${outputPrefix}png`,
+    `${outputPrefix}jpg`,
+  ].filter((path) => String(path || '').startsWith(outputPrefix)))];
+  if (outputPaths.length) {
+    const stock = getStockClient();
+    const { error } = await stock.storage.from(PRODUCT_BUCKET).remove(outputPaths);
+    if (error) throw new Error(`Could not remove staged output: ${error.message}`);
+  }
+
+  await removePrivateImageArtifacts(job, image);
+  const remainingImages = job.images.filter((row) => row.id !== image.id);
+  if (!remainingImages.length) {
+    await removeImageJobRecord(job.id);
+    return null;
+  }
+  return persistJob({ ...job, images: remainingImages });
 }
 
 async function objectExists(bucket, path) {

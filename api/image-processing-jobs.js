@@ -10,6 +10,7 @@ import {
   ingestLocalSource,
   ingestStagedSource,
   estimatedImageCostUsd,
+  clearUnpublishedImage,
   markImageApproved,
   persistJob,
   processImageWithFal,
@@ -506,6 +507,13 @@ async function reviewAction(req, res, actor, action) {
         error: null,
         processing: null,
       };
+    } else if (action === 'clear') {
+      const saved = await clearUnpublishedImage(job, job.images[index]);
+      return res.status(200).json({
+        ok: true,
+        removed: `${job.id}~${imageId}`,
+        jobs: saved ? await publicJobItemsWithSource(saved) : [],
+      });
     }
     const saved = await persistJob(job);
     return res.status(200).json({ ok: true, job: publicImageJob(saved, saved.images[index]) });
@@ -542,7 +550,7 @@ export default async function handler(req, res) {
 
     const action = String(req.body?.action || 'create').trim().toLowerCase();
     if (action === 'create') return await createJob(req, res, actor);
-    if (['process', 'execute', 'approve', 'publish', 'reject', 'retry', 'restore'].includes(action)) return await reviewAction(req, res, actor, action);
+    if (['process', 'execute', 'approve', 'publish', 'reject', 'retry', 'restore', 'clear'].includes(action)) return await reviewAction(req, res, actor, action);
     return res.status(400).json({ error: 'Unsupported image processing action' });
   } catch (error) {
     console.error('image-processing-jobs:', error?.message || error);

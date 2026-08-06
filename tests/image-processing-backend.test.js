@@ -187,6 +187,9 @@ describe('Image Processing Centre backend contracts', () => {
     expect(service).toContain("endsWith('.png') ? 'png' : 'jpg'");
     expect(service).toContain('export async function restorePublishedOriginal');
     expect(route).toContain("action === 'process'");
+    expect(route).toContain("'clear'");
+    expect(service).toContain('export async function clearUnpublishedImage');
+    expect(service).toContain("if (image.publishedUrl || image.publishedAt || image.approvedAt)");
     expect(route).not.toContain("action === 'process_next'");
   });
 });
