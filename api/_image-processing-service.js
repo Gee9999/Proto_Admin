@@ -131,16 +131,30 @@ export async function advanceQueuedImageProcessing({ jobId = null, limit = 1, ac
   const updated = [];
   for (const row of selected) {
     if (updated.length >= limit) break;
-    const job = await readImageJob(row.id);
-    if (!job) continue;
-    const index = job.images.findIndex((image) => image.status === 'queued');
-    if (index < 0) continue;
-    const image = job.images[index];
-    const claimScope = `${image.targetTable}-${image.sku}-${image.slot}`;
-    const claim = await claimImageObject('targets', claimScope, { workerId: actor, ttlSeconds: 600 });
-    if (!claim) continue;
-
+    let job = null;
+    let index = -1;
+    let image = null;
+    let claimScope = '';
+    let claim = null;
     try {
+      job = await readImageJob(row.id);
+      if (!job) continue;
+      index = job.images.findIndex((entry) => entry.status === 'queued');
+      if (index < 0) continue;
+      image = job.images[index];
+      claimScope = `${image.targetTable}-${image.sku}-${image.slot}`;
+      claim = await claimImageObject('targets', claimScope, { workerId: actor, ttlSeconds: 600 });
+      if (!claim) continue;
+
+      const safePersistJob = async (nextJob) => {
+        try {
+          return await persistJob(nextJob);
+        } catch (persistError) {
+          console.warn('advanceQueuedImageProcessing:persist', persistError?.message || persistError);
+          return null;
+        }
+      };
+
       job.images[index] = {
         ...image,
         status: 'processing',
@@ -152,21 +166,33 @@ export async function advanceQueuedImageProcessing({ jobId = null, limit = 1, ac
         },
         error: null,
       };
-      await persistJob(job);
+      await safePersistJob(job);
       job.images[index] = await processStagedImage(job, job.images[index], { actor });
-      const saved = await persistJob(job);
-      updated.push(saved.images[index]);
+      const saved = await safePersistJob(job);
+      updated.push(saved?.images[index] || job.images[index]);
     } catch (error) {
-      job.images[index] = {
-        ...job.images[index],
-        status: 'failed',
-        error: String(error?.message || error).slice(0, 500),
-        processing: { ...(job.images[index].processing || {}), finishedAt: new Date().toISOString() },
-      };
-      await persistJob(job);
-      updated.push(job.images[index]);
+      try {
+        if (!job) continue;
+        const failedIndex = index >= 0 ? index : job.images.findIndex((entry) => entry.status === 'queued' || entry.status === 'processing');
+        if (failedIndex < 0) continue;
+        job.images[failedIndex] = {
+          ...job.images[failedIndex],
+          status: 'failed',
+          error: String(error?.message || error).slice(0, 500),
+          processing: { ...(job.images[failedIndex].processing || {}), finishedAt: new Date().toISOString() },
+        };
+        const saved = await persistJob(job).catch((persistError) => {
+          console.warn('advanceQueuedImageProcessing:failed-state', persistError?.message || persistError);
+          return null;
+        });
+        updated.push(saved?.images[failedIndex] || job.images[failedIndex]);
+      } catch (innerError) {
+        console.warn('advanceQueuedImageProcessing:skip', innerError?.message || innerError);
+      }
     } finally {
-      await releaseImageObjectClaim('targets', claimScope, claim.id).catch(() => {});
+      if (claim?.id && claimScope) {
+        await releaseImageObjectClaim('targets', claimScope, claim.id).catch(() => {});
+      }
     }
   }
   return updated;
