@@ -1,5 +1,6 @@
 /** Patches window.fetch with the verified admin JWT. */
 import { supabase } from './supabase';
+import { ADMIN_STARTUP_TIMEOUT_MS, withStartupTimeout } from './startupReliability';
 
 export function getOrderAccessFromUrl() {
   try {
@@ -18,12 +19,18 @@ export function getOrderAccessFromUrl() {
 async function attachAuthHeaders(headers) {
   if (headers.has('Authorization')) return;
   try {
-    const { data: { session } } = await supabase.auth.getSession();
+    const { data: { session } } = await withStartupTimeout(
+      () => supabase.auth.getSession(),
+      { timeoutMs: ADMIN_STARTUP_TIMEOUT_MS, label: 'Admin access token loading' },
+    );
     if (session?.access_token) {
       headers.set('Authorization', `Bearer ${session.access_token}`);
       return;
     }
-    const { data } = await supabase.auth.refreshSession();
+    const { data } = await withStartupTimeout(
+      () => supabase.auth.refreshSession(),
+      { timeoutMs: ADMIN_STARTUP_TIMEOUT_MS, label: 'Admin access token refresh' },
+    );
     if (data.session?.access_token) {
       headers.set('Authorization', `Bearer ${data.session.access_token}`);
     }
