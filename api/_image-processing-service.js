@@ -4,28 +4,24 @@ import { getStockClient } from './_image-gen-cost.js';
 import { storagePathFromPublicUrl } from './_staging-storage.js';
 import { logProductLoaderAudit } from './_product-loader-audit.js';
 import {
-  claimImageObject,
   createPrivateSourceUrl,
-  downloadPrivateSource,
-  readImageJob,
-  readImageJobIndex,
-  releaseImageObjectClaim,
   saveAndIndexImageJob,
   storePrivateSource,
 } from './_image-processing-store.js';
 import {
-  fixImageFromUrl,
-  resizeTo800White,
-  uploadTransformedImage,
-} from './_image-pipeline.js';
+  downloadFalOutput,
+  FAL_BACKGROUND_COST_USD,
+  FAL_BACKGROUND_MODEL,
+  FAL_USD_TO_ZAR,
+  removeBackgroundWithFal,
+  standardizeFalOutput,
+} from './_fal-image-provider.js';
 import {
   deriveJobStatus,
   imageFieldForSlot,
-  normalizeImageSlot,
   qualityScoreFromMetrics,
   summarizeJob,
 } from '../lib/image-processing-centre.mjs';
-import { fetchUsdToZarRate, resolveImageGenCost } from './_image-gen-cost.js';
 
 const PRODUCT_BUCKET = 'product-images';
 
@@ -39,163 +35,6 @@ function updateJobRollup(job) {
 
 export async function persistJob(job) {
   return saveAndIndexImageJob(updateJobRollup(job));
-}
-
-async function uploadFallbackTransform(job, image, buffer, fallbackError) {
-  const resized = await resizeTo800White(buffer);
-  const upload = await uploadTransformedImage(
-    resized,
-    `${image.sku || 'product'}-s${normalizeImageSlot(image.slot) || 1}.jpg`,
-    'image/jpeg',
-    { staging: true, sku: image.sku, slot: image.slot },
-  );
-  return {
-    url: upload.url,
-    storagePath: upload.storagePath,
-    model: 'local-jimp-fallback',
-    tokensIn: 0,
-    tokensOut: 0,
-    costUsd: 0,
-    fallbackError: fallbackError?.message || String(fallbackError || 'Local fallback used'),
-  };
-}
-
-async function processStagedImage(job, image, { actor = 'processor' } = {}) {
-  let materialized = image;
-  if (image.source.type === 'nutstore' && !image.source.privatePath) {
-    materialized = await materializeNutstoreSource(job, image);
-  }
-  if (!materialized.source.privatePath) throw new Error('Image source is not available in private staging');
-
-  const sourceUrl = await createPrivateSourceUrl(materialized.source.privatePath, 600);
-  const startedAt = new Date().toISOString();
-  let transformed;
-  try {
-    transformed = await fixImageFromUrl(sourceUrl, {
-      sku: materialized.sku,
-      imageStyle: materialized.style,
-      userInstructions: materialized.instructions,
-      productTitle: materialized.productTitle,
-      productDescription: materialized.productDescription,
-      targetSlot: materialized.slot,
-      staging: true,
-    });
-  } catch (error) {
-    const original = await downloadPrivateSource(materialized.source.privatePath);
-    transformed = await uploadFallbackTransform(job, materialized, original, error);
-  }
-
-  const storagePath = transformed.storagePath || storagePathFromPublicUrl(transformed.url);
-  if (!storagePath) throw new Error('Processed image did not return a staging storage path');
-
-  const stock = getStockClient();
-  const { data, error } = await stock.storage.from(PRODUCT_BUCKET).download(storagePath);
-  if (error) throw new Error(`Processed image was not stored correctly: ${error.message}`);
-  const output = Buffer.from(await data.arrayBuffer());
-  const quality = await analyzeImageQuality(output);
-  const { costUsd, costSource } = resolveImageGenCost({
-    model: transformed.model,
-    tokensIn: transformed.tokensIn,
-    tokensOut: transformed.tokensOut,
-    costUsd: transformed.costUsd,
-    isImageOutput: true,
-  });
-  const usdToZar = await fetchUsdToZarRate();
-  const costZar = Number((costUsd * usdToZar).toFixed(4));
-  const qualityFlags = [];
-  if (quality.grade === 'needs_attention') qualityFlags.push('quality_needs_attention');
-  if (transformed.fallbackError) qualityFlags.push('local_fallback_used');
-  return {
-    ...materialized,
-    status: 'review',
-    reviewUrl: transformed.url,
-    outputStoragePath: storagePath,
-    quality: { ...quality, worker: null, costSource, fallbackError: transformed.fallbackError || null },
-    warnings: [...new Set([...(materialized.warnings || []), ...qualityFlags])],
-    cost: {
-      usd: costUsd,
-      zar: costZar,
-      latestUsd: costUsd,
-      latestZar: costZar,
-      source: transformed.fallbackError ? 'local_jimp_fallback' : costSource,
-      model: transformed.model,
-    },
-    processing: { ...(materialized.processing || {}), startedAt, finishedAt: new Date().toISOString(), actor },
-    error: null,
-  };
-}
-
-export async function advanceQueuedImageProcessing({ jobId = null, limit = 1, actor = 'processor' } = {}) {
-  const rows = await readImageJobIndex();
-  const selected = jobId ? rows.filter((row) => row.id === jobId) : rows;
-  const updated = [];
-  for (const row of selected) {
-    if (updated.length >= limit) break;
-    let job = null;
-    let index = -1;
-    let image = null;
-    let claimScope = '';
-    let claim = null;
-    try {
-      job = await readImageJob(row.id);
-      if (!job) continue;
-      index = job.images.findIndex((entry) => entry.status === 'queued');
-      if (index < 0) continue;
-      image = job.images[index];
-      claimScope = `${image.targetTable}-${image.sku}-${image.slot}`;
-      claim = await claimImageObject('targets', claimScope, { workerId: actor, ttlSeconds: 600 });
-      if (!claim) continue;
-
-      const safePersistJob = async (nextJob) => {
-        try {
-          return await persistJob(nextJob);
-        } catch (persistError) {
-          console.warn('advanceQueuedImageProcessing:persist', persistError?.message || persistError);
-          return null;
-        }
-      };
-
-      job.images[index] = {
-        ...image,
-        status: 'processing',
-        processing: {
-          claimId: claim.id,
-          workerId: actor,
-          startedAt: new Date().toISOString(),
-          expiresAt: claim.expiresAt,
-        },
-        error: null,
-      };
-      await safePersistJob(job);
-      job.images[index] = await processStagedImage(job, job.images[index], { actor });
-      const saved = await safePersistJob(job);
-      updated.push(saved?.images[index] || job.images[index]);
-    } catch (error) {
-      try {
-        if (!job) continue;
-        const failedIndex = index >= 0 ? index : job.images.findIndex((entry) => entry.status === 'queued' || entry.status === 'processing');
-        if (failedIndex < 0) continue;
-        job.images[failedIndex] = {
-          ...job.images[failedIndex],
-          status: 'failed',
-          error: String(error?.message || error).slice(0, 500),
-          processing: { ...(job.images[failedIndex].processing || {}), finishedAt: new Date().toISOString() },
-        };
-        const saved = await persistJob(job).catch((persistError) => {
-          console.warn('advanceQueuedImageProcessing:failed-state', persistError?.message || persistError);
-          return null;
-        });
-        updated.push(saved?.images[failedIndex] || job.images[failedIndex]);
-      } catch (innerError) {
-        console.warn('advanceQueuedImageProcessing:skip', innerError?.message || innerError);
-      }
-    } finally {
-      if (claim?.id && claimScope) {
-        await releaseImageObjectClaim('targets', claimScope, claim.id).catch(() => {});
-      }
-    }
-  }
-  return updated;
 }
 
 export async function ingestLocalSource(jobId, image, base64) {
@@ -251,9 +90,7 @@ export async function materializeNutstoreSource(job, image) {
 }
 
 export function estimatedImageCostUsd() {
-  // The default processor is the self-hosted rembg/Pillow worker. It has no
-  // per-image API charge; hosting/electricity is treated as fixed overhead.
-  return 0;
+  return FAL_BACKGROUND_COST_USD;
 }
 
 export function canClaimWithinCostLimit(job, image) {
@@ -388,6 +225,59 @@ export async function completeWorkerOutput(job, image, payload = {}) {
       model: 'rembg-local',
     },
     processing: { ...(image.processing || {}), finishedAt: new Date().toISOString() },
+    error: null,
+  };
+}
+
+export async function processImageWithFal(job, image, providerOptions = {}) {
+  let materialized = image;
+  if (image.source.type === 'nutstore' && !image.source.privatePath) {
+    materialized = await materializeNutstoreSource(job, image);
+  }
+  if (!materialized.source.privatePath) throw new Error('Image source is not available in private staging');
+
+  const sourceUrl = await createPrivateSourceUrl(materialized.source.privatePath, 900);
+  const removed = await removeBackgroundWithFal(sourceUrl, providerOptions);
+  const transparent = await downloadFalOutput(removed.outputUrl, providerOptions);
+  const standardized = await standardizeFalOutput(transparent);
+  const quality = await analyzeImageQuality(standardized.buffer);
+
+  const stock = getStockClient();
+  await stock.storage.createBucket(PRODUCT_BUCKET, { public: true }).catch(() => {});
+  const outputPath = `staging/image-processing/outputs/${job.id}/${image.id}.jpg`;
+  const { error } = await stock.storage.from(PRODUCT_BUCKET).upload(outputPath, standardized.buffer, {
+    contentType: 'image/jpeg',
+    cacheControl: '0',
+    upsert: true,
+  });
+  if (error) throw new Error(`Could not stage fal.ai output: ${error.message}`);
+  const publicUrl = stock.storage.from(PRODUCT_BUCKET).getPublicUrl(outputPath).data.publicUrl;
+
+  const previousUsd = Number(image.cost?.usd) || 0;
+  const previousZar = Number(image.cost?.zar) || 0;
+  const latestZar = Number((FAL_BACKGROUND_COST_USD * FAL_USD_TO_ZAR).toFixed(2));
+  return {
+    ...materialized,
+    status: 'review',
+    reviewUrl: publicUrl,
+    outputStoragePath: outputPath,
+    quality: { ...quality, provider: 'fal.ai' },
+    warnings: [...new Set([...(image.warnings || []), ...standardized.warnings])],
+    cost: {
+      usd: Number((previousUsd + FAL_BACKGROUND_COST_USD).toFixed(4)),
+      zar: Number((previousZar + latestZar).toFixed(2)),
+      latestUsd: FAL_BACKGROUND_COST_USD,
+      latestZar,
+      source: 'fal_pay_per_image',
+      model: FAL_BACKGROUND_MODEL,
+    },
+    processing: {
+      ...(image.processing || {}),
+      provider: 'fal.ai',
+      model: FAL_BACKGROUND_MODEL,
+      requestId: removed.requestId,
+      finishedAt: new Date().toISOString(),
+    },
     error: null,
   };
 }

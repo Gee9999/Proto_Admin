@@ -1,16 +1,18 @@
 import { hasAdminKey, requireOwner, verifyAdminUser } from './_admin-auth.js';
 import {
+  claimImageObject,
   createPrivateSourceUrl,
   readImageJob,
   readImageJobIndex,
+  releaseImageObjectClaim,
 } from './_image-processing-store.js';
 import {
   ingestLocalSource,
   ingestStagedSource,
   estimatedImageCostUsd,
-  advanceQueuedImageProcessing,
   markImageApproved,
   persistJob,
+  processImageWithFal,
   publishApprovedImage,
   rejectImage,
   restorePublishedOriginal,
@@ -145,7 +147,7 @@ async function createJob(req, res, actor) {
   const existing = await readImageJob(id);
   if (existing) return res.status(200).json({ ok: true, idempotent: true, jobs: await publicJobItemsWithSource(existing) });
 
-  const estimatedCostUsd = 0;
+  const estimatedCostUsd = images.reduce((sum, image) => sum + estimatedImageCostUsd(image), 0);
   const maxCostUsd = 0;
 
   const createdAt = new Date().toISOString();
@@ -186,7 +188,50 @@ async function reviewAction(req, res, actor, action) {
   if (index < 0) return res.status(404).json({ error: 'Image processing item not found' });
 
   try {
-    if (action === 'approve') {
+    if (action === 'process') {
+      if (job.images[index].status !== 'queued') {
+        return res.status(409).json({ error: 'Only a queued image can start processing' });
+      }
+      const claim = await claimImageObject(job.id, job.images[index].id, {
+        workerId: `fal:${actor}`,
+        ttlSeconds: 300,
+      });
+      if (!claim) return res.status(409).json({ error: 'This image is already being processed' });
+      try {
+        job.images[index] = {
+          ...job.images[index],
+          status: 'processing',
+          processing: {
+            provider: 'fal.ai',
+            startedAt: new Date().toISOString(),
+          },
+          error: null,
+        };
+        let processingJob = await persistJob(job);
+        try {
+          processingJob.images[index] = await processImageWithFal(processingJob, processingJob.images[index]);
+        } catch (error) {
+          processingJob.images[index] = {
+            ...processingJob.images[index],
+            status: 'failed',
+            error: error.message || 'fal.ai processing failed',
+            processing: {
+              ...(processingJob.images[index].processing || {}),
+              failedAt: new Date().toISOString(),
+            },
+          };
+          const failed = await persistJob(processingJob);
+          return res.status(502).json({
+            error: processingJob.images[index].error,
+            job: publicImageJob(failed, failed.images[index]),
+          });
+        }
+        const saved = await persistJob(processingJob);
+        return res.status(200).json({ ok: true, job: publicImageJob(saved, saved.images[index]) });
+      } finally {
+        await releaseImageObjectClaim(job.id, job.images[index].id, claim.id).catch(() => {});
+      }
+    } else if (action === 'approve') {
       job.images[index] = markImageApproved(job.images[index], { actor });
     } else if (action === 'publish') {
       job.images[index] = await publishApprovedImage(job, job.images[index], {
@@ -236,9 +281,6 @@ export default async function handler(req, res) {
           : job.images;
         return res.status(200).json({ jobs: await publicJobItemsWithSource(job, images) });
       }
-      await advanceQueuedImageProcessing({ limit: 1, actor }).catch((error) => {
-        console.warn('image-processing-jobs:auto-advance', error?.message || error);
-      });
       const rows = await readImageJobIndex();
       const manifests = await Promise.all(rows.slice(0, 100).map((row) => readImageJob(row.id)));
       const jobRows = await Promise.all(manifests.filter(Boolean).map((job) => publicJobItemsWithSource(job)));
@@ -250,7 +292,7 @@ export default async function handler(req, res) {
 
     const action = String(req.body?.action || 'create').trim().toLowerCase();
     if (action === 'create') return await createJob(req, res, actor);
-    if (['approve', 'publish', 'reject', 'retry', 'restore'].includes(action)) return await reviewAction(req, res, actor, action);
+    if (['process', 'approve', 'publish', 'reject', 'retry', 'restore'].includes(action)) return await reviewAction(req, res, actor, action);
     return res.status(400).json({ error: 'Unsupported image processing action' });
   } catch (error) {
     console.error('image-processing-jobs:', error?.message || error);

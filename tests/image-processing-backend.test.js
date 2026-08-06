@@ -88,8 +88,8 @@ describe('Image Processing Centre backend contracts', () => {
     ])).toMatchObject({ total: 2, approved: 1, rejected: 1, costUsd: 0.59, costZar: 10.85 });
   });
 
-  it('uses the self-hosted processor without a per-image API charge', () => {
-    expect(estimatedImageCostUsd({ sku: 'ABC1', slot: 1 })).toBe(0);
+  it('estimates the fal.ai BRIA per-image charge', () => {
+    expect(estimatedImageCostUsd({ sku: 'ABC1', slot: 1 })).toBe(0.018);
   });
 
   it('maps only the four allowlisted product image columns', () => {
@@ -172,6 +172,7 @@ describe('Image Processing Centre backend contracts', () => {
     expect(service).toContain("if (image.status !== 'review')");
     expect(service).toContain('.update({ [field]: liveUrl');
     expect(service).toContain('export async function restorePublishedOriginal');
+    expect(route).toContain("action === 'process'");
     expect(route).not.toContain("action === 'process_next'");
   });
 });

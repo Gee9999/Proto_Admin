@@ -59,6 +59,7 @@ export default function ImageProcessingCentre({
 }) {
   const folderRef = useRef(null);
   const fileRef = useRef(null);
+  const processInFlightRef = useRef('');
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [workerUnavailable, setWorkerUnavailable] = useState(false);
@@ -167,6 +168,31 @@ export default function ImageProcessingCentre({
     }
   };
 
+  useEffect(() => {
+    if (busy || processInFlightRef.current) return undefined;
+    const queued = jobs.find((job) => job.status === 'queued');
+    if (!queued) return undefined;
+
+    processInFlightRef.current = queued.id;
+    setBusy(`process:${queued.id}`);
+    setError('');
+    void updateImageProcessingJob(queued.id, 'process')
+      .then((updated) => {
+        mergeJobs([updated]);
+        setWorkerUnavailable(false);
+      })
+      .catch(async (err) => {
+        setWorkerUnavailable(true);
+        setError(err.message || `Could not process ${queued.filename}`);
+        await loadJobs({ quiet: true });
+      })
+      .finally(() => {
+        processInFlightRef.current = '';
+        setBusy('');
+      });
+    return undefined;
+  }, [busy, jobs, loadJobs, mergeJobs]);
+
   const runBulkReviewAction = async (action) => {
     const candidates = jobs.filter((job) => REVIEW_STATUSES.has(job.status));
     if (!candidates.length) return;
@@ -208,7 +234,7 @@ export default function ImageProcessingCentre({
       {workerUnavailable && (
         <div className="ipc-worker-warning" role="status">
           <AlertTriangle size={17} />
-          <div><strong>Processor unavailable</strong><span>{error || 'The queue could not be reached. Existing Product Loader tools remain available; retry when the worker is back online.'}</span></div>
+          <div><strong>Processing unavailable</strong><span>{error || 'The image service could not be reached. Existing Product Loader tools remain available; retry when the service is available.'}</span></div>
           <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={() => void loadJobs()}>Retry</button>
         </div>
       )}
@@ -293,7 +319,7 @@ export default function ImageProcessingCentre({
                   <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void runAction(selectedJob, 'retry')}><RotateCcw size={14} /> Process again</button>
                 </>}
                 {['failed', 'error', 'rejected'].includes(selectedJob.status) && <button type="button" className="adm-btn-red" disabled={Boolean(busy)} onClick={() => void runAction(selectedJob, 'retry')}><RotateCcw size={14} /> Retry processing</button>}
-                {ACTIVE_STATUSES.has(selectedJob.status) && <span className="ipc-wait"><Clock3 size={14} /> Waiting for the processor; this page refreshes automatically.</span>}
+                {ACTIVE_STATUSES.has(selectedJob.status) && <span className="ipc-wait"><Clock3 size={14} /> {selectedJob.status === 'processing' ? 'Removing the background and preparing the catalogue image…' : 'Waiting to start; this page processes queued images automatically.'}</span>}
               </div>
               {(APPROVED_STATUSES.has(selectedJob.status) || selectedJob.status === 'published') && (
                 <div className="ipc-publish-box">
