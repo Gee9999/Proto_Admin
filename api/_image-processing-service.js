@@ -22,10 +22,9 @@ import {
   deriveJobStatus,
   imageFieldForSlot,
   normalizeImageSlot,
-  resolveImageGenCost,
   summarizeJob,
 } from '../lib/image-processing-centre.mjs';
-import { fetchUsdToZarRate } from './_image-gen-cost.js';
+import { fetchUsdToZarRate, resolveImageGenCost } from './_image-gen-cost.js';
 
 const PRODUCT_BUCKET = 'product-images';
 
