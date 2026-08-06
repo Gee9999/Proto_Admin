@@ -150,6 +150,26 @@ function loadImageFromFile(file) {
   });
 }
 
+function nextFrame() {
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
+function fitWithinBounds(width, height, maxSize) {
+  const longest = Math.max(width, height);
+  if (!longest || longest <= maxSize) {
+    return { width, height, scale: 1 };
+  }
+
+  const scale = maxSize / longest;
+  return {
+    width: Math.max(1, Math.round(width * scale)),
+    height: Math.max(1, Math.round(height * scale)),
+    scale,
+  };
+}
+
 function sampleBackground(imageData, width, height) {
   const samples = [];
   const stepX = Math.max(1, Math.floor(width / 64));
@@ -329,15 +349,24 @@ async function processAsset(file) {
   const { image, objectUrl } = await loadImageFromFile(file);
 
   try {
+    await nextFrame();
+
+    const sourceWidth = image.naturalWidth || image.width || 1;
+    const sourceHeight = image.naturalHeight || image.height || 1;
+    const sourceSize = fitWithinBounds(sourceWidth, sourceHeight, 2400);
+
     const baseCanvas = document.createElement('canvas');
-    baseCanvas.width = image.naturalWidth;
-    baseCanvas.height = image.naturalHeight;
+    baseCanvas.width = sourceSize.width;
+    baseCanvas.height = sourceSize.height;
     const baseCtx = baseCanvas.getContext('2d', { willReadFrequently: true });
     if (!baseCtx) throw new Error('Canvas unavailable');
-    baseCtx.drawImage(image, 0, 0);
+    baseCtx.drawImage(image, 0, 0, baseCanvas.width, baseCanvas.height);
+
+    await nextFrame();
 
     const imageData = baseCtx.getImageData(0, 0, baseCanvas.width, baseCanvas.height);
     const maskInfo = buildMask(imageData, baseCanvas.width, baseCanvas.height);
+    await nextFrame();
     const maskedData = applyBackgroundMask(imageData, maskInfo.background);
 
     const foregroundCanvas = document.createElement('canvas');
@@ -346,6 +375,8 @@ async function processAsset(file) {
     const foregroundCtx = foregroundCanvas.getContext('2d', { willReadFrequently: true });
     if (!foregroundCtx) throw new Error('Canvas unavailable');
     foregroundCtx.putImageData(maskedData, 0, 0);
+
+    await nextFrame();
 
     const processedSrc = renderSquareOutput(foregroundCanvas, maskInfo.bounds, 1600, 0.12);
     const previewSrc = renderSquareOutput(foregroundCanvas, maskInfo.bounds, 760, 0.12);
