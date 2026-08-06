@@ -202,99 +202,66 @@ function sampleBackground(imageData, width, height) {
   return averageColor(samples);
 }
 
-function buildMask(imageData, width, height) {
+function analyzeCoarseSubject(imageData, width, height) {
   const bg = sampleBackground(imageData, width, height);
-  const tolerance = bg.r + bg.g + bg.b > 650 ? 38 : bg.r + bg.g + bg.b > 520 ? 32 : 26;
-  const background = new Uint8Array(width * height);
-  const queue = [];
-
-  const isSimilar = (index) => {
-    const offset = index * 4;
-    const alpha = imageData.data[offset + 3];
-    if (alpha < 12) return true;
-    const pixel = {
-      r: imageData.data[offset],
-      g: imageData.data[offset + 1],
-      b: imageData.data[offset + 2],
-    };
-    return colorDistance(pixel, bg) <= tolerance;
-  };
-
-  const push = (x, y) => {
-    const index = y * width + x;
-    if (background[index]) return;
-    if (!isSimilar(index)) return;
-    background[index] = 1;
-    queue.push(index);
-  };
-
-  for (let x = 0; x < width; x += 1) {
-    push(x, 0);
-    push(x, height - 1);
-  }
-  for (let y = 0; y < height; y += 1) {
-    push(0, y);
-    push(width - 1, y);
-  }
-
-  while (queue.length) {
-    const index = queue.pop();
-    const x = index % width;
-    const y = Math.floor(index / width);
-    if (x > 0) push(x - 1, y);
-    if (x < width - 1) push(x + 1, y);
-    if (y > 0) push(x, y - 1);
-    if (y < height - 1) push(x, y + 1);
-  }
+  const tolerance = bg.r + bg.g + bg.b > 650 ? 40 : bg.r + bg.g + bg.b > 520 ? 34 : 28;
+  const step = Math.max(6, Math.floor(Math.max(width, height) / 180));
 
   let minX = width;
   let minY = height;
   let maxX = -1;
   let maxY = -1;
   let foreground = 0;
-  let backgroundPixels = 0;
+  let backgroundSamples = 0;
   let touchesEdge = false;
 
-  for (let y = 0; y < height; y += 1) {
-    for (let x = 0; x < width; x += 1) {
-      const index = y * width + x;
-      const offset = index * 4;
-      if (background[index]) {
-        backgroundPixels += 1;
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const offset = (y * width + x) * 4;
+      const alpha = imageData.data[offset + 3];
+      if (alpha < 10) {
+        backgroundSamples += 1;
         continue;
       }
 
-      const alpha = imageData.data[offset + 3];
-      if (alpha < 10) continue;
+      const pixel = {
+        r: imageData.data[offset],
+        g: imageData.data[offset + 1],
+        b: imageData.data[offset + 2],
+      };
+      if (colorDistance(pixel, bg) <= tolerance) {
+        backgroundSamples += 1;
+        continue;
+      }
+
       foreground += 1;
       minX = Math.min(minX, x);
       minY = Math.min(minY, y);
       maxX = Math.max(maxX, x);
       maxY = Math.max(maxY, y);
-      if (x === 0 || y === 0 || x === width - 1 || y === height - 1) touchesEdge = true;
+      if (x <= step || y <= step || x >= width - step || y >= height - step) touchesEdge = true;
     }
   }
 
+  const sampleCount = Math.max(1, Math.ceil(width / step) * Math.ceil(height / step));
+  const backgroundRatio = backgroundSamples / sampleCount;
+  const coarseBounds = minX <= maxX && minY <= maxY
+    ? {
+      minX: Math.max(0, minX - step * 2),
+      minY: Math.max(0, minY - step * 2),
+      maxX: Math.min(width - 1, maxX + step * 2),
+      maxY: Math.min(height - 1, maxY + step * 2),
+    }
+    : null;
+
   return {
     bg,
-    background,
-    bounds: minX <= maxX && minY <= maxY ? { minX, minY, maxX, maxY } : null,
+    bounds: coarseBounds,
     foreground,
-    backgroundPixels,
+    backgroundPixels: Math.round(backgroundRatio * width * height),
     touchesEdge,
-    confidence: clamp(0.48 + (backgroundPixels / (width * height)) * 0.36 - (touchesEdge ? 0.2 : 0), 0.12, 0.98),
+    confidence: clamp(0.5 + backgroundRatio * 0.28 - (touchesEdge ? 0.18 : 0), 0.12, 0.98),
   };
-}
-
-function applyBackgroundMask(imageData, mask) {
-  const output = new ImageData(imageData.width, imageData.height);
-  output.data.set(imageData.data);
-  for (let index = 0; index < mask.length; index += 1) {
-    if (!mask[index]) continue;
-    const offset = index * 4;
-    output.data[offset + 3] = 0;
-  }
-  return output;
 }
 
 function toDataUrl(canvas, quality = 0.88) {
@@ -353,7 +320,7 @@ async function processAsset(file) {
 
     const sourceWidth = image.naturalWidth || image.width || 1;
     const sourceHeight = image.naturalHeight || image.height || 1;
-    const sourceSize = fitWithinBounds(sourceWidth, sourceHeight, 1800);
+    const sourceSize = fitWithinBounds(sourceWidth, sourceHeight, 1400);
 
     const baseCanvas = document.createElement('canvas');
     baseCanvas.width = sourceSize.width;
@@ -365,21 +332,11 @@ async function processAsset(file) {
     await nextFrame();
 
     const imageData = baseCtx.getImageData(0, 0, baseCanvas.width, baseCanvas.height);
-    const maskInfo = buildMask(imageData, baseCanvas.width, baseCanvas.height);
-    await nextFrame();
-    const maskedData = applyBackgroundMask(imageData, maskInfo.background);
-
-    const foregroundCanvas = document.createElement('canvas');
-    foregroundCanvas.width = baseCanvas.width;
-    foregroundCanvas.height = baseCanvas.height;
-    const foregroundCtx = foregroundCanvas.getContext('2d', { willReadFrequently: true });
-    if (!foregroundCtx) throw new Error('Canvas unavailable');
-    foregroundCtx.putImageData(maskedData, 0, 0);
-
+    const maskInfo = analyzeCoarseSubject(imageData, baseCanvas.width, baseCanvas.height);
     await nextFrame();
 
-    const processedSrc = renderSquareOutput(foregroundCanvas, maskInfo.bounds, 1600, 0.12);
-    const previewSrc = renderSquareOutput(foregroundCanvas, maskInfo.bounds, 760, 0.12);
+    const processedSrc = renderSquareOutput(baseCanvas, maskInfo.bounds, 1600, 0.12);
+    const previewSrc = renderSquareOutput(baseCanvas, maskInfo.bounds, 760, 0.12);
 
     const foregroundRatio = maskInfo.foreground / (baseCanvas.width * baseCanvas.height);
     const lowConfidence = maskInfo.confidence < 0.58 || !maskInfo.bounds || maskInfo.touchesEdge || foregroundRatio < 0.03 || foregroundRatio > 0.95;
