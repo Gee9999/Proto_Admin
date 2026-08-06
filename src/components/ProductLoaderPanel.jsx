@@ -17,6 +17,7 @@ import { readApiJson } from '../lib/apiError.js';
 import ProductLoaderNutstore from './productLoader/ProductLoaderNutstore';
 import ProductLoaderUpload from './productLoader/ProductLoaderUpload';
 import ProductLoaderPublishSuccess from './productLoader/ProductLoaderPublishSuccess';
+import ImageProcessingCentre from './productLoader/ImageProcessingCentre';
 import { ADMIN_REFRESH_EVENT } from '../lib/adminRefresh';
 import { catalogueDisplayTitle, catalogueDescription } from '../lib/productLoaderDisplay.js';
 
@@ -154,8 +155,11 @@ export default function ProductLoaderPanel({
   onInitialCodeConsumed,
   mainSiteUrl = 'https://site.proto.co.za',
   publishedBy = '',
+  isOwner = false,
 }) {
   const [activeTab, setActiveTab] = useState('nutstore');
+  const [processingNutstoreSelection, setProcessingNutstoreSelection] = useState([]);
+  const [processingUploadSelection, setProcessingUploadSelection] = useState([]);
   const [publishSuccess, setPublishSuccess] = useState(null);
   const fileRef = useRef(null);
   const folderRef = useRef(null);
@@ -923,7 +927,7 @@ export default function ProductLoaderPanel({
       </div>
 
       <nav className="pl-tabs" aria-label="Product Loader sections">
-        {LOADER_TABS.map((tab) => (
+        {[...LOADER_TABS, ...(isOwner ? [{ id: 'image-processing', label: 'Image Processing Centre' }] : [])].map((tab) => (
           <button
             key={tab.id}
             type="button"
@@ -946,6 +950,10 @@ export default function ProductLoaderPanel({
           setBatchOverwrite={setBatchOverwrite}
           onShowToast={onShowToast}
           onPublished={(result) => setPublishSuccess(result)}
+          onProcessSelected={(selection) => {
+            setProcessingNutstoreSelection(selection);
+            setActiveTab('image-processing');
+          }}
         />
       )}
 
@@ -956,6 +964,20 @@ export default function ProductLoaderPanel({
           setBatchDefaultPathIds={setBatchDefaultPathIds}
           batchOverwrite={batchOverwrite}
           setBatchOverwrite={setBatchOverwrite}
+          onShowToast={onShowToast}
+          onProcessFiles={(files) => {
+            setProcessingUploadSelection(files);
+            setActiveTab('image-processing');
+          }}
+        />
+      )}
+
+      {activeTab === 'image-processing' && isOwner && (
+        <ImageProcessingCentre
+          nutstoreSelection={processingNutstoreSelection}
+          uploadSelection={processingUploadSelection}
+          onNutstoreSelectionConsumed={() => setProcessingNutstoreSelection([])}
+          onUploadSelectionConsumed={() => setProcessingUploadSelection([])}
           onShowToast={onShowToast}
         />
       )}

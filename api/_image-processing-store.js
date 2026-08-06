@@ -1,0 +1,146 @@
+import { randomUUID } from 'node:crypto';
+import {
+  getPortalAdminClient,
+  readSiteConfigJson,
+  SITE_CONFIG_BUCKET,
+  writeSiteConfigJson,
+} from './_site-config.js';
+
+const ROOT = 'image-processing';
+const INDEX_FILE = `${ROOT}/index.json`;
+const MAX_INDEX_JOBS = 250;
+
+function jobFile(id) {
+  return `${ROOT}/jobs/${String(id || '').replace(/[^a-zA-Z0-9_-]/g, '')}.json`;
+}
+
+export function sourceObjectPath(jobId, imageId, filename = 'image.jpg') {
+  const ext = String(filename).split('.').pop()?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'jpg';
+  return `${ROOT}/sources/${jobId}/${imageId}.${ext}`;
+}
+
+export async function readImageJob(id) {
+  if (!id) return null;
+  const job = await readSiteConfigJson(jobFile(id), null);
+  return job?.id === id ? job : null;
+}
+
+export async function writeImageJob(job) {
+  if (!job?.id) throw new Error('Image job id is required');
+  const next = {
+    ...job,
+    version: Math.max(1, Number(job.version) || 0) + 1,
+    updatedAt: new Date().toISOString(),
+  };
+  return writeSiteConfigJson(jobFile(job.id), next);
+}
+
+export async function readImageJobIndex() {
+  const data = await readSiteConfigJson(INDEX_FILE, { jobs: [] });
+  return Array.isArray(data?.jobs) ? data.jobs : [];
+}
+
+export async function indexImageJob(job) {
+  const current = await readImageJobIndex();
+  const summary = {
+    id: job.id,
+    status: job.status,
+    sourceFlow: job.sourceFlow,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    createdBy: job.createdBy,
+    summary: job.summary,
+  };
+  const jobs = [summary, ...current.filter((row) => row.id !== job.id)]
+    .sort((a, b) => String(b.updatedAt || '').localeCompare(String(a.updatedAt || '')))
+    .slice(0, MAX_INDEX_JOBS);
+  await writeSiteConfigJson(INDEX_FILE, { version: 1, jobs });
+  return summary;
+}
+
+export async function saveAndIndexImageJob(job) {
+  const saved = await writeImageJob(job);
+  await indexImageJob(saved);
+  return saved;
+}
+
+export async function storePrivateSource({ jobId, imageId, filename, contentType, buffer }) {
+  const supabase = getPortalAdminClient();
+  await supabase.storage.createBucket(SITE_CONFIG_BUCKET, { public: false }).catch(() => {});
+  const path = sourceObjectPath(jobId, imageId, filename);
+  const { error } = await supabase.storage.from(SITE_CONFIG_BUCKET).upload(path, buffer, {
+    contentType: contentType || 'application/octet-stream',
+    cacheControl: '0',
+    upsert: false,
+  });
+  if (error && !/already exists|duplicate/i.test(error.message || '')) throw error;
+  return path;
+}
+
+export async function downloadPrivateSource(path) {
+  const supabase = getPortalAdminClient();
+  const { data, error } = await supabase.storage.from(SITE_CONFIG_BUCKET).download(path);
+  if (error) throw error;
+  return Buffer.from(await data.arrayBuffer());
+}
+
+export async function createPrivateSourceUrl(path, expiresIn = 600) {
+  const supabase = getPortalAdminClient();
+  const { data, error } = await supabase.storage
+    .from(SITE_CONFIG_BUCKET)
+    .createSignedUrl(path, Math.max(60, Math.min(900, Number(expiresIn) || 600)));
+  if (error) throw error;
+  return data.signedUrl;
+}
+
+function lockPath(jobId, imageId) {
+  return `${ROOT}/claims/${jobId}/${imageId}.json`;
+}
+
+export async function claimImageObject(jobId, imageId, { workerId, ttlSeconds = 300 } = {}) {
+  const supabase = getPortalAdminClient();
+  const path = lockPath(jobId, imageId);
+  const now = Date.now();
+  const claim = {
+    id: randomUUID(),
+    workerId: String(workerId || 'worker').slice(0, 80),
+    createdAt: new Date(now).toISOString(),
+    expiresAt: new Date(now + Math.max(60, Math.min(900, ttlSeconds)) * 1000).toISOString(),
+  };
+  const bucket = supabase.storage.from(SITE_CONFIG_BUCKET);
+
+  const attempt = async () => bucket.upload(path, JSON.stringify(claim), {
+    contentType: 'application/json',
+    cacheControl: '0',
+    upsert: false,
+  });
+  let { error } = await attempt();
+  if (!error) return claim;
+  if (!/already exists|duplicate|resource.*exists/i.test(error.message || '')) throw error;
+
+  const { data } = await bucket.download(path);
+  let existing = null;
+  try { existing = JSON.parse(await data.text()); } catch { /* stale invalid lock */ }
+  if (new Date(existing?.expiresAt || 0).getTime() > now) return null;
+
+  await bucket.remove([path]);
+  ({ error } = await attempt());
+  if (error) return null;
+  return claim;
+}
+
+export async function releaseImageObjectClaim(jobId, imageId, claimId) {
+  const supabase = getPortalAdminClient();
+  const path = lockPath(jobId, imageId);
+  const bucket = supabase.storage.from(SITE_CONFIG_BUCKET);
+  const { data, error } = await bucket.download(path);
+  if (error) return false;
+  try {
+    const current = JSON.parse(await data.text());
+    if (current.id !== claimId) return false;
+  } catch {
+    return false;
+  }
+  const { error: removeError } = await bucket.remove([path]);
+  return !removeError;
+}

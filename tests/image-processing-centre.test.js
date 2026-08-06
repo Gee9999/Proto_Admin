@@ -1,0 +1,87 @@
+import fs from 'node:fs';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+  createNutstoreImageJobs,
+  normalizeImageProcessingJob,
+  summarizeImageProcessingJobs,
+  updateImageProcessingJob,
+} from '../src/lib/imageProcessingJobs.js';
+
+const panelSource = fs.readFileSync(new URL('../src/components/ProductLoaderPanel.jsx', import.meta.url), 'utf8');
+const nutstoreSource = fs.readFileSync(new URL('../src/components/productLoader/ProductLoaderNutstore.jsx', import.meta.url), 'utf8');
+const uploadSource = fs.readFileSync(new URL('../src/components/productLoader/ProductLoaderUpload.jsx', import.meta.url), 'utf8');
+const adminSource = fs.readFileSync(new URL('../src/pages/AdminPage.jsx', import.meta.url), 'utf8');
+
+afterEach(() => vi.restoreAllMocks());
+
+function jsonResponse(body, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+describe('Image Processing Centre API adapter', () => {
+  it('normalizes worker response variants for a stable review UI', () => {
+    expect(normalizeImageProcessingJob({
+      job_id: 42,
+      product_code: 'ABC1',
+      source_image: { name: 'ABC1.jpg', url: '/before.jpg', source: 'nutstore' },
+      processed_image: { preview_url: '/after.png' },
+      quality_report: { score: 91, flags: ['edge_halo'] },
+      cost: { zar: 0.18 },
+    })).toMatchObject({
+      id: '42', sku: 'ABC1', filename: 'ABC1.jpg', beforeUrl: '/before.jpg',
+      afterUrl: '/after.png', qualityScore: 91, qualityFlags: ['edge_halo'], estimatedCost: 0.18,
+    });
+  });
+
+  it('creates Nutstore batches through the flat collection endpoint', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ jobs: [{ id: 'j1', status: 'queued' }] }));
+    await createNutstoreImageJobs([{ path: '/PTR-photos/ABC1.jpg', filename: 'ABC1.jpg' }]);
+    expect(fetchMock).toHaveBeenCalledWith('/api/image-processing-jobs', expect.objectContaining({ method: 'POST' }));
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      source: 'nutstore',
+      items: [{ path: '/PTR-photos/ABC1.jpg', filename: 'ABC1.jpg' }],
+    });
+  });
+
+  it('uses a query id for Vercel flat-function job actions', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ job: { id: 'job/7', status: 'approved' } }));
+    await updateImageProcessingJob('job/7', 'publish', { imageSlot: 3, publishToExistingSlot: true });
+    expect(fetchMock).toHaveBeenCalledWith('/api/image-processing-jobs?id=job%2F7', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ action: 'publish', imageSlot: 3, publishToExistingSlot: true }),
+    }));
+  });
+
+  it('summarizes queue state and estimated Rand cost', () => {
+    expect(summarizeImageProcessingJobs([
+      { status: 'processing', estimatedCost: 0.12 },
+      { status: 'ready', estimatedCost: 0.18 },
+      { status: 'published', estimatedCost: 0.2 },
+      { status: 'failed', estimatedCost: 0 },
+    ])).toEqual({ total: 4, processing: 1, review: 1, approved: 1, failed: 1, cost: 0.5 });
+  });
+});
+describe('Product Loader handoff and owner visibility', () => {
+  it('shows the centre tab only for owners', () => {
+    expect(panelSource).toContain("...(isOwner ? [{ id: 'image-processing'");
+    expect(adminSource).toContain("isOwner={customer?.role === 'owner'}");
+  });
+
+  it('hands off selected Nutstore paths and selected upload files', () => {
+    expect(nutstoreSource).toContain('onProcessSelected(selectedPaths.map');
+    expect(nutstoreSource).toContain('Improve selected');
+    expect(uploadSource).toContain('onProcessFiles(sourceFiles)');
+    expect(uploadSource).toContain('Improve selected');
+  });
+
+  it('keeps approval separate from explicit slot publishing', () => {
+    expect(panelSource).toContain('<ImageProcessingCentre');
+    const centre = fs.readFileSync(new URL('../src/components/productLoader/ImageProcessingCentre.jsx', import.meta.url), 'utf8');
+    expect(centre).toContain("runAction(selectedJob, 'approve')");
+    expect(centre).toContain("runAction(selectedJob, 'publish'");
+    expect(centre).toContain('publishToExistingSlot: true');
+    expect(centre).toContain("runBulkReviewAction('approve')");
+    expect(centre).toContain("runAction(selectedJob, 'restore')");
+    expect(centre).toContain('manual human review');
+  });
+});

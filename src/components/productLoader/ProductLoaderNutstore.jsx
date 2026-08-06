@@ -10,6 +10,7 @@ import {
   Loader2,
   RefreshCw,
   Search,
+  Sparkles,
   Upload,
 } from 'lucide-react';
 import { readApiJson } from '../../lib/apiError.js';
@@ -178,6 +179,7 @@ export default function ProductLoaderNutstore({
   setBatchOverwrite,
   onShowToast,
   onPublished,
+  onProcessSelected,
 }) {
   const onShowToastRef = useRef(onShowToast);
   onShowToastRef.current = onShowToast;
@@ -680,6 +682,19 @@ export default function ProductLoaderNutstore({
           {scanning ? <Loader2 size={14} className="spin" /> : <Search size={14} />}
           Step 3 — Look up {selected.size} selected in Positill
         </button>
+        {onProcessSelected && (
+          <button
+            type="button"
+            className="adm-btn-ghost"
+            disabled={scanning || !selected.size}
+            onClick={() => onProcessSelected(selectedPaths.map((path) => ({
+              path,
+              filename: images.find((entry) => entry.path === path)?.name || path.split('/').pop(),
+            })))}
+          >
+            <Sparkles size={14} /> Improve selected ({selected.size})
+          </button>
+        )}
         {lookupStale && hasResults && !scanning && (
           <span className="adm-muted" style={{ fontSize: 12 }}>Selection changed — run lookup again to refresh results.</span>
         )}

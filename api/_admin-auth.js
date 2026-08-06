@@ -74,6 +74,20 @@ export function hasAdminKey(req) {
   return Boolean(provided) && safeEqual(provided, expected);
 }
 
+/** Dedicated server-to-server guard for the image processor worker. */
+export function hasImageProcessorSecret(req) {
+  const expected = process.env.IMAGE_PROCESSOR_SECRET
+    || process.env.CRON_SECRET
+    || process.env.ADMIN_DASH_KEY;
+  if (!expected) return false;
+  const provided = String(
+    req.headers['x-image-processor-secret']
+    || req.headers['x-cron-secret']
+    || '',
+  ).trim();
+  return Boolean(provided) && safeEqual(provided, expected);
+}
+
 function sendUnauthorized(res, message = 'Authentication required') {
   if (!res.headersSent) res.status(401).json({ error: message });
   return false;
@@ -140,6 +154,11 @@ export async function requireCronOrAdminKey(req, res) {
     if (provided && safeEqual(provided, cronSecret)) return true;
   }
   return requireAdminKey(req, res);
+}
+
+export function requireImageProcessor(req, res) {
+  if (hasImageProcessorSecret(req)) return true;
+  return sendUnauthorized(res, 'Valid image processor credentials are required');
 }
 
 /** Server-to-server trade registration (register / main portal) or admin session. */
