@@ -8,6 +8,7 @@ import {
   ingestLocalSource,
   ingestStagedSource,
   estimatedImageCostUsd,
+  advanceQueuedImageProcessing,
   markImageApproved,
   persistJob,
   publishApprovedImage,
@@ -235,6 +236,7 @@ export default async function handler(req, res) {
           : job.images;
         return res.status(200).json({ jobs: await publicJobItemsWithSource(job, images) });
       }
+      await advanceQueuedImageProcessing({ limit: 1, actor });
       const rows = await readImageJobIndex();
       const manifests = await Promise.all(rows.slice(0, 100).map((row) => readImageJob(row.id)));
       const jobRows = await Promise.all(manifests.filter(Boolean).map((job) => publicJobItemsWithSource(job)));

@@ -4,16 +4,26 @@ import { getStockClient } from './_image-gen-cost.js';
 import { storagePathFromPublicUrl } from './_staging-storage.js';
 import { logProductLoaderAudit } from './_product-loader-audit.js';
 import {
+  claimImageObject,
   createPrivateSourceUrl,
+  downloadPrivateSource,
+  releaseImageObjectClaim,
   saveAndIndexImageJob,
   storePrivateSource,
 } from './_image-processing-store.js';
 import {
+  fixImageFromUrl,
+  resizeTo800White,
+  uploadTransformedImage,
+} from './_image-pipeline.js';
+import {
   deriveJobStatus,
   imageFieldForSlot,
-  qualityScoreFromMetrics,
+  normalizeImageSlot,
+  resolveImageGenCost,
   summarizeJob,
 } from '../lib/image-processing-centre.mjs';
+import { fetchUsdToZarRate } from './_image-gen-cost.js';
 
 const PRODUCT_BUCKET = 'product-images';
 
@@ -27,6 +37,137 @@ function updateJobRollup(job) {
 
 export async function persistJob(job) {
   return saveAndIndexImageJob(updateJobRollup(job));
+}
+
+async function uploadFallbackTransform(job, image, buffer, fallbackError) {
+  const resized = await resizeTo800White(buffer);
+  const upload = await uploadTransformedImage(
+    resized,
+    `${image.sku || 'product'}-s${normalizeImageSlot(image.slot) || 1}.jpg`,
+    'image/jpeg',
+    { staging: true, sku: image.sku, slot: image.slot },
+  );
+  return {
+    url: upload.url,
+    storagePath: upload.storagePath,
+    model: 'local-jimp-fallback',
+    tokensIn: 0,
+    tokensOut: 0,
+    costUsd: 0,
+    fallbackError: fallbackError?.message || String(fallbackError || 'Local fallback used'),
+  };
+}
+
+async function processStagedImage(job, image, { actor = 'processor' } = {}) {
+  let materialized = image;
+  if (image.source.type === 'nutstore' && !image.source.privatePath) {
+    materialized = await materializeNutstoreSource(job, image);
+  }
+  if (!materialized.source.privatePath) throw new Error('Image source is not available in private staging');
+
+  const sourceUrl = await createPrivateSourceUrl(materialized.source.privatePath, 600);
+  const startedAt = new Date().toISOString();
+  let transformed;
+  try {
+    transformed = await fixImageFromUrl(sourceUrl, {
+      sku: materialized.sku,
+      imageStyle: materialized.style,
+      userInstructions: materialized.instructions,
+      productTitle: materialized.productTitle,
+      productDescription: materialized.productDescription,
+      targetSlot: materialized.slot,
+      staging: true,
+    });
+  } catch (error) {
+    const original = await downloadPrivateSource(materialized.source.privatePath);
+    transformed = await uploadFallbackTransform(job, materialized, original, error);
+  }
+
+  const storagePath = transformed.storagePath || storagePathFromPublicUrl(transformed.url);
+  if (!storagePath) throw new Error('Processed image did not return a staging storage path');
+
+  const stock = getStockClient();
+  const { data, error } = await stock.storage.from(PRODUCT_BUCKET).download(storagePath);
+  if (error) throw new Error(`Processed image was not stored correctly: ${error.message}`);
+  const output = Buffer.from(await data.arrayBuffer());
+  const quality = await analyzeImageQuality(output);
+  const { costUsd, costSource } = resolveImageGenCost({
+    model: transformed.model,
+    tokensIn: transformed.tokensIn,
+    tokensOut: transformed.tokensOut,
+    costUsd: transformed.costUsd,
+    isImageOutput: true,
+  });
+  const usdToZar = await fetchUsdToZarRate();
+  const costZar = Number((costUsd * usdToZar).toFixed(4));
+  const qualityFlags = [];
+  if (quality.grade === 'needs_attention') qualityFlags.push('quality_needs_attention');
+  if (transformed.fallbackError) qualityFlags.push('local_fallback_used');
+  return {
+    ...materialized,
+    status: 'review',
+    reviewUrl: transformed.url,
+    outputStoragePath: storagePath,
+    quality: { ...quality, worker: null, costSource, fallbackError: transformed.fallbackError || null },
+    warnings: [...new Set([...(materialized.warnings || []), ...qualityFlags])],
+    cost: {
+      usd: costUsd,
+      zar: costZar,
+      latestUsd: costUsd,
+      latestZar: costZar,
+      source: transformed.fallbackError ? 'local_jimp_fallback' : costSource,
+      model: transformed.model,
+    },
+    processing: { ...(materialized.processing || {}), startedAt, finishedAt: new Date().toISOString(), actor },
+    error: null,
+  };
+}
+
+export async function advanceQueuedImageProcessing({ jobId = null, limit = 1, actor = 'processor' } = {}) {
+  const rows = await readImageJobIndex();
+  const selected = jobId ? rows.filter((row) => row.id === jobId) : rows;
+  const updated = [];
+  for (const row of selected) {
+    if (updated.length >= limit) break;
+    const job = await readImageJob(row.id);
+    if (!job) continue;
+    const index = job.images.findIndex((image) => image.status === 'queued');
+    if (index < 0) continue;
+    const image = job.images[index];
+    const claimScope = `${image.targetTable}-${image.sku}-${image.slot}`;
+    const claim = await claimImageObject('targets', claimScope, { workerId: actor, ttlSeconds: 600 });
+    if (!claim) continue;
+
+    try {
+      job.images[index] = {
+        ...image,
+        status: 'processing',
+        processing: {
+          claimId: claim.id,
+          workerId: actor,
+          startedAt: new Date().toISOString(),
+          expiresAt: claim.expiresAt,
+        },
+        error: null,
+      };
+      await persistJob(job);
+      job.images[index] = await processStagedImage(job, job.images[index], { actor });
+      const saved = await persistJob(job);
+      updated.push(saved.images[index]);
+    } catch (error) {
+      job.images[index] = {
+        ...job.images[index],
+        status: 'failed',
+        error: String(error?.message || error).slice(0, 500),
+        processing: { ...(job.images[index].processing || {}), finishedAt: new Date().toISOString() },
+      };
+      await persistJob(job);
+      updated.push(job.images[index]);
+    } finally {
+      await releaseImageObjectClaim('targets', claimScope, claim.id).catch(() => {});
+    }
+  }
+  return updated;
 }
 
 export async function ingestLocalSource(jobId, image, base64) {
