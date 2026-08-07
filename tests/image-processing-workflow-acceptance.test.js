@@ -42,7 +42,7 @@ describe('Image Processing Centre owner-safety acceptance contract', () => {
   });
 
   it('requires an exact Product Manager SKU before an approved result can be sent', () => {
-    const destinationLookup = sourceSection(centreSource, 'useEffect(() => {\n    const sku = normalizedSku(selectedJob?.sku);', 'const mergeJobs = useCallback');
+    const destinationLookup = sourceSection(centreSource, 'useEffect(() => {\n    const sku = normalizedSku(selectedJob?.destination?.sku || selectedJob?.sku);', 'const mergeJobs = useCallback');
     const publishControl = sourceSection(centreSource, 'const requestProductManagerSend =', 'const clearJob = async');
 
     expect(destinationLookup).toContain('/api/product-loader-lookup?code=${encodeURIComponent(sku)}');
@@ -53,6 +53,16 @@ describe('Image Processing Centre owner-safety acceptance contract', () => {
     expect(publishControl).toContain("runAction(job, 'publish'");
     expect(centreSource).toContain('Review replacement');
     expect(centreSource).toContain('Confirm and Send to Product Manager');
+  });
+
+  it('lets an owner deliberately bind an unmatched filename to a verified Product Manager product before sending', () => {
+    expect(centreSource).toContain('Find Product Manager product');
+    expect(centreSource).toContain('Use this exact Product Manager product');
+    expect(centreSource).toContain("runAction(job, 'assign_destination'");
+    expect(jobsRouteSource).toContain("action === 'assign_destination'");
+    expect(serviceSource).toContain('export async function assignImageDestination');
+    expect(serviceSource).toContain("source: 'manual_selection'");
+    expect(serviceSource).toContain("if (!['review', 'approved'].includes(image.status))");
   });
 
   it('allows rejected and failed work to be cleared only through the explicit safe queue action', () => {

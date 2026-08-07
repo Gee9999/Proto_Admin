@@ -11,6 +11,7 @@ import {
   ingestStagedSource,
   estimatedImageCostUsd,
   clearUnpublishedImage,
+  assignImageDestination,
   markImageApproved,
   persistJob,
   processImageWithFal,
@@ -64,7 +65,7 @@ function publicImageJob(job, image) {
       }),
       field: image.publication.field,
     }
-    : productManagerDestination(image);
+    : image.destination || productManagerDestination(image);
   const warnings = [...new Set([
     ...(image.warnings || []),
     ...(image.quality?.grade === 'needs_attention' ? ['quality_needs_attention'] : []),
@@ -497,6 +498,12 @@ async function reviewAction(req, res, actor, action) {
       return await runFalProcessing(res, actor, job, index);
     } else if (action === 'approve') {
       job.images[index] = markImageApproved(job.images[index], { actor });
+    } else if (action === 'assign_destination') {
+      job.images[index] = await assignImageDestination(job.images[index], {
+        actor,
+        sku: req.body?.destinationSku,
+        slot: req.body?.imageSlot ?? job.images[index].slot,
+      });
     } else if (action === 'publish') {
       const hasRequestedSlot = Object.prototype.hasOwnProperty.call(req.body || {}, 'imageSlot');
       job.images[index] = await publishApprovedImage(job, job.images[index], {
@@ -568,7 +575,7 @@ export default async function handler(req, res) {
 
     const action = String(req.body?.action || 'create').trim().toLowerCase();
     if (action === 'create') return await createJob(req, res, actor);
-    if (['process', 'execute', 'approve', 'publish', 'reject', 'retry', 'restore', 'clear'].includes(action)) return await reviewAction(req, res, actor, action);
+    if (['process', 'execute', 'approve', 'assign_destination', 'publish', 'reject', 'retry', 'restore', 'clear'].includes(action)) return await reviewAction(req, res, actor, action);
     return res.status(400).json({ error: 'Unsupported image processing action' });
   } catch (error) {
     console.error('image-processing-jobs:', error?.message || error);

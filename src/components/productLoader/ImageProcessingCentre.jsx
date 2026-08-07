@@ -115,17 +115,19 @@ export default function ImageProcessingCentre({
   const [slots, setSlots] = useState({});
   const [destination, setDestination] = useState({ status: 'idle', product: null, error: '' });
   const [destinationLookupAttempt, setDestinationLookupAttempt] = useState(0);
+  const [destinationSearch, setDestinationSearch] = useState('');
+  const [destinationCandidate, setDestinationCandidate] = useState({ status: 'idle', product: null, matchedBy: '', error: '' });
   const [publishConfirmation, setPublishConfirmation] = useState(null);
 
   const summary = useMemo(() => summarizeImageProcessingJobs(jobs), [jobs]);
   const selectedJob = jobs.find((job) => job.id === selectedJobId) || jobs[0] || null;
   const hasActiveJobs = jobs.some((job) => ACTIVE_STATUSES.has(job.status));
-  const selectedSlot = productManagerSlot(slots[selectedJob?.id] || selectedJob?.targetSlot);
+  const selectedSlot = productManagerSlot(slots[selectedJob?.id] || selectedJob?.destination?.slot || selectedJob?.targetSlot);
   const destinationProduct = destination.status === 'found' ? destination.product : null;
   const currentDestinationImage = destinationProduct?.[selectedSlot.field] || '';
 
   useEffect(() => {
-    const sku = normalizedSku(selectedJob?.sku);
+    const sku = normalizedSku(selectedJob?.destination?.sku || selectedJob?.sku);
     const shouldResolve = sku && ['approved', 'published'].includes(selectedJob?.status);
     if (!shouldResolve) {
       setDestination({ status: 'idle', product: null, error: '' });
@@ -157,7 +159,12 @@ export default function ImageProcessingCentre({
         setDestination({ status: 'error', product: null, error: lookupError.message || 'Could not check Product Manager' });
       });
     return () => controller.abort();
-  }, [destinationLookupAttempt, selectedJob?.sku, selectedJob?.status]);
+  }, [destinationLookupAttempt, selectedJob?.destination?.sku, selectedJob?.sku, selectedJob?.status]);
+
+  useEffect(() => {
+    setDestinationSearch('');
+    setDestinationCandidate({ status: 'idle', product: null, matchedBy: '', error: '' });
+  }, [selectedJob?.id]);
 
   useEffect(() => {
     setPublishConfirmation(null);
@@ -310,6 +317,30 @@ export default function ImageProcessingCentre({
       imageSlot: selectedSlot.value,
       publishToExistingSlot: true,
     });
+  };
+
+  const findProductManagerDestination = async () => {
+    const code = destinationSearch.trim();
+    if (!code) {
+      setDestinationCandidate({ status: 'error', product: null, matchedBy: '', error: 'Enter a Product Manager SKU, barcode or product name first.' });
+      return;
+    }
+    setDestinationCandidate({ status: 'loading', product: null, matchedBy: '', error: '' });
+    try {
+      const response = await fetch(`/api/product-loader-lookup?code=${encodeURIComponent(code)}`, { cache: 'no-store' });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || 'Could not search Product Manager');
+      if (!payload.websiteRow?.sku) throw new Error('No Product Manager product was found. Try its SKU or barcode.');
+      setDestinationCandidate({ status: 'found', product: payload.websiteRow, matchedBy: payload.matchedBy || 'search', error: '' });
+    } catch (lookupError) {
+      setDestinationCandidate({ status: 'error', product: null, matchedBy: '', error: lookupError.message || 'Could not search Product Manager' });
+    }
+  };
+
+  const useProductManagerDestination = (job) => {
+    const sku = destinationCandidate.product?.sku;
+    if (!sku) return;
+    void runAction(job, 'assign_destination', { destinationSku: sku, imageSlot: selectedSlot.value });
   };
 
   const clearJob = async (job) => {
@@ -531,7 +562,14 @@ export default function ImageProcessingCentre({
                       </div>
                     )}
                     {['missing', 'error'].includes(destination.status) && (
-                      <span className="ipc-destination-blocked"><AlertTriangle size={13} /> {destination.error} This result stays staged and cannot be sent. Use the real Product Manager SKU in the filename, then upload it again.</span>
+                      <div className="ipc-destination-blocked"><AlertTriangle size={13} /> <span>{destination.error} This result stays staged until you deliberately select its exact Product Manager product below.</span>
+                        {selectedJob.status !== 'published' && <div className="ipc-destination-lookup">
+                          <label>Find Product Manager product<input value={destinationSearch} onChange={(event) => setDestinationSearch(event.target.value)} placeholder="SKU, barcode or product name" /></label>
+                          <button type="button" className="adm-btn-ghost adm-btn--sm" disabled={Boolean(busy) || destinationCandidate.status === 'loading'} onClick={() => void findProductManagerDestination()}>{destinationCandidate.status === 'loading' ? <Loader2 size={14} className="spin" /> : <RefreshCw size={14} />} Find product</button>
+                        </div>}
+                        {destinationCandidate.status === 'error' && <span>{destinationCandidate.error}</span>}
+                        {destinationCandidate.status === 'found' && <div className="ipc-destination-candidate"><strong>{destinationCandidate.product.title || 'Untitled product'}</strong><span>SKU {destinationCandidate.product.sku} · matched by {destinationCandidate.matchedBy}</span><button type="button" className="adm-btn-red adm-btn--sm" disabled={Boolean(busy)} onClick={() => useProductManagerDestination(selectedJob)}><Check size={14} /> Use this exact Product Manager product</button></div>}
+                      </div>
                     )}
                     {destination.status === 'idle' && <span>An exact Product Manager SKU is required before this image can be sent.</span>}
                   </div>

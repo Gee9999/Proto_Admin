@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { parseImageProcessingRequest } from '../api/_image-processing-request.js';
 import {
   analyzeImageQuality,
+  assignImageDestination,
   estimatedImageCostUsd,
   markImageApproved,
   publishApprovedImage,
@@ -322,6 +323,35 @@ describe('Image Processing Centre backend contracts', () => {
     })).rejects.toMatchObject({ code: 'ipc_product_not_found' });
     expect(calls.copies).toEqual([]);
     expect(calls.updates).toEqual([]);
+  });
+
+  it('allows an approved UUID-named image to be deliberately assigned to one verified Product Manager SKU', async () => {
+    const { client, calls } = productManagerStock({
+      productRows: [{ sku: 'AB12', title: 'Black Jar', image_url_two: null }],
+    });
+    const image = approvedImage({
+      sku: '64C7B602-797C-4E96-87E0-E8472734CF02',
+      source: { type: 'local_upload', filename: '64C7B602-797C-4E96-87E0-E8472734CF02.jpg' },
+    });
+
+    const assigned = await assignImageDestination(image, {
+      actor: 'owner@proto.co.za', sku: 'ab12', slot: 2, stockClient: client,
+    });
+
+    expect(assigned.destination).toMatchObject({
+      sku: 'AB12', slot: 2, field: 'image_url_two', source: 'manual_selection', assignedBy: 'owner@proto.co.za',
+    });
+    expect(calls.copies).toEqual([]);
+    expect(calls.updates).toEqual([]);
+
+    const published = await publishApprovedImage({ id: 'ipc_1', images: [assigned] }, assigned, {
+      actor: 'owner@proto.co.za', slot: 2, allowOverwrite: true, stockClient: client,
+    });
+    expect(published.publication).toMatchObject({ sku: 'AB12', slot: 2, field: 'image_url_two' });
+    expect(calls.copies).toEqual([[
+      'staging/image-processing/outputs/ipc_1/img_1.png',
+      expect.stringMatching(/^AB12\/2-/),
+    ]]);
   });
 
   it('blocks duplicate targets in the same batch before an image can replace the wrong position', async () => {

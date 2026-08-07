@@ -21,6 +21,7 @@ import {
 import {
   ALLOWED_TARGET_TABLES,
   deriveJobStatus,
+  normalizeImageSku,
   normalizeImageSlot,
   productManagerDestination,
   qualityScoreFromMetrics,
@@ -342,10 +343,12 @@ function resolvedProductDestination(image, requestedSlot = image.slot) {
   if (!slot) {
     throw imageProcessingError('ipc_invalid_destination', 'Choose a valid Product Manager image position.');
   }
+  const stored = image.destination;
+  const manuallyAssigned = stored?.source === 'manual_selection';
   const destination = productManagerDestination({
-    sku: image.sku,
+    sku: manuallyAssigned ? stored.sku : image.sku,
     slot,
-    targetTable: image.targetTable,
+    targetTable: manuallyAssigned ? stored.table : image.targetTable,
   });
   if (!destination.sku || !destination.field || !ALLOWED_TARGET_TABLES.includes(destination.table)) {
     throw imageProcessingError(
@@ -357,8 +360,7 @@ function resolvedProductDestination(image, requestedSlot = image.slot) {
   // Jobs created before the explicit destination contract do not have this
   // field, so derive it for backward compatibility. If a stored destination
   // is present, it must still point to the same Product Manager product.
-  const stored = image.destination;
-  if (stored && (
+  if (stored && !manuallyAssigned && (
     String(stored.system || '').toLowerCase() !== 'product_manager'
     || String(stored.table || '').toLowerCase() !== destination.table
     || String(stored.sku || '').toUpperCase() !== destination.sku
@@ -397,11 +399,12 @@ async function readExactProduct(stock, destination) {
 function assertNoJobDestinationConflict(job, image, destination) {
   const conflict = (job.images || []).find((candidate) => {
     if (candidate.id === image.id || ['rejected', 'failed', 'restored'].includes(candidate.status)) return false;
-    const candidateSlot = candidate.publication?.slot || candidate.slot;
+    const manuallyAssigned = candidate.destination?.source === 'manual_selection';
+    const candidateSlot = candidate.publication?.slot || (manuallyAssigned ? candidate.destination?.slot : candidate.slot);
     const candidateDestination = productManagerDestination({
-      sku: candidate.publication?.sku || candidate.sku,
+      sku: candidate.publication?.sku || (manuallyAssigned ? candidate.destination?.sku : candidate.sku),
       slot: candidateSlot,
-      targetTable: candidate.publication?.table || candidate.targetTable,
+      targetTable: candidate.publication?.table || (manuallyAssigned ? candidate.destination?.table : candidate.targetTable),
     });
     return candidateDestination.table === destination.table
       && candidateDestination.sku === destination.sku
@@ -434,6 +437,40 @@ export function markImageApproved(image, { actor }) {
     status: 'approved',
     approvedAt: new Date().toISOString(),
     approvedBy: actor,
+    error: null,
+  };
+}
+
+// A filename normally supplies the destination SKU.  When an image comes from
+// a camera or supplier folder with an opaque name, the owner may deliberately
+// bind it to one verified Product Manager SKU.  This only stages the target;
+// publishing still requires approval and a second explicit confirmation.
+export async function assignImageDestination(image, {
+  actor,
+  sku,
+  slot = image.slot,
+  stockClient = null,
+} = {}) {
+  if (!['review', 'approved'].includes(image.status)) {
+    throw imageProcessingError('ipc_destination_assignment_not_allowed', 'Choose a Product Manager destination only after processing is ready for review or approved.');
+  }
+  const destination = productManagerDestination({
+    sku: normalizeImageSku(sku),
+    slot,
+  });
+  if (!destination.sku || !destination.field || !ALLOWED_TARGET_TABLES.includes(destination.table)) {
+    throw imageProcessingError('ipc_invalid_destination', 'Choose a valid exact Product Manager product and image position.');
+  }
+  const stock = stockClient || getStockClient();
+  await readExactProduct(stock, destination);
+  return {
+    ...image,
+    destination: {
+      ...destination,
+      source: 'manual_selection',
+      assignedAt: new Date().toISOString(),
+      assignedBy: actor,
+    },
     error: null,
   };
 }

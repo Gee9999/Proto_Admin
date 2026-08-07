@@ -52,7 +52,8 @@ export function normalizeImageProcessingJob(job = {}) {
     qualityFlags: asArray(job.quality_flags || quality.flags),
     qualityScore: job.quality_score ?? quality.score ?? null,
     estimatedCost: Number(job.estimated_cost_zar ?? job.cost_zar ?? job.cost?.zar ?? 0) || 0,
-    targetSlot: Number(job.target_slot || job.image_slot || 1) || 1,
+    targetSlot: Number(job.destination?.slot || job.target_slot || job.image_slot || 1) || 1,
+    destination: job.destination || null,
     error: job.error || job.error_message || '',
     createdAt: job.created_at || job.createdAt || '',
   };
