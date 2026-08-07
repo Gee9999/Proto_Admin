@@ -177,7 +177,7 @@ export function summarizeImageProcessingJobs(jobs) {
     total: rows.length,
     processing: rows.filter((job) => ['queued', 'processing', 'retrying'].includes(job.status)).length,
     review: rows.filter((job) => ['review', 'ready', 'completed'].includes(job.status)).length,
-    approved: rows.filter((job) => ['approved', 'published', 'restored'].includes(job.status)).length,
+    approved: rows.filter((job) => ['archived', 'published', 'restored'].includes(job.status)).length,
     failed: rows.filter((job) => ['failed', 'error', 'rejected'].includes(job.status)).length,
     cost: rows.reduce((sum, job) => sum + (Number(job.estimatedCost) || 0), 0),
   };
