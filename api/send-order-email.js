@@ -1,4 +1,4 @@
-import { requireAdminOrOrderToken } from './_admin-auth.js';
+import { requireAdminOrOrderToken, requireAdminAuthType } from './_admin-auth.js';
 import { createClient } from '@supabase/supabase-js';
 import { getPortalAdminClient, SITE_CONFIG_BUCKET } from './_site-config.js';
 import { CUSTOMER_SEND_FORBIDDEN, isVictorSender } from './_fulfillment-auth.js';
@@ -236,6 +236,10 @@ function buildEmailHtml({
 export default async function handler(req, res) {
   const auth = await requireAdminOrOrderToken(req, res);
   if (!auth) return;
+  // This is the customer-facing send. `senderUserId`/`senderName` below are
+  // browser-supplied display metadata, so they can never stand in for an
+  // account — a fulfilment link must not reach this route at all.
+  if (!requireAdminAuthType(auth, res, 'Fulfilment links cannot email customers. Sign in to the admin dashboard.')) return;
   if (req.method !== 'POST') return res.status(405).end();
 
   const {

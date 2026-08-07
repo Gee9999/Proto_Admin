@@ -1,22 +1,43 @@
-/** Patches window.fetch with the verified admin JWT. */
+/** Patches window.fetch with the verified admin JWT, or a fulfillment link token. */
 import { supabase } from './supabase';
 
+/**
+ * Where the fulfilment page gets its order from.
+ *
+ * `/f/<orderId>/<token>` is the signed link the team receives on WhatsApp: the
+ * token authorizes that one order, so the page opens without an admin account.
+ * `/fulfillment?id=<orderId>` (no token) is the admin's own route into the same
+ * page and still requires a signed-in session.
+ */
 export function getOrderAccessFromUrl() {
   try {
     const path = window.location.pathname || '';
-    // Accept legacy /f/<orderId>/<old-token> URLs for their order ID only.
-    // The trailing token is deliberately ignored; authentication is session-based.
-    const match = path.match(/^\/f\/([^/]+)(?:\/[^/]+)?\/?$/);
-    if (match) return { orderId: decodeURIComponent(match[1]) };
+    const match = path.match(/^\/f\/([^/]+)(?:\/([^/]+))?\/?$/);
+    if (match) {
+      return { orderId: decodeURIComponent(match[1]), token: match[2] ? decodeURIComponent(match[2]) : '' };
+    }
     const params = new URLSearchParams(window.location.search);
     const orderId = params.get('o') || params.get('id') || '';
-    if (orderId) return { orderId };
+    const token = params.get('ft') || '';
+    if (orderId) return { orderId, token };
   } catch { /* ignore */ }
-  return { orderId: '' };
+  return { orderId: '', token: '' };
+}
+
+/** True when this page load is authorized by a link rather than a session. */
+export function hasFulfillmentToken() {
+  return Boolean(getOrderAccessFromUrl().token);
 }
 
 async function attachAuthHeaders(headers) {
   if (headers.has('Authorization')) return;
+  // A link token is the whole credential — don't reach for a session that a
+  // logged-out packer does not have.
+  const { token } = getOrderAccessFromUrl();
+  if (token) {
+    headers.set('X-Fulfillment-Token', token);
+    return;
+  }
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (session?.access_token) {
@@ -46,7 +67,11 @@ export function installAuthFetch() {
 
     let response = await originalFetch(input, { ...init, headers });
 
-    if (response.status === 401 && !getOrderAccessFromUrl().orderId) {
+    // A link-authorized page has no session to refresh and no login to bounce
+    // to — its 401 means the link expired, which the page reports itself.
+    const linkMode = hasFulfillmentToken();
+
+    if (response.status === 401 && !linkMode && !getOrderAccessFromUrl().orderId) {
       try {
         const { data } = await supabase.auth.refreshSession();
         if (data.session?.access_token) {
@@ -56,10 +81,12 @@ export function installAuthFetch() {
       } catch { /* ignore */ }
     }
 
-    if (response.status === 401 && !getOrderAccessFromUrl().orderId) {
-      window.dispatchEvent(new CustomEvent('proto-admin-unauthorized'));
-    } else if (response.status === 403 && !getOrderAccessFromUrl().orderId) {
-      window.dispatchEvent(new CustomEvent('proto-admin-forbidden'));
+    if (!linkMode && !getOrderAccessFromUrl().orderId) {
+      if (response.status === 401) {
+        window.dispatchEvent(new CustomEvent('proto-admin-unauthorized'));
+      } else if (response.status === 403) {
+        window.dispatchEvent(new CustomEvent('proto-admin-forbidden'));
+      }
     }
 
     return response;

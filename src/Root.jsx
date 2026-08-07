@@ -1,5 +1,5 @@
 import { useEffect, useState, Suspense } from 'react';
-import { installAuthFetch } from './lib/adminKey';
+import { installAuthFetch, hasFulfillmentToken } from './lib/adminKey';
 import { clearChunkReloadGuard, lazyRetry } from './lib/lazyRetry';
 import {
   getVerifiedSession,
@@ -36,6 +36,19 @@ export default function Root() {
   const path = window.location.pathname;
   const isFulfillment = path === '/fulfillment' || path === '/f' || path.startsWith('/f/');
   const isResetPassword = path === '/reset-password';
+
+  // A signed fulfilment link IS the credential — the packing team opens it on
+  // a phone with no admin account, so it must not meet the login screen. The
+  // token is verified server-side on every API call it makes.
+  if (isFulfillment && hasFulfillmentToken()) {
+    return (
+      <QueryProvider>
+        <Suspense fallback={loadingFallback}>
+          <FulfillmentPage linkMode />
+        </Suspense>
+      </QueryProvider>
+    );
+  }
 
   if (isFulfillment) return <AdminGate fulfillment />;
 

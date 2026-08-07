@@ -1,6 +1,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Check, ClipboardList, FileText, Loader2, Lock, Pencil, Search, User, X } from 'lucide-react';
-import { fetchAdminProductsPage } from '../lib/products';
+import { searchReplacementProducts } from '../lib/products';
 import {
   fetchFulfillmentProgress,
   lookupProductCategories,
@@ -88,8 +88,15 @@ function applyProgress(items, sections = {}) {
   });
 }
 
-export default function FulfillmentPage() {
-  const { orderId } = getOrderAccessFromUrl();
+/**
+ * `linkMode` means the page was opened from a signed WhatsApp link rather than
+ * an admin session. The packing work is identical; what differs is that there
+ * is no dashboard to navigate back to, and the link may not advance the order
+ * to "sent" or email the customer — an owner does that from the dashboard.
+ */
+export default function FulfillmentPage({ linkMode: linkModeProp = false }) {
+  const { orderId, token } = getOrderAccessFromUrl();
+  const linkMode = linkModeProp || Boolean(token);
 
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -168,7 +175,10 @@ export default function FulfillmentPage() {
     ])
       .then(async ([orderData, userRows, progressData, taxonomyRows]) => {
         const row = orderData.rows?.[0];
-        if (!row) throw new Error('Order not found');
+        // Surface the server's reason — "this link has expired" is a very
+        // different problem from "order not found", and a packer standing in
+        // the warehouse needs to be told which one it is.
+        if (!row) throw new Error(orderData.error || 'Order not found');
         setOrder(row);
         setUsers(userRows);
         setProgress(progressData);
@@ -331,8 +341,9 @@ export default function FulfillmentPage() {
     swapTimerRef.current = setTimeout(async () => {
       setSwapLoading(true);
       try {
-        const data = await fetchAdminProductsPage({ page: 1, pageSize: 8, searchQuery: q });
-        setSwapResults(data.rows || []);
+        setSwapResults(await searchReplacementProducts(q));
+      } catch {
+        setSwapResults([]);
       } finally { setSwapLoading(false); }
     }, 350);
   };
@@ -359,6 +370,36 @@ export default function FulfillmentPage() {
   const total = items.filter((it) => !it.removed).reduce((s, it) => s + it.finalQty * (it.unitPrice || it.price || 0), 0);
   const hasPrices = items.some((it) => it.unitPrice || it.price);
   const buildFinalItems = () => items.filter((it) => !it.removed).map(({ removed, finalQty, swapped, originalCode, originalName, idx, mainCategoryId, mainCategoryLabel, ...rest }) => ({ ...rest, qty: finalQty }));
+
+  /**
+   * Save the packed quantities, substitutions and notes WITHOUT advancing the
+   * workflow. This is what a link user does: their picking work is recorded on
+   * the order, and an owner sends it to the customer from the dashboard.
+   */
+  const doSavePacking = async () => {
+    if (!activeUser) {
+      setStatusMsg({ type: 'err', text: 'Choose who you are working as first.' });
+      return;
+    }
+    setSaving(true);
+    setStatusMsg(null);
+    try {
+      const res = await fetch('/api/admin-orders', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: orderId,
+          final_items: buildFinalItems(),
+          ...(userNotes.trim() ? { notes: userNotes.trim() } : {}),
+        }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Save failed');
+      setStatusMsg({ type: 'ok', text: 'Packing saved. The office can see your changes.' });
+    } catch (e) {
+      setStatusMsg({ type: 'err', text: e.message });
+    } finally { setSaving(false); }
+  };
 
   const doSave = async () => {
     if (!victorCanSave) {
@@ -407,6 +448,12 @@ export default function FulfillmentPage() {
     if (window.opener && !window.opener.closed) {
       try { window.opener.focus(); } catch { /* cross-window focus can throw */ }
       window.close();
+      return;
+    }
+    // A link user has no dashboard — sending them to /?section=orders would
+    // dump them on the admin login screen for an account they do not have.
+    if (linkMode) {
+      setStatusMsg({ type: 'ok', text: 'All done — you can close this tab. Reopen the WhatsApp link any time.' });
       return;
     }
     window.location.assign('/?section=orders');
@@ -527,7 +574,10 @@ export default function FulfillmentPage() {
   const totalSections = categoryGroups.length;
   const completionPct = totalSections ? Math.round((completedCount / totalSections) * 100) : 0;
   const orderRef = displayOrderNumber(order);
-  const fulfillmentLink = buildFulfillmentUrl(order?.id);
+  // In link mode the signed URL currently in the address bar is the one worth
+  // keeping — buildFulfillmentUrl() drops the token and would hand the packer
+  // a bookmark that only opens for a signed-in admin.
+  const fulfillmentLink = linkMode ? window.location.href : buildFulfillmentUrl(order?.id);
 
   return (
     <div className="ff-page">
@@ -597,7 +647,12 @@ export default function FulfillmentPage() {
           </div>
         </div>
 
-        {!victorCanSave && (
+        {linkMode ? (
+          <div className="ff-victor-notice" role="note">
+            Tick items as you pack them and edit quantities freely, then tap <strong>Save packing</strong>.
+            The office sends the order to the customer once you are done.
+          </div>
+        ) : !victorCanSave && (
           <div className="ff-victor-notice" role="note">
             Tick items as you pack them and edit quantities freely. Only <strong>Victor</strong> can send the order.
           </div>
@@ -657,7 +712,12 @@ export default function FulfillmentPage() {
           {previewing ? <Loader2 size={16} className="star-spinning" /> : <FileText size={16} />}
           <span>{previewing ? 'PDF…' : 'Preview PDF'}</span>
         </button>
-        {victorCanSave ? (
+        {linkMode ? (
+          <button type="button" onClick={() => void doSavePacking()} disabled={saving || previewing || !activeUser} className="ff-btn-send">
+            {saving ? <Loader2 size={16} className="star-spinning" /> : <Check size={16} />}
+            <span>{saving ? 'Saving…' : 'Save packing'}</span>
+          </button>
+        ) : victorCanSave ? (
           <button type="button" onClick={() => void doSave()} disabled={saving || previewing} className="ff-btn-send">
             {saving ? <Loader2 size={16} className="star-spinning" /> : <Check size={16} />}
             <span>{saving ? 'Saving…' : 'Save order'}</span>

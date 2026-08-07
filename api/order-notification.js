@@ -1,4 +1,4 @@
-import { requireAdminOrOrderToken } from './_admin-auth.js';
+import { requireAdminOrOrderToken, requireAdminAuthType } from './_admin-auth.js';
 import { notifyNewOrder, resendInternalOrderEmail } from './_order-notify-core.js';
 
 /**
@@ -9,6 +9,9 @@ import { notifyNewOrder, resendInternalOrderEmail } from './_order-notify-core.j
 export default async function handler(req, res) {
   const auth = await requireAdminOrOrderToken(req, res);
   if (!auth) return;
+  // Sends email to the order team for any order id in the body. Nothing on the
+  // fulfilment page calls it, and it is not order-scoped, so links stay out.
+  if (!requireAdminAuthType(auth, res, 'Sign in to the admin dashboard to resend order notifications.')) return;
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).end();
 

@@ -1,10 +1,14 @@
 import { timingSafeEqual } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
+import { verifyFulfillmentToken } from './_fulfillment-token.js';
 
 /**
  * Admin API auth — Supabase JWT + email allowlist.
- * Fulfillment work requires a verified admin session; shared bearer links are
- * deliberately not accepted.
+ *
+ * Fulfillment routes additionally accept a signed per-order link token
+ * (`_fulfillment-token.js`), which the packing team opens from WhatsApp
+ * without an account. That token authorizes ONE order and only the packing
+ * workflow — never a customer-facing send or a financial record.
  */
 
 export const ADMIN_ROLES = Object.freeze({
@@ -112,20 +116,50 @@ export async function requireOwner(req, res) {
   return true;
 }
 
+/**
+ * A fulfillment link token, from the header the browser sets or — for a plain
+ * page load that has not booted the app yet — the query string.
+ */
+export function extractFulfillmentToken(req) {
+  const header = String(req.headers['x-fulfillment-token'] || '').trim();
+  if (header) return header;
+  const query = String(req.query?.ft || '').trim();
+  if (query) return query;
+  return String(req.body?.fulfillmentToken || '').trim();
+}
+
 export async function resolveRequestAuth(req) {
   if (hasAdminKey(req)) return { type: 'admin' };
   const admin = await verifyAdminUser(req);
-  return admin ? { type: 'admin', user: admin } : null;
+  if (admin) return { type: 'admin', user: admin };
+  const claim = verifyFulfillmentToken(extractFulfillmentToken(req));
+  // `orderId` is what every scoped route checks its own order id against, so a
+  // token minted for order A can never touch order B.
+  return claim ? { type: 'order', orderId: claim.orderId, expiresAt: claim.expiresAt } : null;
 }
 
 /**
- * Backward-compatible helper name for fulfillment routes. Shared order tokens
- * are intentionally disabled; a verified admin session is required.
+ * Fulfillment routes: a verified admin session, or a signed per-order link.
+ * Routes that resolve an order-type auth MUST scope their work to
+ * `auth.orderId` and refuse customer-facing or financial actions.
  */
 export async function requireAdminOrOrderToken(req, res) {
   const auth = await resolveRequestAuth(req);
   if (auth) return auth;
+  if (extractFulfillmentToken(req)) {
+    return sendUnauthorized(res, 'This fulfilment link has expired or is no longer valid. Ask for a new one.');
+  }
   return sendUnauthorized(res, 'Sign in to access fulfillment work');
+}
+
+/**
+ * Guard for routes that share a fulfillment handler but must stay admin-only —
+ * customer emails, the order-team notification round, and its log.
+ */
+export function requireAdminAuthType(auth, res, message = 'Sign in to the admin dashboard to do this.') {
+  if (auth?.type === 'admin') return true;
+  if (!res.headersSent) res.status(403).json({ error: message });
+  return false;
 }
 
 /** Vercel cron secret or admin JWT. */

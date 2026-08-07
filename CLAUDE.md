@@ -71,7 +71,25 @@ Supabase email/password login with a **3-email allowlist** (`src/lib/auth.js`, m
 
 - `danieljoffeinfo@gmail.com`, `george@proto.co.za`, `online@proto.co.za`
 
-`Root.jsx` shows `AdminLoginPage` until `getVerifiedSession()` + `/api/auth-check` succeed. API routes use `requireAdminKey` (JWT or optional `ADMIN_DASH_KEY` header). Fulfillment work requires a verified allowlisted admin session; legacy shared per-order bearer tokens are disabled. Crons require `CRON_SECRET`.
+`Root.jsx` shows `AdminLoginPage` until `getVerifiedSession()` + `/api/auth-check` succeed. API routes use `requireAdminKey` (JWT or optional `ADMIN_DASH_KEY` header). Crons require `CRON_SECRET`.
+
+### Fulfillment links (no login)
+
+The packing team opens an order from WhatsApp with **no admin account**.
+`api/order-team-whatsapp.js` sends `/f/<orderId>/<token>`, where the token is an
+HMAC claim minted by `api/_fulfillment-token.js` (`FULFILLMENT_LINK_SECRET`,
+falling back to `ADMIN_DASH_KEY` / `SUPABASE_SERVICE_ROLE_KEY`; TTL
+`FULFILLMENT_LINK_TTL_DAYS`, default 30). Rotating that secret invalidates every
+outstanding link.
+
+`resolveRequestAuth` returns `{ type: 'order', orderId }` for a valid token, and
+every route that accepts one scopes its work to that single order. A link may:
+view its order, tick items packed, edit quantities, mark out of stock, swap
+products (`api/fulfillment-product-search.js`), add notes, and save that packing
+work. A link may **not**: email a customer (`send-order-email.js`), advance to
+`order sent` or `payment received` (`_fulfillment-auth.js`), write money columns,
+or reach `order-notification.js` / `order-notify-log.js` — those need a signed-in
+owner. Team phone numbers are stripped from `fulfillment-users` for link callers.
 
 ## Agent skill
 See `.cursor/skills/protoportal-admin/SKILL.md` for full architecture.

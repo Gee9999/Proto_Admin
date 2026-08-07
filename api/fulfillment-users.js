@@ -25,9 +25,12 @@ function normalizeUsers(payload) {
 }
 
 export default async function handler(req, res) {
-  // GET requires a verified admin session; team-list writes require Owner access.
+  // GET accepts an admin session or a signed order link (the packer picks who
+  // they are from this list); team-list writes require Owner access.
+  let auth = null;
   if (req.method === 'GET') {
-    if (!(await requireAdminOrOrderToken(req, res))) return;
+    auth = await requireAdminOrOrderToken(req, res);
+    if (!auth) return;
   } else if (!(await requireOwner(req, res))) return;
   res.setHeader('Cache-Control', 'no-store');
 
@@ -37,6 +40,13 @@ export default async function handler(req, res) {
       if (!data?.users?.length) {
         data = defaultFulfillmentUsers();
         await writeSiteConfigJson(USERS_FILE, data);
+      }
+      if (auth.type === 'order') {
+        // The picker needs names and category assignments, not the team's
+        // personal phone numbers — a link can be forwarded to anyone.
+        return res.status(200).json({
+          users: (data.users || []).map(({ whatsapp, ...rest }) => rest),
+        });
       }
       return res.status(200).json(data);
     } catch (err) {
