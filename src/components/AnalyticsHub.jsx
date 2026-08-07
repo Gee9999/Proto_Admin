@@ -4,13 +4,21 @@ import { lazyRetry } from '../lib/lazyRetry';
 
 const OrderAnalyticsDashboard = lazyRetry(() => import('./OrderAnalyticsDashboard'));
 const SearchAnalyticsDashboard = lazyRetry(() => import('./SearchAnalyticsDashboard'));
+const AnalyticsControlCentre = lazyRetry(() => import('./AnalyticsControlCentre'));
 
 export default function AnalyticsHub() {
-  const [view, setView] = useState('orders');
+  const [view, setView] = useState('control');
 
   return (
     <div className="oa-hub">
       <div className="adm-customer-tabs oa-hub-tabs">
+        <button
+          type="button"
+          onClick={() => setView('control')}
+          className={`adm-tab${view === 'control' ? ' adm-tab--active' : ''}`}
+        >
+          Control Centre
+        </button>
         <button
           type="button"
           onClick={() => setView('orders')}
@@ -34,7 +42,7 @@ export default function AnalyticsHub() {
         </div>
       )}
       >
-        {view === 'orders' ? <OrderAnalyticsDashboard /> : <SearchAnalyticsDashboard />}
+        {view === 'control' ? <AnalyticsControlCentre /> : view === 'orders' ? <OrderAnalyticsDashboard /> : <SearchAnalyticsDashboard />}
       </Suspense>
     </div>
   );
