@@ -434,14 +434,9 @@ export default function ImageProcessingCentre({
       const updated = [];
       for (const job of candidates) {
         if (action === 'archive') {
-          // Archiving is deliberately a two-step server-side transition:
-          // review -> approved -> archived.  Product Manager is never part
-          // of this bulk workflow.
-          await updateImageProcessingJob(job.id, 'approve');
-          updated.push(await updateImageProcessingJob(job.id, 'archive'));
-        } else {
-          updated.push(await updateImageProcessingJob(job.id, action));
+          throw new Error('Bulk archive is disabled. Approve each result after human review, then save the approved result to the Image Archive.');
         }
+        updated.push(await updateImageProcessingJob(job.id, action));
       }
       markQueueMutation();
       mergeJobs(updated);
