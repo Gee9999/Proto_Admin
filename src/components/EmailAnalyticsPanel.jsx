@@ -264,6 +264,17 @@ function uniqueEmails(values) {
     .filter(Boolean))];
 }
 
+function followUpTiming(campaign) {
+  const sent = new Date(campaign.sentAt || campaign.createdAt || 0);
+  const readyAt = new Date(sent.getTime() + (7 * 24 * 60 * 60 * 1000));
+  const valid = !Number.isNaN(readyAt.getTime());
+  return { ready: valid && Date.now() >= readyAt.getTime(), readyAt };
+}
+
+function formatMoney(value) {
+  return `R${Number(value || 0).toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 function CampaignDetail({ campaign, onClose, onCompose }) {
   const snapshotEmails = uniqueEmails(campaign.recipientEmails);
   const opened = uniqueEmails(campaign.eventEmails?.opened);
@@ -278,6 +289,9 @@ function CampaignDetail({ campaign, onClose, onCompose }) {
   const openedNoClick = opened.filter((email) => !clicked.includes(email) && !excluded.includes(email));
   const legacyKnownEmails = uniqueEmails([...opened, ...clicked, ...excluded]);
   const hasRecipientSnapshot = snapshotEmails.length > 0;
+  const followUp = campaign.followUp || null;
+  const timing = followUpTiming(campaign);
+  const canFollowUp = hasRecipientSnapshot && timing.ready && !followUp?.sentAt && noRecordedOpen.length > 0;
   const groups = [
     {
       key: 'all',
@@ -291,7 +305,11 @@ function CampaignDetail({ campaign, onClose, onCompose }) {
       emails: noRecordedOpen,
       unavailable: !hasRecipientSnapshot,
       note: hasRecipientSnapshot
-        ? 'Use this as a once-only follow-up list. Image blocking and mail privacy can hide genuine reads.'
+        ? followUp?.sentAt
+          ? `Follow-up sent ${fmtDate(followUp.sentAt)} to ${followUp.recipientCount || 0} people. It cannot be sent again from this campaign.`
+          : timing.ready
+            ? 'Use this as a once-only follow-up list. Image blocking and mail privacy can hide genuine reads.'
+            : `Available from ${fmtDate(timing.readyAt)} — the seven-day waiting period protects customers from a too-soon resend.`
         : 'Available for campaigns sent after this follow-up feature was added.',
     },
     { key: 'opened-no-click', label: 'Opened, no click', emails: openedNoClick, note: 'Opened at least once, but no tracked link click.' },
@@ -372,11 +390,17 @@ function CampaignDetail({ campaign, onClose, onCompose }) {
             <button
               type="button"
               className="adm-btn-red"
-              disabled={!active.emails.length}
-              onClick={() => onCompose?.({ audience: 'selected', recipients: active.emails })}
+              disabled={!canFollowUp}
+              title={followUp?.sentAt ? 'A follow-up was already sent for this campaign.' : (!timing.ready ? `Available from ${fmtDate(timing.readyAt)}` : '')}
+              onClick={() => onCompose?.({ audience: 'selected', recipients: active.emails, followUpOf: campaign.id })}
             >
-              Create follow-up email ({active.emails.length})
+              {followUp?.sentAt ? 'Follow-up already sent' : !timing.ready ? 'Follow-up available in 7 days' : `Create follow-up email (${active.emails.length})`}
             </button>
+          )}
+          {followUp?.sentAt && (
+            <span className="adm-modal-note" style={{ marginRight: 'auto' }}>
+              Follow-up conversion: {followUp.conversion?.customers || 0} customer{followUp.conversion?.customers === 1 ? '' : 's'} · {followUp.conversion?.orders || 0} order{followUp.conversion?.orders === 1 ? '' : 's'} · {formatMoney(followUp.conversion?.revenueExVat)} ex VAT
+            </span>
           )}
           <button type="button" className="adm-btn-ghost" onClick={exportRecipients} disabled={!groups.length}>
             <Download size={13} style={{ marginRight: 5, verticalAlign: -2 }} /> Export recipients
