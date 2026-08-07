@@ -470,6 +470,10 @@ function conditionalImageUpdate(stock, destination, expectedUrl, nextUrl) {
 export function markImageApproved(image, { actor }) {
   if (image.status === 'approved' || image.status === 'archived' || image.status === 'published') return image;
   if (image.status !== 'review') throw new Error('Only an image awaiting review can be approved');
+  const qualityFlags = [...new Set([...(image.quality?.flags || []), ...(image.warnings || [])])];
+  if (image.quality?.requiresManualReview || qualityFlags.length > 0) {
+    throw new Error('This image has quality flags and cannot be approved until the issues are resolved and reprocessed.');
+  }
   return {
     ...image,
     status: 'approved',
