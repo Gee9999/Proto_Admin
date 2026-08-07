@@ -433,12 +433,20 @@ export default function ImageProcessingCentre({
     try {
       const updated = [];
       for (const job of candidates) {
-        updated.push(await updateImageProcessingJob(job.id, action));
+        if (action === 'archive') {
+          // Archiving is deliberately a two-step server-side transition:
+          // review -> approved -> archived.  Product Manager is never part
+          // of this bulk workflow.
+          await updateImageProcessingJob(job.id, 'approve');
+          updated.push(await updateImageProcessingJob(job.id, 'archive'));
+        } else {
+          updated.push(await updateImageProcessingJob(job.id, action));
+        }
       }
       markQueueMutation();
       mergeJobs(updated);
       setWorkerUnavailable(false);
-      onShowToast?.(`${action === 'approve' ? 'Approved' : 'Rejected'} ${updated.length} reviewed image${updated.length === 1 ? '' : 's'}`, 'success');
+      onShowToast?.(`${action === 'archive' ? 'Saved to the Image Archive' : 'Rejected'} ${updated.length} reviewed image${updated.length === 1 ? '' : 's'}`, 'success');
     } catch (err) {
       setError(err.message || `Could not ${action} the reviewed batch`);
     } finally {
@@ -506,7 +514,7 @@ export default function ImageProcessingCentre({
       {summary.review > 0 && (
         <div className="ipc-bulk-review" role="group" aria-label="Bulk review actions">
           <div><strong>{summary.review} processed image{summary.review === 1 ? '' : 's'} awaiting review</strong><span>Saving to the archive never changes Product Manager or the live website. Each asset can be adjusted, assigned and applied later.</span></div>
-          <button type="button" className="adm-btn-red" disabled={Boolean(busy)} onClick={() => void runBulkReviewAction('approve')}><Archive size={14} /> Save all reviewed to archive</button>
+          <button type="button" className="adm-btn-red" disabled={Boolean(busy)} onClick={() => void runBulkReviewAction('archive')}><Archive size={14} /> Save all reviewed to archive</button>
           <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void runBulkReviewAction('reject')}><X size={14} /> Reject all reviewed</button>
         </div>
       )}

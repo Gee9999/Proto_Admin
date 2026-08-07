@@ -160,7 +160,9 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(centre).toContain('Save approved result to Image Archive');
     expect(centre).toContain('Confirm and apply to Product Manager');
     expect(centre).not.toContain("runAction(job, 'publish'");
-    expect(centre).toContain("runBulkReviewAction('approve')");
+    expect(centre).toContain("runBulkReviewAction('archive')");
+    expect(centre).toContain("updateImageProcessingJob(job.id, 'approve')");
+    expect(centre).toContain("updateImageProcessingJob(job.id, 'archive')");
     expect(centre).toContain("runAction(selectedJob, 'restore')");
     expect(centre).toContain('Clear from queue');
     expect(centre).toContain('manual human review');
