@@ -29,8 +29,8 @@ describe('Image Processing Centre owner-safety acceptance contract', () => {
   });
 
   it('records manual approval without publishing or changing Product Manager', () => {
-    const approvalBranch = sourceSection(jobsRouteSource, "} else if (action === 'approve')", "} else if (action === 'publish')");
-    const approvalService = sourceSection(serviceSource, 'export function markImageApproved', 'export async function publishApprovedImage');
+    const approvalBranch = sourceSection(jobsRouteSource, "} else if (action === 'approve')", "} else if (action === 'assign_destination')");
+    const approvalService = sourceSection(serviceSource, 'export function markImageApproved', 'export async function archiveApprovedImage');
     const reviewControls = sourceSection(centreSource, "runAction(selectedJob, 'approve')", "runAction(selectedJob, 'reject')");
 
     expect(approvalBranch).toContain('markImageApproved');
@@ -41,28 +41,26 @@ describe('Image Processing Centre owner-safety acceptance contract', () => {
     expect(reviewControls).toContain('Approve result');
   });
 
-  it('requires an exact Product Manager SKU before an approved result can be sent', () => {
+  it('requires an exact Product Manager SKU before an archived asset can be applied', () => {
     const destinationLookup = sourceSection(centreSource, 'useEffect(() => {\n    const sku = normalizedSku(selectedJob?.destination?.sku || selectedJob?.sku);', 'const mergeJobs = useCallback');
-    const publishControl = sourceSection(centreSource, 'const requestProductManagerSend =', 'const clearJob = async');
+    const applyControl = sourceSection(centreSource, 'const requestProductManagerApply =', 'const clearJob = async');
 
     expect(destinationLookup).toContain('/api/product-loader-lookup?code=${encodeURIComponent(sku)}');
     expect(destinationLookup).toContain('normalizedSku(product.sku) !== sku');
     expect(destinationLookup).toContain('No exact Product Manager product matches SKU');
-    expect(publishControl).toContain('if (!destinationProduct) return;');
-    expect(publishControl).toContain('if (!destinationProduct) return;');
-    expect(publishControl).toContain("runAction(job, 'publish'");
-    expect(centreSource).toContain('Review replacement');
-    expect(centreSource).toContain('Confirm and Send to Product Manager');
+    expect(applyControl).toContain('if (!job.archive?.assetId || !destinationProduct) return;');
+    expect(centreSource).toContain("runAction(job, 'apply'");
+    expect(centreSource).toContain('Confirm and apply to Product Manager');
   });
 
   it('lets an owner deliberately bind an unmatched filename to a verified Product Manager product before sending', () => {
     expect(centreSource).toContain('Find Product Manager product');
-    expect(centreSource).toContain('Use this exact Product Manager product');
+    expect(centreSource).toContain('Stage this Product Manager destination');
     expect(centreSource).toContain("runAction(job, 'assign_destination'");
     expect(jobsRouteSource).toContain("action === 'assign_destination'");
     expect(serviceSource).toContain('export async function assignImageDestination');
     expect(serviceSource).toContain("source: 'manual_selection'");
-    expect(serviceSource).toContain("if (!['review', 'approved'].includes(image.status))");
+    expect(serviceSource).toContain("if (!['review', 'approved', 'archived'].includes(image.status))");
   });
 
   it('allows rejected and failed work to be cleared only through the explicit safe queue action', () => {
@@ -81,10 +79,18 @@ describe('Image Processing Centre owner-safety acceptance contract', () => {
   it('keeps restore as a separate action, available only after an explicit Product Manager send', () => {
     const restoreService = sourceSection(serviceSource, 'export async function restorePublishedOriginal', '\n}');
 
-    expect(centreSource).toContain("selectedJob.status === 'published' && <div className=\"ipc-published-actions\"");
+    expect(centreSource).toContain("selectedJob.status === 'published' && <button");
     expect(centreSource).toContain("runAction(selectedJob, 'restore')");
     expect(restoreService).toContain("image.status !== 'published'");
     expect(restoreService).toContain('Only a published processed image can be restored');
     expect(restoreService).toContain("publishMode: 'restore_original'");
+  });
+
+  it('uses the guarded apply path for the legacy apply_archived action and labels published assets accurately', () => {
+    expect(jobsRouteSource).toContain("const action = requestedAction === 'apply_archived' ? 'apply' : requestedAction;");
+    expect(jobsRouteSource).toContain("} else if (action === 'apply') {");
+    expect(jobsRouteSource).toContain("'archive', 'create_revision', 'apply', 'reject'");
+    expect(centreSource).toContain("selectedJob.status === 'published'\n                      ? 'This website-ready white 1600 × 1600 version has already been applied to Product Manager.");
+    expect(centreSource).toContain("'This website-ready white 1600 × 1600 version is staged only. It has not changed Product Manager or the live website.'");
   });
 });
