@@ -191,7 +191,7 @@ describe('Image Processing Centre backend contracts', () => {
     expect(deriveJobStatus([{ status: 'approved' }, { status: 'review' }])).toBe('review');
     expect(deriveJobStatus([{ status: 'approved' }, { status: 'failed' }])).toBe('partially_failed');
     expect(deriveJobStatus([{ status: 'approved' }, { status: 'rejected' }])).toBe('closed');
-    expect(deriveJobStatus([{ status: 'restored' }, { status: 'published' }])).toBe('complete');
+    expect(deriveJobStatus([{ status: 'restored' }, { status: 'archived' }])).toBe('complete');
     expect(summarizeJob([
       { status: 'approved', cost: { usd: 0.55, zar: 10.1 } },
       { status: 'rejected', cost: { usd: 0.04, zar: 0.75 } },
@@ -273,7 +273,7 @@ describe('Image Processing Centre backend contracts', () => {
     }]);
   });
 
-  it('records approval without publishing or changing the review URL', () => {
+  it('records approval without archiving, applying, or changing the review URL', () => {
     const reviewed = { id: 'img_1', status: 'review', reviewUrl: '/staging/result.jpg' };
     expect(markImageApproved(reviewed, { actor: 'owner@proto.co.za' })).toMatchObject({
       status: 'approved',
@@ -281,46 +281,33 @@ describe('Image Processing Centre backend contracts', () => {
       approvedBy: 'owner@proto.co.za',
     });
     expect(markImageApproved(reviewed, { actor: 'owner@proto.co.za' })).not.toHaveProperty('publishedUrl');
+    expect(markImageApproved(reviewed, { actor: 'owner@proto.co.za' })).not.toHaveProperty('archiveAssetId');
+    expect(markImageApproved(reviewed, { actor: 'owner@proto.co.za' })).not.toHaveProperty('appliedAt');
   });
 
-  it('sends only to one exact Product Manager SKU and retains the original URL for restore', async () => {
+  it('blocks a direct Product Manager send before an image is archived', async () => {
     const { client, calls } = productManagerStock({
       productRows: [{ sku: 'AB12', title: 'Black Jar', image_url_one: 'https://old.example/jar.jpg' }],
       updateRows: [{ sku: 'AB12' }],
     });
     const image = approvedImage();
-    const published = await publishApprovedImage({ id: 'ipc_1', images: [image] }, image, {
+    await expect(publishApprovedImage({ id: 'ipc_1', images: [image] }, image, {
       actor: 'owner@proto.co.za',
       allowOverwrite: true,
       stockClient: client,
-    });
-
-    expect(published).toMatchObject({
-      status: 'published',
-      destination: productManagerDestination({ sku: 'AB12', slot: 1 }),
-      publication: {
-        sku: 'AB12',
-        table: 'website_stock',
-        field: 'image_url_one',
-        originalUrl: 'https://old.example/jar.jpg',
-      },
-    });
-    expect(calls.copies).toEqual([[
-      'staging/image-processing/outputs/ipc_1/img_1.png',
-      expect.stringMatching(/^AB12\/1-/),
-    ]]);
-    expect(calls.updates).toHaveLength(1);
-    expect(calls.filters).toContainEqual(['update.eq', 'image_url_one', 'https://old.example/jar.jpg']);
+    })).rejects.toMatchObject({ code: 'archive_required' });
+    expect(calls.copies).toEqual([]);
+    expect(calls.updates).toEqual([]);
   });
 
-  it('does not send a result when there is no exact Product Manager SKU', async () => {
+  it('does not look up or send a direct result when there is no exact Product Manager SKU', async () => {
     const { client, calls } = productManagerStock({ productRows: [] });
     const image = approvedImage();
 
     await expect(publishApprovedImage({ id: 'ipc_1', images: [image] }, image, {
       actor: 'owner@proto.co.za',
       stockClient: client,
-    })).rejects.toMatchObject({ code: 'ipc_product_not_found' });
+    })).rejects.toMatchObject({ code: 'archive_required' });
     expect(calls.copies).toEqual([]);
     expect(calls.updates).toEqual([]);
   });
@@ -344,17 +331,13 @@ describe('Image Processing Centre backend contracts', () => {
     expect(calls.copies).toEqual([]);
     expect(calls.updates).toEqual([]);
 
-    const published = await publishApprovedImage({ id: 'ipc_1', images: [assigned] }, assigned, {
+    await expect(publishApprovedImage({ id: 'ipc_1', images: [assigned] }, assigned, {
       actor: 'owner@proto.co.za', slot: 2, allowOverwrite: true, stockClient: client,
-    });
-    expect(published.publication).toMatchObject({ sku: 'AB12', slot: 2, field: 'image_url_two' });
-    expect(calls.copies).toEqual([[
-      'staging/image-processing/outputs/ipc_1/img_1.png',
-      expect.stringMatching(/^AB12\/2-/),
-    ]]);
+    })).rejects.toMatchObject({ code: 'archive_required' });
+    expect(calls.copies).toEqual([]);
   });
 
-  it('blocks duplicate targets in the same batch before an image can replace the wrong position', async () => {
+  it('blocks a direct batch replacement before it can reach Product Manager', async () => {
     const { client, calls } = productManagerStock({
       productRows: [{ sku: 'AB12', title: 'Black Jar', image_url_two: null }],
     });
@@ -364,7 +347,7 @@ describe('Image Processing Centre backend contracts', () => {
     await expect(publishApprovedImage({ id: 'ipc_1', images: [image, conflicting] }, image, {
       actor: 'owner@proto.co.za',
       stockClient: client,
-    })).rejects.toMatchObject({ code: 'ipc_job_destination_conflict' });
+    })).rejects.toMatchObject({ code: 'archive_required' });
     expect(calls.copies).toEqual([]);
     expect(calls.updates).toEqual([]);
   });
@@ -390,15 +373,19 @@ describe('Image Processing Centre backend contracts', () => {
     expect(calls.updates).toEqual([]);
   });
 
-  it('contains the catalogue update only in the explicit approval service', () => {
+  it('allows a Product Manager update only through separately confirmed archive application', () => {
     const route = readFileSync(join(ROOT, 'api/image-processing-jobs.js'), 'utf8');
     const worker = readFileSync(join(ROOT, 'api/image-processing-worker.js'), 'utf8');
     const service = readFileSync(join(ROOT, 'api/_image-processing-service.js'), 'utf8');
     expect(route).not.toMatch(/from\([^)]*website_stock[^)]*\)\.update/);
     expect(worker).not.toMatch(/\.from\([^)]*(website_stock|archived_products)[^)]*\)/);
-    expect(service).toContain('export async function publishApprovedImage');
+    expect(service).toContain('export async function archiveApprovedImage');
+    expect(service).toContain('export async function applyArchivedImage');
     expect(service).toContain("if (image.status !== 'approved')");
-    expect(service).toContain("if (image.status !== 'review')");
+    expect(service).toContain("if (image.status !== 'archived')");
+    expect(route).toContain("action === 'archive'");
+    expect(route).toContain("action === 'apply'");
+    expect(route).toContain('confirmArchiveAssetId');
     expect(service).toContain('productManagerDestination');
     expect(service).toContain('ipc_product_not_found');
     expect(service).toContain('ipc_product_image_conflict');
@@ -414,5 +401,15 @@ describe('Image Processing Centre backend contracts', () => {
     expect(service).toContain('export async function clearUnpublishedImage');
     expect(service).toContain("if (image.publishedUrl || image.publishedAt || image.approvedAt)");
     expect(route).not.toContain("action === 'process_next'");
+  });
+
+  it('requires the archive contract to retain the original, transparent master and white website-ready derivative', () => {
+    const service = readFileSync(join(ROOT, 'api/_image-processing-service.js'), 'utf8');
+    expect(service).toContain('originalUrl');
+    expect(service).toContain('transparentMasterUrl');
+    expect(service).toContain('websiteReadyUrl');
+    expect(service).toContain("width: 1600");
+    expect(service).toContain("height: 1600");
+    expect(service).toContain("background: '#FFFFFF'");
   });
 });
