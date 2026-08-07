@@ -133,9 +133,20 @@ export async function standardizeFalOutput(buffer, { size = 1600, paddingRatio =
   });
   const canvas = new Jimp({ width: size, height: size, color: cssColorToHex('#00000000') });
   canvas.composite(image, padding, padding);
-  const output = await canvas.getBuffer('image/png');
+  const transparentMasterBuffer = await canvas.getBuffer('image/png');
+  // Keep the cleaned cut-out as the master.  The website derivative is a
+  // separate, deliberately opaque asset so the catalogue has a consistent
+  // white canvas without throwing away the transparent version.
+  const websiteCanvas = new Jimp({ width: size, height: size, color: cssColorToHex('#FFFFFFFF') });
+  websiteCanvas.composite(canvas, 0, 0);
+  const websiteReadyBuffer = await websiteCanvas.getBuffer('image/jpeg');
   return {
-    buffer: output,
+    // `buffer` remains for older callers; it is always the transparent master.
+    buffer: transparentMasterBuffer,
+    transparentMasterBuffer,
+    transparentMaster: { width: size, height: size, format: 'image/png', background: 'transparent' },
+    websiteReadyBuffer,
+    websiteReady: { width: size, height: size, format: 'image/jpeg', background: '#FFFFFF' },
     warnings: detachedForeground
       ? ['possible_detached_label_or_barcode', 'manual_label_barcode_review_required']
       : [],
