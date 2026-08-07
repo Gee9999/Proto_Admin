@@ -6969,6 +6969,11 @@ html, body { background: #f5f5f5; color: #111827; }
 .ipc-queue { min-width: 0; border-right: 1px solid #e2e8f0; background: #f8fafc; }
 .ipc-queue > header { display: flex; justify-content: space-between; padding: 13px 14px; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
 .ipc-queue > header span { display: grid; min-width: 22px; height: 22px; place-items: center; border-radius: 99px; background: #e2e8f0; color: #475569; font-size: 11px; }
+.ipc-queue-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; padding: 8px; border-bottom: 1px solid #e2e8f0; background: #fff; }
+.ipc-queue-tab { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 0; padding: 7px 5px; border: 1px solid #dbe2ea; border-radius: 7px; background: #f8fafc; color: #64748b; font-size: 10px; font-weight: 700; cursor: pointer; }
+.ipc-queue-tab:hover { border-color: #8b1a1a; color: #8b1a1a; }
+.ipc-queue-tab--on { border-color: #8b1a1a; background: #fff6f6; color: #8b1a1a; }
+.ipc-queue-tab span { display: inline-grid; min-width: 17px; height: 17px; place-items: center; border-radius: 99px; background: currentColor; color: #fff; font-size: 9px; }
 .ipc-queue-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; width: 100%; align-items: center; gap: 9px; padding: 12px 11px; border: 0; border-bottom: 1px solid #e8edf2; background: transparent; color: inherit; text-align: left; cursor: pointer; }
 .ipc-queue-row:hover, .ipc-queue-row--on { background: #fff; }
 .ipc-queue-row--on { box-shadow: inset 3px 0 #8b1a1a; }
@@ -7002,7 +7007,13 @@ html, body { background: #f5f5f5; color: #111827; }
 .ipc-preview-pane figcaption { margin-bottom: 6px; color: #475569; font-size: 11px; font-weight: 800; text-transform: uppercase; }
 .ipc-preview-image { display: grid; height: 240px; place-items: center; overflow: hidden; border: 1px solid #e2e8f0; border-radius: 10px; background: linear-gradient(45deg, #f3f4f6 25%, transparent 25%), linear-gradient(-45deg, #f3f4f6 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f3f4f6 75%), linear-gradient(-45deg, transparent 75%, #f3f4f6 75%); background-position: 0 0, 0 8px, 8px -8px, -8px 0; background-size: 16px 16px; }
 .ipc-preview-image img { width: 100%; height: 100%; object-fit: contain; }
+.ipc-preview-image--white { background: #fff; }
 .ipc-preview-image span { display: flex; flex-direction: column; align-items: center; gap: 7px; padding: 20px; color: #64748b; font-size: 11px; text-align: center; }
+.ipc-asset-line { display: flex; align-items: flex-start; gap: 8px; margin-top: 10px; padding: 9px 11px; border: 1px solid #dbe7f0; border-radius: 8px; background: #f8fafc; color: #334155; }
+.ipc-asset-line svg { flex: 0 0 auto; margin-top: 1px; color: #2563eb; }
+.ipc-asset-line strong, .ipc-asset-line span { display: block; }
+.ipc-asset-line strong { font-size: 11px; }
+.ipc-asset-line span { margin-top: 2px; color: #64748b; font-size: 10px; line-height: 1.4; }
 .ipc-quality { margin-top: 12px; padding: 12px 13px; border: 1px solid #e2e8f0; border-radius: 9px; }
 .ipc-quality > div { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
 .ipc-score { padding: 3px 7px; border-radius: 99px; background: #f1f5f9; color: #334155; font-weight: 800; }
@@ -7017,6 +7028,10 @@ html, body { background: #f5f5f5; color: #111827; }
 .ipc-publish-box span { color: #4b6352; font-size: 10px; line-height: 1.4; }
 .ipc-publish-box label { display: flex; flex-direction: column; gap: 4px; color: #475569; font-size: 10px; font-weight: 700; }
 .ipc-publish-box select { min-width: 150px; padding: 7px; border: 1px solid #a7c8af; border-radius: 7px; background: #fff; }
+.ipc-intent-note { display: flex; grid-column: 1 / -1; align-items: flex-start; gap: 7px; padding: 9px 10px; border: 1px solid #b9cfe8; border-radius: 7px; background: #eff6ff; color: #1e3a5f; }
+.ipc-intent-note svg { flex: 0 0 auto; margin-top: 1px; color: #2563eb; }
+.ipc-intent-note strong { color: #1e3a5f; }
+.ipc-intent-note span { color: #475569; font-size: 10px; line-height: 1.45; }
 .ipc-destination-eyebrow { color: #166534 !important; font-size: 9px !important; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
 .ipc-destination-confirmed, .ipc-destination-blocked { display: flex; align-items: center; gap: 6px; }
 .ipc-destination-confirmed { color: #15803d !important; font-weight: 700; }
