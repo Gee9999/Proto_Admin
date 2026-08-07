@@ -51,18 +51,24 @@ describe('fal.ai image provider', () => {
     );
   });
 
-  it('crops a transparent result and exports a centred 1600px transparent PNG', async () => {
+  it('retains a transparent master and exports a separate centred 1600px white website JPEG', async () => {
     const transparent = new Jimp({ width: 160, height: 120, color: 0x00000000 });
     for (let y = 20; y < 100; y += 1) {
       for (let x = 50; x < 110; x += 1) transparent.setPixelColor(0x204060ff, x, y);
     }
     const png = await transparent.getBuffer('image/png');
     const result = await standardizeFalOutput(png);
-    const output = await Jimp.read(result.buffer);
+    const transparentMaster = await Jimp.read(result.transparentMasterBuffer);
+    const output = await Jimp.read(result.websiteReadyBuffer);
 
     expect(output.bitmap).toMatchObject({ width: 1600, height: 1600 });
-    expect([...result.buffer.subarray(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+    expect(result.websiteReady).toMatchObject({ width: 1600, height: 1600, format: 'image/jpeg', background: '#FFFFFF' });
+    expect(result.transparentMaster).toMatchObject({ format: 'image/png', background: 'transparent' });
+    expect(result.websiteReadyBuffer.subarray(0, 2)).toEqual(Buffer.from([0xff, 0xd8]));
     const corner = output.getPixelColor(0, 0);
-    expect(corner & 0xff).toBe(0);
+    expect((corner >>> 24) & 0xff).toBeGreaterThan(245);
+    expect((corner >>> 16) & 0xff).toBeGreaterThan(245);
+    expect((corner >>> 8) & 0xff).toBeGreaterThan(245);
+    expect((transparentMaster.getPixelColor(0, 0) >>> 24) & 0xff).toBe(0);
   });
 });
