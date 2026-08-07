@@ -218,7 +218,7 @@ describe('Image Processing Centre asynchronous fal execution contract', () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(5_000);
       });
-      expect(container.querySelector('img[alt="After product"]')?.getAttribute('src')).toBe('/processed/ABC1.png');
+      expect(container.querySelector('img[alt="Website-ready white 1600 × 1600 product"]')?.getAttribute('src')).toBe('/processed/ABC1.png');
 
       await act(async () => {
         await vi.advanceTimersByTimeAsync(24_000);
