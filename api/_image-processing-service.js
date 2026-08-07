@@ -19,8 +19,10 @@ import {
   standardizeFalOutput,
 } from './_fal-image-provider.js';
 import {
+  ALLOWED_TARGET_TABLES,
   deriveJobStatus,
-  imageFieldForSlot,
+  normalizeImageSlot,
+  productManagerDestination,
   qualityScoreFromMetrics,
   summarizeJob,
 } from '../lib/image-processing-centre.mjs';
@@ -324,6 +326,106 @@ async function objectExists(bucket, path) {
   return !error && (data || []).some((row) => row.name === name);
 }
 
+function imageProcessingError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function imageSlotForField(field) {
+  const slot = ['image_url_one', 'image_url_two', 'image_url_three', 'image_url_four'].indexOf(field) + 1;
+  return slot || null;
+}
+
+function resolvedProductDestination(image, requestedSlot = image.slot) {
+  const slot = normalizeImageSlot(requestedSlot);
+  if (!slot) {
+    throw imageProcessingError('ipc_invalid_destination', 'Choose a valid Product Manager image position.');
+  }
+  const destination = productManagerDestination({
+    sku: image.sku,
+    slot,
+    targetTable: image.targetTable,
+  });
+  if (!destination.sku || !destination.field || !ALLOWED_TARGET_TABLES.includes(destination.table)) {
+    throw imageProcessingError(
+      'ipc_invalid_destination',
+      'This image does not have a valid Product Manager destination. Upload it again using the exact product SKU.',
+    );
+  }
+
+  // Jobs created before the explicit destination contract do not have this
+  // field, so derive it for backward compatibility. If a stored destination
+  // is present, it must still point to the same Product Manager product.
+  const stored = image.destination;
+  if (stored && (
+    String(stored.system || '').toLowerCase() !== 'product_manager'
+    || String(stored.table || '').toLowerCase() !== destination.table
+    || String(stored.sku || '').toUpperCase() !== destination.sku
+  )) {
+    throw imageProcessingError(
+      'ipc_destination_conflict',
+      'This image’s saved Product Manager destination no longer matches its SKU. It was not sent anywhere.',
+    );
+  }
+  return destination;
+}
+
+async function readExactProduct(stock, destination) {
+  const { data, error } = await stock
+    .from(destination.table)
+    .select(`sku,title,${destination.field}`)
+    .eq('sku', destination.sku)
+    .limit(2);
+  if (error) throw error;
+  const rows = data || [];
+  if (!rows.length) {
+    throw imageProcessingError(
+      'ipc_product_not_found',
+      `No exact Product Manager product matches SKU ${destination.sku}. Nothing was changed.`,
+    );
+  }
+  if (rows.length > 1) {
+    throw imageProcessingError(
+      'ipc_product_conflict',
+      `Product Manager has more than one product with SKU ${destination.sku}. Resolve the duplicate before sending this image.`,
+    );
+  }
+  return rows[0];
+}
+
+function assertNoJobDestinationConflict(job, image, destination) {
+  const conflict = (job.images || []).find((candidate) => {
+    if (candidate.id === image.id || ['rejected', 'failed', 'restored'].includes(candidate.status)) return false;
+    const candidateSlot = candidate.publication?.slot || candidate.slot;
+    const candidateDestination = productManagerDestination({
+      sku: candidate.publication?.sku || candidate.sku,
+      slot: candidateSlot,
+      targetTable: candidate.publication?.table || candidate.targetTable,
+    });
+    return candidateDestination.table === destination.table
+      && candidateDestination.sku === destination.sku
+      && candidateDestination.field === destination.field;
+  });
+  if (conflict) {
+    throw imageProcessingError(
+      'ipc_job_destination_conflict',
+      `This batch already contains ${conflict.source?.filename || 'another image'} for ${destination.label} of SKU ${destination.sku}.`,
+    );
+  }
+}
+
+function conditionalImageUpdate(stock, destination, expectedUrl, nextUrl) {
+  let query = stock
+    .from(destination.table)
+    .update({ [destination.field]: nextUrl, updated_at: new Date().toISOString() })
+    .eq('sku', destination.sku);
+  query = expectedUrl == null
+    ? query.is(destination.field, null)
+    : query.eq(destination.field, expectedUrl);
+  return query.select('sku');
+}
+
 export function markImageApproved(image, { actor }) {
   if (image.status === 'approved' || image.status === 'published') return image;
   if (image.status !== 'review') throw new Error('Only an image awaiting review can be approved');
@@ -336,23 +438,30 @@ export function markImageApproved(image, { actor }) {
   };
 }
 
-export async function publishApprovedImage(job, image, { actor, slot = image.slot, allowOverwrite = false }) {
+export async function publishApprovedImage(job, image, {
+  actor,
+  slot = image.slot,
+  allowOverwrite = false,
+  stockClient = null,
+}) {
   if (image.status === 'published') return image;
   if (image.status !== 'approved') throw new Error('Only an explicitly approved image can be published');
-  const field = imageFieldForSlot(slot);
-  if (!field) throw new Error('Image slot must be 1, 2, 3, or 4');
-  const stock = getStockClient();
-  const { data: product, error: fetchError } = await stock
-    .from(image.targetTable)
-    .select(`sku,${field}`)
-    .eq('sku', image.sku)
-    .maybeSingle();
-  if (fetchError) throw fetchError;
-  if (!product) throw new Error(`Product ${image.sku} does not exist in ${image.targetTable}`);
-  if (product[field] && !(image.overwrite || allowOverwrite)) {
-    const err = new Error(`Image slot ${image.slot} already has an image; create the job with overwrite approval enabled`);
-    err.code = 'image_exists';
-    throw err;
+  const destination = resolvedProductDestination(image, slot);
+  if (destination.slot !== image.slot && !allowOverwrite) {
+    throw imageProcessingError(
+      'ipc_destination_confirmation_required',
+      `Confirm sending this image to ${destination.label}; it differs from the position detected from the filename.`,
+    );
+  }
+  assertNoJobDestinationConflict(job, image, destination);
+  const stock = stockClient || getStockClient();
+  const product = await readExactProduct(stock, destination);
+  const previousUrl = product[destination.field] || null;
+  if (previousUrl && !allowOverwrite) {
+    throw imageProcessingError(
+      'image_exists',
+      `${destination.label} for SKU ${destination.sku} already has an image. Review it and explicitly confirm replacement.`,
+    );
   }
 
   const sourcePath = image.outputStoragePath || storagePathFromPublicUrl(image.reviewUrl);
@@ -360,40 +469,51 @@ export async function publishApprovedImage(job, image, { actor, slot = image.slo
   const safeJob = job.id.replace(/[^a-zA-Z0-9_-]/g, '').slice(-16);
   const safeImage = image.id.replace(/[^a-zA-Z0-9_-]/g, '').slice(-16);
   const outputExtension = sourcePath.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
-  const livePath = `${image.sku}/${slot}-${safeJob}-${safeImage}.${outputExtension}`;
+  const livePath = `${destination.sku}/${destination.slot}-${safeJob}-${safeImage}.${outputExtension}`;
   const bucket = stock.storage.from(PRODUCT_BUCKET);
-  const { error: moveError } = await bucket.move(sourcePath, livePath);
-  if (moveError && !(await objectExists(bucket, livePath))) throw new Error(`Could not promote approved image: ${moveError.message}`);
+  const { error: copyError } = await bucket.copy(sourcePath, livePath);
+  if (copyError && !(await objectExists(bucket, livePath))) throw new Error(`Could not stage the Product Manager image: ${copyError.message}`);
   const liveUrl = bucket.getPublicUrl(livePath).data.publicUrl;
 
-  const { error: updateError } = await stock
-    .from(image.targetTable)
-    .update({ [field]: liveUrl, updated_at: new Date().toISOString() })
-    .eq('sku', image.sku);
+  const { data: updatedRows, error: updateError } = await conditionalImageUpdate(
+    stock,
+    destination,
+    previousUrl,
+    liveUrl,
+  );
   if (updateError) throw updateError;
+  if (!updatedRows?.length) {
+    throw imageProcessingError(
+      'ipc_product_image_conflict',
+      `Product Manager changed ${destination.label} for SKU ${destination.sku} while this result was being sent. Refresh and review the latest image before trying again.`,
+    );
+  }
 
   await logProductLoaderAudit(stock, {
-    sku: image.sku,
+    sku: destination.sku,
     action: 'update',
     source: 'image_processing_centre',
     publishMode: 'approved_review',
-    imageSlot: slot,
+    imageSlot: destination.slot,
     imageSource: image.source.type,
-    oldValues: { [field]: product[field] || null },
-    newValues: { outcome: 'approved', [field]: liveUrl, jobId: job.id, quality: image.quality },
+    oldValues: { [destination.field]: previousUrl },
+    newValues: { outcome: 'approved', [destination.field]: liveUrl, jobId: job.id, quality: image.quality },
     publishedBy: actor,
   });
 
   return {
     ...image,
     status: 'published',
-    slot,
+    slot: destination.slot,
+    targetTable: destination.table,
+    destination,
     publishedUrl: liveUrl,
     publishedAt: new Date().toISOString(),
     publishedBy: actor,
     publication: {
-      field,
-      previousUrl: product[field] || null,
+      ...destination,
+      previousUrl,
+      originalUrl: previousUrl,
       liveUrl,
       livePath,
     },
@@ -401,32 +521,49 @@ export async function publishApprovedImage(job, image, { actor, slot = image.slo
   };
 }
 
-export async function restorePublishedOriginal(job, image, { actor }) {
+export async function restorePublishedOriginal(job, image, { actor, stockClient = null }) {
   if (image.status === 'restored') return image;
   if (image.status !== 'published' || !image.publication?.field) {
     throw new Error('Only a published processed image can be restored');
   }
-  const field = image.publication.field;
-  if (!['image_url_one', 'image_url_two', 'image_url_three', 'image_url_four'].includes(field)) {
-    throw new Error('Stored publication slot is invalid');
+  const publicationSlot = normalizeImageSlot(image.publication.slot)
+    || imageSlotForField(image.publication.field);
+  const destination = productManagerDestination({
+    sku: image.publication.sku || image.sku,
+    slot: publicationSlot,
+    targetTable: image.publication.table || image.targetTable,
+  });
+  if (!destination.field || destination.field !== image.publication.field || !ALLOWED_TARGET_TABLES.includes(destination.table)) {
+    throw imageProcessingError('ipc_restore_destination_invalid', 'The saved Product Manager destination is invalid; the original was not changed.');
   }
-  const stock = getStockClient();
-  const previousUrl = image.publication.previousUrl || null;
-  const { error } = await stock
-    .from(image.targetTable)
-    .update({ [field]: previousUrl, updated_at: new Date().toISOString() })
-    .eq('sku', image.sku);
+  const stock = stockClient || getStockClient();
+  const product = await readExactProduct(stock, destination);
+  const liveUrl = image.publication.liveUrl || image.publishedUrl || null;
+  if (!liveUrl || product[destination.field] !== liveUrl) {
+    throw imageProcessingError(
+      'ipc_restore_conflict',
+      `Restore stopped because ${destination.label} for SKU ${destination.sku} has changed since this result was sent. It will not overwrite a newer Product Manager image.`,
+    );
+  }
+  const previousUrl = image.publication.originalUrl ?? image.publication.previousUrl ?? null;
+  const { data: restoredRows, error } = await conditionalImageUpdate(stock, destination, liveUrl, previousUrl);
   if (error) throw error;
+  if (!restoredRows?.length) {
+    throw imageProcessingError(
+      'ipc_restore_conflict',
+      `Restore stopped because Product Manager changed ${destination.label} for SKU ${destination.sku}. Refresh and review the current image.`,
+    );
+  }
 
   await logProductLoaderAudit(stock, {
-    sku: image.sku,
+    sku: destination.sku,
     action: 'update',
     source: 'image_processing_centre',
     publishMode: 'restore_original',
-    imageSlot: image.slot,
+    imageSlot: destination.slot,
     imageSource: image.source.type,
-    oldValues: { [field]: image.publication.liveUrl || image.publishedUrl || null },
-    newValues: { outcome: 'restored_original', [field]: previousUrl, jobId: job.id },
+    oldValues: { [destination.field]: liveUrl },
+    newValues: { outcome: 'restored_original', [destination.field]: previousUrl, jobId: job.id },
     publishedBy: actor,
   });
 

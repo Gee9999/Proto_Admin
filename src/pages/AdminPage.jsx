@@ -497,6 +497,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     return allowedSectionIds.includes(preferred) ? preferred : allowedSectionIds[0] || 'orders';
   });
   const [productLoaderCode, setProductLoaderCode] = useState('');
+  const [productManagerSearch, setProductManagerSearch] = useState('');
   const [siteContentTab, setSiteContentTab] = useState('featured');
   const { data: dashStats } = useDashboardStats();
   const [loading, setLoading] = useState(false);
@@ -842,6 +843,15 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
+
+  const openProductManagerForSku = useCallback((sku) => {
+    const cleanSku = String(sku || '').trim().toUpperCase();
+    if (!cleanSku) return;
+    setProductManagerSearch(cleanSku);
+    setActiveSection('catalogue');
+    setLoadingError('');
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, []);
 
   // `fresh` bypasses the counts endpoint's edge cache. Pass it after a write:
   // otherwise a rename can read back counts computed up to a minute earlier and
@@ -2266,6 +2276,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 onRefreshStats={refreshDashboardStats}
                 initialStatus="live"
                 initialToOrderOnly={activeSection === 'to-order'}
+                initialSearch={activeSection === 'catalogue' ? productManagerSearch : ''}
                 statuses={['live']}
                 showCategorySidebar={activeSection !== 'to-order'}
                 title={activeSection === 'to-order' ? 'To-order products' : 'Product Manager'}
@@ -2361,6 +2372,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                   onInitialCodeConsumed={() => setProductLoaderCode('')}
                   publishedBy={customer?.email || ''}
                   isOwner={customer?.role === 'owner'}
+                  onOpenProductManager={openProductManagerForSku}
                 />
                 </Suspense>
               </SectionErrorBoundary>
@@ -2375,6 +2387,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                     publishedBy={customer?.email || ''}
                     isOwner={customer?.role === 'owner'}
                     initialTab="image-processing"
+                    onOpenProductManager={openProductManagerForSku}
                   />
                 </Suspense>
               </SectionErrorBoundary>

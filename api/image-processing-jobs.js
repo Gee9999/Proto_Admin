@@ -25,6 +25,7 @@ import {
   IMAGE_JOB_LIMITS,
   jobFingerprint,
   normalizeCreateImage,
+  productManagerDestination,
   stableJobId,
 } from '../lib/image-processing-centre.mjs';
 
@@ -54,6 +55,16 @@ function splitPublicId(value) {
 }
 
 function publicImageJob(job, image) {
+  const destination = image.publication?.field
+    ? {
+      ...productManagerDestination({
+        sku: image.publication.sku || image.sku,
+        slot: image.publication.slot || image.slot,
+        targetTable: image.publication.table || image.targetTable,
+      }),
+      field: image.publication.field,
+    }
+    : productManagerDestination(image);
   const warnings = [...new Set([
     ...(image.warnings || []),
     ...(image.quality?.grade === 'needs_attention' ? ['quality_needs_attention'] : []),
@@ -74,7 +85,9 @@ function publicImageJob(job, image) {
     cost_usd: Number(image.cost?.usd) || 0,
     cost_zar: Number(image.cost?.zar) || 0,
     estimated_cost_zar: Number(image.cost?.zar) || Number(((Number(image.estimatedCostUsd) || 0) * 18).toFixed(2)),
-    target_slot: image.slot,
+    target_slot: destination.slot,
+    target_field: destination.field,
+    destination,
     restored_url: image.restoredUrl || '',
     error: image.error || '',
     created_at: image.createdAt || job.createdAt,
@@ -485,9 +498,10 @@ async function reviewAction(req, res, actor, action) {
     } else if (action === 'approve') {
       job.images[index] = markImageApproved(job.images[index], { actor });
     } else if (action === 'publish') {
+      const hasRequestedSlot = Object.prototype.hasOwnProperty.call(req.body || {}, 'imageSlot');
       job.images[index] = await publishApprovedImage(job, job.images[index], {
         actor,
-        slot: req.body?.imageSlot || job.images[index].slot,
+        slot: hasRequestedSlot ? req.body.imageSlot : job.images[index].slot,
         allowOverwrite: req.body?.publishToExistingSlot === true,
       });
     } else if (action === 'reject') {
@@ -518,7 +532,11 @@ async function reviewAction(req, res, actor, action) {
     const saved = await persistJob(job);
     return res.status(200).json({ ok: true, job: publicImageJob(saved, saved.images[index]) });
   } catch (error) {
-    const status = error.code === 'image_exists' ? 409 : 400;
+    const status = ['image_exists', 'ipc_destination_conflict', 'ipc_job_destination_conflict', 'ipc_product_conflict', 'ipc_product_image_conflict', 'ipc_restore_conflict'].includes(error.code)
+      ? 409
+      : error.code === 'ipc_product_not_found'
+        ? 404
+        : 400;
     return res.status(status).json({ error: error.message || `${action} failed` });
   }
 }

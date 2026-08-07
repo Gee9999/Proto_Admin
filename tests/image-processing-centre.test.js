@@ -155,11 +155,21 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(panelSource).toContain('<ImageProcessingCentre');
     const centre = fs.readFileSync(new URL('../src/components/productLoader/ImageProcessingCentre.jsx', import.meta.url), 'utf8');
     expect(centre).toContain("runAction(selectedJob, 'approve')");
-    expect(centre).toContain("runAction(selectedJob, 'publish'");
+    expect(centre).toContain("runAction(job, 'publish'");
     expect(centre).toContain('publishToExistingSlot: true');
     expect(centre).toContain("runBulkReviewAction('approve')");
     expect(centre).toContain("runAction(selectedJob, 'restore')");
     expect(centre).toContain('Clear from queue');
     expect(centre).toContain('manual human review');
+  });
+
+  it('hands an approved image to an exact Product Manager destination', () => {
+    const centre = fs.readFileSync(new URL('../src/components/productLoader/ImageProcessingCentre.jsx', import.meta.url), 'utf8');
+    expect(centre).toContain('Send to Product Manager');
+    expect(centre).toContain('Main product image');
+    expect(centre).toContain('Gallery image 2');
+    expect(centre).toContain("normalizedSku(product.sku) !== sku");
+    expect(centre).toContain('No exact Product Manager product matches SKU');
+    expect(centre).toContain('This position already has an image and will be replaced only after confirmation.');
   });
 });

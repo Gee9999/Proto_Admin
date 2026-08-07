@@ -157,6 +157,7 @@ export default function ProductLoaderPanel({
   publishedBy = '',
   isOwner = false,
   initialTab = 'nutstore',
+  onOpenProductManager,
 }) {
   const [activeTab, setActiveTab] = useState(() => (
     initialTab === 'image-processing' && isOwner ? 'image-processing' : 'nutstore'
@@ -982,6 +983,7 @@ export default function ProductLoaderPanel({
           onNutstoreSelectionConsumed={() => setProcessingNutstoreSelection([])}
           onUploadSelectionConsumed={() => setProcessingUploadSelection([])}
           onShowToast={onShowToast}
+          onOpenProductManager={onOpenProductManager}
         />
       )}
 

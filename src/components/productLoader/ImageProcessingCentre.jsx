@@ -32,6 +32,20 @@ const APPROVED_STATUSES = new Set(['approved']);
 const CLEARABLE_STATUSES = new Set(['review', 'ready', 'completed', 'failed', 'error', 'rejected']);
 const EXECUTION_MARKER_PREFIX = 'proto:image-processing:execute:';
 const EXECUTION_MARKER_TTL_MS = 10 * 60_000;
+const PRODUCT_MANAGER_SLOTS = Object.freeze([
+  { value: 1, label: 'Main product image', field: 'image_url_one' },
+  { value: 2, label: 'Gallery image 2', field: 'image_url_two' },
+  { value: 3, label: 'Gallery image 3', field: 'image_url_three' },
+  { value: 4, label: 'Gallery image 4', field: 'image_url_four' },
+]);
+
+function normalizedSku(value) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function productManagerSlot(value) {
+  return PRODUCT_MANAGER_SLOTS.find((slot) => slot.value === Number(value)) || PRODUCT_MANAGER_SLOTS[0];
+}
 
 function executionMarkerKey(id) {
   return `${EXECUTION_MARKER_PREFIX}${id}`;
@@ -58,7 +72,7 @@ function statusLabel(status) {
   return ({
     queued: 'Queued', processing: 'Processing', retrying: 'Retrying', review: 'Review',
     ready: 'Ready to review', completed: 'Ready to review', approved: 'Approved',
-    rejected: 'Rejected', failed: 'Failed', error: 'Failed', published: 'Published', restored: 'Original restored',
+    rejected: 'Rejected', failed: 'Failed', error: 'Failed', published: 'Sent to Product Manager', restored: 'Original restored',
   })[status] || status;
 }
 
@@ -84,6 +98,7 @@ export default function ImageProcessingCentre({
   onNutstoreSelectionConsumed,
   onUploadSelectionConsumed,
   onShowToast,
+  onOpenProductManager,
 }) {
   const folderRef = useRef(null);
   const fileRef = useRef(null);
@@ -98,10 +113,55 @@ export default function ImageProcessingCentre({
   const [busy, setBusy] = useState('');
   const [selectedJobId, setSelectedJobId] = useState('');
   const [slots, setSlots] = useState({});
+  const [destination, setDestination] = useState({ status: 'idle', product: null, error: '' });
+  const [destinationLookupAttempt, setDestinationLookupAttempt] = useState(0);
+  const [publishConfirmation, setPublishConfirmation] = useState(null);
 
   const summary = useMemo(() => summarizeImageProcessingJobs(jobs), [jobs]);
   const selectedJob = jobs.find((job) => job.id === selectedJobId) || jobs[0] || null;
   const hasActiveJobs = jobs.some((job) => ACTIVE_STATUSES.has(job.status));
+  const selectedSlot = productManagerSlot(slots[selectedJob?.id] || selectedJob?.targetSlot);
+  const destinationProduct = destination.status === 'found' ? destination.product : null;
+  const currentDestinationImage = destinationProduct?.[selectedSlot.field] || '';
+
+  useEffect(() => {
+    const sku = normalizedSku(selectedJob?.sku);
+    const shouldResolve = sku && ['approved', 'published'].includes(selectedJob?.status);
+    if (!shouldResolve) {
+      setDestination({ status: 'idle', product: null, error: '' });
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    setDestination({ status: 'loading', product: null, error: '' });
+    fetch(`/api/product-loader-lookup?code=${encodeURIComponent(sku)}`, {
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(payload.error || 'Could not check Product Manager');
+        const product = payload.websiteRow || null;
+        if (!product || normalizedSku(product.sku) !== sku) {
+          setDestination({
+            status: 'missing',
+            product: null,
+            error: `No exact Product Manager product matches SKU ${sku}.`,
+          });
+          return;
+        }
+        setDestination({ status: 'found', product, error: '' });
+      })
+      .catch((lookupError) => {
+        if (lookupError?.name === 'AbortError') return;
+        setDestination({ status: 'error', product: null, error: lookupError.message || 'Could not check Product Manager' });
+      });
+    return () => controller.abort();
+  }, [destinationLookupAttempt, selectedJob?.sku, selectedJob?.status]);
+
+  useEffect(() => {
+    setPublishConfirmation(null);
+  }, [destinationProduct?.sku, selectedJob?.id, selectedSlot.value]);
 
   const mergeJobs = useCallback((incoming) => {
     setJobs((current) => {
@@ -223,7 +283,7 @@ export default function ImageProcessingCentre({
       mergeJobs([updated]);
       setWorkerUnavailable(false);
       onShowToast?.(
-        action === 'publish' ? `Published ${job.filename} to image slot ${details.imageSlot}` : `${statusLabel(action)}: ${job.filename}`,
+        action === 'publish' ? `Sent ${job.filename} to Product Manager — ${productManagerSlot(details.imageSlot).label}` : `${statusLabel(action)}: ${job.filename}`,
         'success',
       );
     } catch (err) {
@@ -232,6 +292,24 @@ export default function ImageProcessingCentre({
     } finally {
       setBusy('');
     }
+  };
+
+  const requestProductManagerSend = (job) => {
+    if (!destinationProduct) return;
+    setPublishConfirmation({
+      jobId: job.id,
+      sku: destinationProduct.sku,
+      slot: selectedSlot.value,
+    });
+  };
+
+  const confirmProductManagerSend = (job) => {
+    if (!destinationProduct || publishConfirmation?.jobId !== job.id || publishConfirmation?.sku !== destinationProduct.sku || publishConfirmation?.slot !== selectedSlot.value) return;
+    setPublishConfirmation(null);
+    void runAction(job, 'publish', {
+      imageSlot: selectedSlot.value,
+      publishToExistingSlot: true,
+    });
   };
 
   const clearJob = async (job) => {
@@ -330,7 +408,7 @@ export default function ImageProcessingCentre({
         <div>
           <span className="ipc-eyebrow"><Sparkles size={14} /> Owner workspace</span>
           <h3 id="ipc-title">Image Processing Centre</h3>
-          <p>Remove backgrounds and visual noise, improve clarity, review every result, then explicitly publish it to an existing product image slot.</p>
+          <p>Remove backgrounds and visual noise, improve clarity, review every result, then explicitly send it to the matched product in Product Manager.</p>
         </div>
         <button type="button" className="adm-btn-ghost" onClick={() => void loadJobs()} disabled={loading}>
           <RefreshCw size={14} className={loading ? 'spin' : ''} /> Refresh queue
@@ -376,14 +454,14 @@ export default function ImageProcessingCentre({
         <div><strong>{summary.total}</strong><span>Total images</span></div>
         <div><strong>{summary.processing}</strong><span>Processing</span></div>
         <div><strong>{summary.review}</strong><span>Needs review</span></div>
-        <div><strong>{summary.approved}</strong><span>Approved / published</span></div>
+        <div><strong>{summary.approved}</strong><span>Approved / sent</span></div>
         <div><strong>{summary.failed}</strong><span>Issues</span></div>
         <div className="ipc-summary-cost"><strong>R {summary.cost.toFixed(2)}</strong><span>Estimated batch cost</span></div>
       </div>
 
       {summary.review > 0 && (
         <div className="ipc-bulk-review" role="group" aria-label="Bulk review actions">
-          <div><strong>{summary.review} processed image{summary.review === 1 ? '' : 's'} awaiting review</strong><span>Bulk approval still does not publish anything. Publishing remains a separate image-by-image action.</span></div>
+          <div><strong>{summary.review} processed image{summary.review === 1 ? '' : 's'} awaiting review</strong><span>Bulk approval does not change Product Manager. Sending remains a separate image-by-image action.</span></div>
           <button type="button" className="adm-btn-red" disabled={Boolean(busy)} onClick={() => void runBulkReviewAction('approve')}><Check size={14} /> Approve all reviewed</button>
           <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void runBulkReviewAction('reject')}><X size={14} /> Reject all reviewed</button>
         </div>
@@ -435,13 +513,46 @@ export default function ImageProcessingCentre({
               </div>
               {(APPROVED_STATUSES.has(selectedJob.status) || selectedJob.status === 'published') && (
                 <div className="ipc-publish-box">
-                  <div><strong>{selectedJob.status === 'published' ? 'Published to product' : 'Approved — not published yet'}</strong><span>Publishing is a separate, deliberate action and writes only to the selected existing image slot.</span></div>
-                  <label>Image slot<select value={slots[selectedJob.id] || selectedJob.targetSlot} disabled={selectedJob.status === 'published'} onChange={(event) => setSlots((current) => ({ ...current, [selectedJob.id]: Number(event.target.value) }))}>{[1, 2, 3, 4].map((slot) => <option key={slot} value={slot}>Slot {slot}</option>)}</select></label>
-                  <button type="button" className="adm-btn-red" disabled={Boolean(busy) || selectedJob.status === 'published' || !selectedJob.sku} onClick={() => void runAction(selectedJob, 'publish', { imageSlot: slots[selectedJob.id] || selectedJob.targetSlot, publishToExistingSlot: true })}><Send size={14} /> Publish to existing slot</button>
-                  {selectedJob.status === 'published' && <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void runAction(selectedJob, 'restore')}><RotateCcw size={14} /> Restore original</button>}
+                  <div className="ipc-destination-copy">
+                    <span className="ipc-destination-eyebrow">Product Manager destination</span>
+                    <strong>{selectedJob.status === 'published' ? 'Image sent to Product Manager' : 'Approved — choose the exact Product Manager position'}</strong>
+                    {destination.status === 'loading' && <span>Checking the exact Product Manager destination…</span>}
+                    {destinationProduct && (
+                      <div className="ipc-destination-product">
+                        <div className="ipc-destination-current-image">
+                          {currentDestinationImage ? <img src={currentDestinationImage} alt={`Current ${selectedSlot.label} for ${destinationProduct.title || destinationProduct.sku}`} /> : <ImageOff size={20} />}
+                        </div>
+                        <div>
+                          <span className="ipc-destination-confirmed"><CheckCircle size={13} /> Exact Product Manager match</span>
+                          <strong>{destinationProduct.title || 'Untitled product'}</strong>
+                          <span>SKU {destinationProduct.sku}</span>
+                          <span>{selectedSlot.label} · {currentDestinationImage ? 'This position already has an image and will be replaced only after confirmation.' : 'This position is empty. The processed image will be added only after confirmation.'}</span>
+                        </div>
+                      </div>
+                    )}
+                    {['missing', 'error'].includes(destination.status) && (
+                      <span className="ipc-destination-blocked"><AlertTriangle size={13} /> {destination.error} This result stays staged and cannot be sent. Use the real Product Manager SKU in the filename, then upload it again.</span>
+                    )}
+                    {destination.status === 'idle' && <span>An exact Product Manager SKU is required before this image can be sent.</span>}
+                  </div>
+                  {selectedJob.status !== 'published' && <label>Image position in Product Manager<select value={selectedSlot.value} onChange={(event) => setSlots((current) => ({ ...current, [selectedJob.id]: Number(event.target.value) }))}>{PRODUCT_MANAGER_SLOTS.map((slot) => <option key={slot.value} value={slot.value}>{slot.label}</option>)}</select></label>}
+                  {destination.status === 'error' && selectedJob.status !== 'published' && <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => setDestinationLookupAttempt((attempt) => attempt + 1)}><RefreshCw size={14} /> Check Product Manager again</button>}
+                  {selectedJob.status !== 'published' && <button type="button" className="adm-btn-red" disabled={Boolean(busy) || !destinationProduct} onClick={() => requestProductManagerSend(selectedJob)}><Send size={14} /> Review replacement</button>}
+                  {selectedJob.status === 'published' && <div className="ipc-published-actions">
+                    <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => onOpenProductManager?.(destinationProduct?.sku || selectedJob.sku)}><FolderOpen size={14} /> Open in Product Manager</button>
+                    <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void runAction(selectedJob, 'restore')}><RotateCcw size={14} /> Restore original</button>
+                  </div>}
+                  {publishConfirmation?.jobId === selectedJob.id && (
+                    <div className="ipc-replacement-confirmation" role="alert" aria-live="polite">
+                      <AlertTriangle size={17} />
+                      <div><strong>{currentDestinationImage ? 'Replace the current Product Manager image?' : 'Add this image to Product Manager?'}</strong><span>{destinationProduct?.title || destinationProduct?.sku} · SKU {destinationProduct?.sku} · {selectedSlot.label}. This updates the website image for this existing Product Manager product. It does not create or publish a new product.</span></div>
+                      <button type="button" className="adm-btn-ghost" onClick={() => setPublishConfirmation(null)}>Cancel</button>
+                      <button type="button" className="adm-btn-red" disabled={Boolean(busy)} onClick={() => confirmProductManagerSend(selectedJob)}><Send size={14} /> Confirm and Send to Product Manager</button>
+                    </div>
+                  )}
                 </div>
               )}
-              {selectedJob.status === 'restored' && <div className="ipc-publish-box"><div><strong>Original restored</strong><span>The processed version remains in history but is no longer the product image.</span></div></div>}
+              {selectedJob.status === 'restored' && <div className="ipc-publish-box"><div><strong>Original restored in Product Manager</strong><span>The processed version remains in history but is no longer used by the product.</span></div></div>}
             </>
           ) : <div className="ipc-review-empty"><Sparkles size={28} /><strong>Select an image to review</strong><span>Before and after previews, quality checks and controlled publishing will appear here.</span></div>}
         </div>
