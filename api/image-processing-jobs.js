@@ -11,14 +11,16 @@ import {
   ingestStagedSource,
   estimatedImageCostUsd,
   clearUnpublishedImage,
+  applyArchivedImage,
   assignImageDestination,
+  archiveApprovedImage,
   markImageApproved,
   persistJob,
   processImageWithFal,
-  publishApprovedImage,
   rejectImage,
   restorePublishedOriginal,
 } from './_image-processing-service.js';
+import { createArchiveRevision } from './_image-processing-revisions.js';
 import { parseImageProcessingRequest } from './_image-processing-request.js';
 import { parseLoaderFilename } from './_product-loader-filename.js';
 import { parseNutstoreFilename } from './_nutstore-filename.js';
@@ -89,6 +91,8 @@ function publicImageJob(job, image) {
     target_slot: destination.slot,
     target_field: destination.field,
     destination,
+    archive: image.archive || null,
+    website_ready: image.processed?.websiteReady || null,
     restored_url: image.restoredUrl || '',
     error: image.error || '',
     created_at: image.createdAt || job.createdAt,
@@ -384,6 +388,16 @@ async function publicJobItemsWithSource(job, images = job?.images || []) {
       row.before_url = await createPrivateSourceUrl(image.source.privatePath, 600);
       row.original_url = row.before_url;
     } catch { /* preview remains unavailable until the next refresh */ }
+    const reviewPath = image.archive?.websiteReadyPath || image.outputStoragePath || image.processed?.websiteReady?.path;
+    if (String(reviewPath || '').startsWith('image-processing/sources/')) {
+      try {
+        const reviewUrl = await createPrivateSourceUrl(reviewPath, 600);
+        row.after_url = image.publishedUrl || reviewUrl;
+        row.processed_url = reviewUrl;
+        if (row.website_ready) row.website_ready = { ...row.website_ready, url: reviewUrl };
+        if (row.archive) row.archive = { ...row.archive, websiteReadyUrl: reviewUrl };
+      } catch { /* a later owner refresh will mint a fresh review URL */ }
+    }
     return row;
   }));
 }
@@ -504,9 +518,25 @@ async function reviewAction(req, res, actor, action) {
         sku: req.body?.destinationSku,
         slot: req.body?.imageSlot ?? job.images[index].slot,
       });
-    } else if (action === 'publish') {
+    } else if (action === 'archive') {
+      job.images[index] = await archiveApprovedImage(job, job.images[index], { actor });
+    } else if (action === 'create_revision') {
+      const revision = await createArchiveRevision(job, job.images[index], {
+        actor,
+        adjustments: req.body?.adjustments,
+      });
+      // Do not overwrite the archive asset: each adjustment is a separately
+      // reviewable staged revision derived from the retained master.
+      job.images.push(revision);
+      const saved = await persistJob(job);
+      const [publicRevision] = await publicJobItemsWithSource(saved, [revision]);
+      return res.status(201).json({ ok: true, job: publicRevision });
+    } else if (action === 'apply') {
+      if (req.body?.confirmArchiveAssetId !== job.images[index].archive?.assetId) {
+        return res.status(409).json({ error: 'Confirm the exact archived asset before applying it to Product Manager.' });
+      }
       const hasRequestedSlot = Object.prototype.hasOwnProperty.call(req.body || {}, 'imageSlot');
-      job.images[index] = await publishApprovedImage(job, job.images[index], {
+      job.images[index] = await applyArchivedImage(job, job.images[index], {
         actor,
         slot: hasRequestedSlot ? req.body.imageSlot : job.images[index].slot,
         allowOverwrite: req.body?.publishToExistingSlot === true,
@@ -573,9 +603,13 @@ export default async function handler(req, res) {
 
     req.body = await parseImageProcessingRequest(req);
 
-    const action = String(req.body?.action || 'create').trim().toLowerCase();
+    const requestedAction = String(req.body?.action || 'create').trim().toLowerCase();
+    // `apply_archived` appeared in an earlier client contract. Keep it as a
+    // compatibility alias, but route it through the same guarded `apply`
+    // branch so it cannot quietly return a successful no-op.
+    const action = requestedAction === 'apply_archived' ? 'apply' : requestedAction;
     if (action === 'create') return await createJob(req, res, actor);
-    if (['process', 'execute', 'approve', 'assign_destination', 'publish', 'reject', 'retry', 'restore', 'clear'].includes(action)) return await reviewAction(req, res, actor, action);
+    if (['process', 'execute', 'approve', 'assign_destination', 'archive', 'create_revision', 'apply', 'reject', 'retry', 'restore', 'clear'].includes(action)) return await reviewAction(req, res, actor, action);
     return res.status(400).json({ error: 'Unsupported image processing action' });
   } catch (error) {
     console.error('image-processing-jobs:', error?.message || error);
