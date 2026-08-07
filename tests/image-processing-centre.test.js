@@ -51,12 +51,12 @@ describe('Image Processing Centre API adapter', () => {
     });
   });
 
-  it('uses a query id for Vercel flat-function job actions', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ job: { id: 'job/7', status: 'approved' } }));
-    await updateImageProcessingJob('job/7', 'publish', { imageSlot: 3, publishToExistingSlot: true });
+  it('uses a query id for the explicit archive action', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({ job: { id: 'job/7', status: 'archived' } }));
+    await updateImageProcessingJob('job/7', 'archive');
     expect(fetchMock).toHaveBeenCalledWith('/api/image-processing-jobs?id=job%2F7', expect.objectContaining({
       method: 'PATCH',
-      body: JSON.stringify({ action: 'publish', imageSlot: 3, publishToExistingSlot: true }),
+      body: JSON.stringify({ action: 'archive' }),
     }));
   });
 
@@ -73,7 +73,7 @@ describe('Image Processing Centre API adapter', () => {
     expect(summarizeImageProcessingJobs([
       { status: 'processing', estimatedCost: 0.12 },
       { status: 'ready', estimatedCost: 0.18 },
-      { status: 'published', estimatedCost: 0.2 },
+      { status: 'archived', estimatedCost: 0.2 },
       { status: 'failed', estimatedCost: 0 },
     ])).toEqual({ total: 4, processing: 1, review: 1, approved: 1, failed: 1, cost: 0.5 });
   });
@@ -151,25 +151,39 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(uploadSource).toContain('Improve selected');
   });
 
-  it('keeps approval separate from explicit slot publishing', () => {
+  it('keeps review, explicit archive, and separate live application as deliberate steps', () => {
     expect(panelSource).toContain('<ImageProcessingCentre');
     const centre = fs.readFileSync(new URL('../src/components/productLoader/ImageProcessingCentre.jsx', import.meta.url), 'utf8');
     expect(centre).toContain("runAction(selectedJob, 'approve')");
-    expect(centre).toContain("runAction(job, 'publish'");
-    expect(centre).toContain('publishToExistingSlot: true');
+    expect(centre).toContain("runAction(selectedJob, 'archive')");
+    expect(centre).toContain("runAction(job, 'apply'");
+    expect(centre).toContain('Save approved result to Image Archive');
+    expect(centre).toContain('Confirm and apply to Product Manager');
+    expect(centre).not.toContain("runAction(job, 'publish'");
     expect(centre).toContain("runBulkReviewAction('approve')");
     expect(centre).toContain("runAction(selectedJob, 'restore')");
     expect(centre).toContain('Clear from queue');
     expect(centre).toContain('manual human review');
   });
 
-  it('hands an approved image to an exact Product Manager destination', () => {
+  it('uses Product Manager only as a separately confirmed destination for an archived asset', () => {
     const centre = fs.readFileSync(new URL('../src/components/productLoader/ImageProcessingCentre.jsx', import.meta.url), 'utf8');
-    expect(centre).toContain('Send to Product Manager');
+    expect(centre).toContain('Image Archive');
+    expect(centre).toContain('Apply to Product Manager');
     expect(centre).toContain('Main product image');
     expect(centre).toContain('Gallery image 2');
     expect(centre).toContain("normalizedSku(product.sku) !== sku");
     expect(centre).toContain('No exact Product Manager product matches SKU');
-    expect(centre).toContain('This position already has an image and will be replaced only after confirmation.');
+    expect(centre).toContain('The current Product Manager image will be replaced only after confirmation.');
+  });
+
+  it('shows an accessible old-versus-new comparison inside the final Product Manager apply confirmation', () => {
+    const centre = fs.readFileSync(new URL('../src/components/productLoader/ImageProcessingCentre.jsx', import.meta.url), 'utf8');
+    expect(centre).toContain('Confirm Product Manager image replacement');
+    expect(centre).toContain('Current Product Manager ${selectedSlot.label}');
+    expect(centre).toContain('Proposed archive asset');
+    expect(centre).toContain('SKU {destinationProduct.sku} · {destinationProduct.title || \'Untitled product\'} · {selectedSlot.label}');
+    expect(centre).toContain('url={currentDestinationImage}');
+    expect(centre).toContain('url={selectedJob.afterUrl}');
   });
 });
