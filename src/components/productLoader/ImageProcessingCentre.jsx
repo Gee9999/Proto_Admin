@@ -553,12 +553,14 @@ export default function ImageProcessingCentre({
                 <div><strong>Quality check</strong>{selectedJob.qualityScore != null && <span className="ipc-score">{Math.round(Number(selectedJob.qualityScore))}/100</span>}</div>
                 {selectedJob.qualityFlags.length ? (
                   <ul>{selectedJob.qualityFlags.map((flag, index) => <li key={`${qualityFlagLabel(flag)}-${index}`}><AlertTriangle size={13} /> {qualityFlagLabel(flag)}</li>)}</ul>
-                ) : <p><CheckCircle size={14} /> No quality warnings reported.</p>}
+                ) : selectedJob.qualityScore == null
+                  ? <p><AlertTriangle size={14} /> Quality assessment is incomplete. Inspect the output before approval.</p>
+                  : <p><CheckCircle size={14} /> Automated checks passed. Complete the visual review before approval.</p>}
               </div>
               {selectedJob.error && <p className="ipc-job-error"><AlertTriangle size={14} /> {selectedJob.error}</p>}
               <div className="ipc-review-actions">
                 {REVIEW_STATUSES.has(selectedJob.status) && <>
-                  <button type="button" className="adm-btn-red" disabled={Boolean(busy)} onClick={() => void runAction(selectedJob, 'approve')}><Check size={14} /> Approve result</button>
+                  <button type="button" className="adm-btn-red" disabled={Boolean(busy) || selectedJob.qualityScore == null || selectedJob.qualityFlags.length > 0} onClick={() => void runAction(selectedJob, 'approve')}><Check size={14} /> Approve result</button>
                   <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void runAction(selectedJob, 'reject')}><X size={14} /> Reject</button>
                   <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void runAction(selectedJob, 'retry')}><RotateCcw size={14} /> Process again</button>
                 </>}
