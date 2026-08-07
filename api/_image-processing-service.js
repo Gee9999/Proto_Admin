@@ -5,6 +5,7 @@ import { storagePathFromPublicUrl } from './_staging-storage.js';
 import { logProductLoaderAudit } from './_product-loader-audit.js';
 import {
   createPrivateSourceUrl,
+  downloadPrivateSource,
   removeImageJobRecord,
   removePrivateImageArtifacts,
   saveAndIndexImageJob,
@@ -201,15 +202,52 @@ export async function analyzeImageQuality(buffer) {
   return { ...metrics, ...qualityScoreFromMetrics(metrics) };
 }
 
+// The cut-out is retained privately as the reusable master. The review and
+// archive derivative is deliberately what the customer will see: a consistent
+// 1600 × 1600 white JPEG, rather than a transparent image on an unknown page.
+export async function createWebsiteReadyDerivative(masterBuffer, { size = 1600 } = {}) {
+  const master = await Jimp.read(masterBuffer);
+  const canvas = new Jimp({ width: size, height: size, color: 0xffffffff });
+  canvas.composite(master, 0, 0);
+  const buffer = await canvas.getBuffer('image/jpeg');
+  return { buffer, width: size, height: size, background: '#FFFFFF', format: 'jpeg' };
+}
+
+async function storeTransparentMaster(job, image, buffer) {
+  return storePrivateSource({
+    jobId: job.id,
+    imageId: `${image.id}-transparent-master`,
+    filename: `${image.id}-transparent-master.png`,
+    contentType: 'image/png',
+    buffer,
+  });
+}
+
+async function uploadWebsiteReadyDerivative(job, image, buffer) {
+  // The review derivative is an archive asset, not catalogue media.  Keep it
+  // in the private site-config bucket until the operator explicitly applies it
+  // to Product Manager, at which point only the final copy becomes public.
+  const path = await storePrivateSource({
+    jobId: job.id,
+    imageId: `${image.id}-website-ready`,
+    filename: `${image.id}-1600-white.jpg`,
+    contentType: 'image/jpeg',
+    buffer,
+  });
+  return { path, url: null };
+}
+
 export async function completeWorkerOutput(job, image, payload = {}) {
   const expectedPath = `staging/image-processing/outputs/${job.id}/${image.id}.jpg`;
   if (String(payload.outputPath || '') !== expectedPath) throw new Error('Worker output path does not match the claim');
   const stock = getStockClient();
   const { data, error } = await stock.storage.from(PRODUCT_BUCKET).download(expectedPath);
   if (error) throw new Error(`Worker output was not uploaded: ${error.message}`);
-  const output = Buffer.from(await data.arrayBuffer());
-  const quality = await analyzeImageQuality(output);
-  const publicUrl = stock.storage.from(PRODUCT_BUCKET).getPublicUrl(expectedPath).data.publicUrl;
+  const transparentMaster = Buffer.from(await data.arrayBuffer());
+  const transparentPrivatePath = await storeTransparentMaster(job, image, transparentMaster);
+  const websiteReady = await createWebsiteReadyDerivative(transparentMaster);
+  const websiteReadyStorage = await uploadWebsiteReadyDerivative(job, image, websiteReady.buffer);
+  const quality = await analyzeImageQuality(websiteReady.buffer);
   const workerWarnings = Array.isArray(payload.warnings)
     ? payload.warnings.map((warning) => String(warning).slice(0, 120)).slice(0, 20)
     : [];
@@ -219,8 +257,12 @@ export async function completeWorkerOutput(job, image, payload = {}) {
   return {
     ...image,
     status: 'review',
-    reviewUrl: publicUrl,
-    outputStoragePath: expectedPath,
+    reviewUrl: websiteReadyStorage.url,
+    outputStoragePath: websiteReadyStorage.path,
+    processed: {
+      transparentPrivatePath,
+      websiteReady: { ...websiteReadyStorage, ...websiteReady },
+    },
     quality: { ...quality, worker: payload.quality || null },
     warnings: [...new Set([...(image.warnings || []), ...workerWarnings, ...ambiguousLabelWarning])],
     cost: {
@@ -247,18 +289,10 @@ export async function processImageWithFal(job, image, providerOptions = {}) {
   const removed = await removeBackgroundWithFal(sourceUrl, providerOptions);
   const transparent = await downloadFalOutput(removed.outputUrl, providerOptions);
   const standardized = await standardizeFalOutput(transparent);
-  const quality = await analyzeImageQuality(standardized.buffer);
-
-  const stock = getStockClient();
-  await stock.storage.createBucket(PRODUCT_BUCKET, { public: true }).catch(() => {});
-  const outputPath = `staging/image-processing/outputs/${job.id}/${image.id}.png`;
-  const { error } = await stock.storage.from(PRODUCT_BUCKET).upload(outputPath, standardized.buffer, {
-    contentType: 'image/png',
-    cacheControl: '0',
-    upsert: true,
-  });
-  if (error) throw new Error(`Could not stage fal.ai output: ${error.message}`);
-  const publicUrl = stock.storage.from(PRODUCT_BUCKET).getPublicUrl(outputPath).data.publicUrl;
+  const transparentPrivatePath = await storeTransparentMaster(job, materialized, standardized.buffer);
+  const websiteReady = await createWebsiteReadyDerivative(standardized.buffer);
+  const websiteReadyStorage = await uploadWebsiteReadyDerivative(job, materialized, websiteReady.buffer);
+  const quality = await analyzeImageQuality(websiteReady.buffer);
 
   const previousUsd = Number(image.cost?.usd) || 0;
   const previousZar = Number(image.cost?.zar) || 0;
@@ -266,8 +300,12 @@ export async function processImageWithFal(job, image, providerOptions = {}) {
   return {
     ...materialized,
     status: 'review',
-    reviewUrl: publicUrl,
-    outputStoragePath: outputPath,
+    reviewUrl: websiteReadyStorage.url,
+    outputStoragePath: websiteReadyStorage.path,
+    processed: {
+      transparentPrivatePath,
+      websiteReady: { ...websiteReadyStorage, ...websiteReady },
+    },
     quality: { ...quality, provider: 'fal.ai' },
     warnings: [...new Set([...(image.warnings || []), ...standardized.warnings])],
     cost: {
@@ -430,13 +468,51 @@ function conditionalImageUpdate(stock, destination, expectedUrl, nextUrl) {
 }
 
 export function markImageApproved(image, { actor }) {
-  if (image.status === 'approved' || image.status === 'published') return image;
+  if (image.status === 'approved' || image.status === 'archived' || image.status === 'published') return image;
   if (image.status !== 'review') throw new Error('Only an image awaiting review can be approved');
   return {
     ...image,
     status: 'approved',
     approvedAt: new Date().toISOString(),
     approvedBy: actor,
+    error: null,
+  };
+}
+
+export async function archiveApprovedImage(job, image, { actor, stockClient = null } = {}) {
+  if (image.status === 'archived') return image;
+  if (image.status !== 'approved') {
+    throw new Error('Only an explicitly approved image can be saved to the Image Archive');
+  }
+  if (!image.processed?.transparentPrivatePath) {
+    throw new Error('Approved image has no private transparent master to archive');
+  }
+  const sourcePath = image.outputStoragePath;
+  if (!sourcePath?.startsWith('image-processing/sources/')) {
+    throw new Error('Approved image does not have a website-ready 1600px white derivative');
+  }
+
+  // The approved derivative is already a private immutable object.  The
+  // archive records that object rather than duplicating it into the public
+  // product-images bucket.
+  const archivePath = sourcePath;
+  return {
+    ...image,
+    status: 'archived',
+    archivedAt: new Date().toISOString(),
+    archivedBy: actor,
+    archive: {
+      assetId: `asset_${job.id}_${image.id}`,
+      originalPrivatePath: image.source?.privatePath || null,
+      transparentPrivatePath: image.processed.transparentPrivatePath,
+      // Private variants intentionally have no durable public URL.  The API
+      // mints short-lived review URLs when an owner opens the archive.
+      originalUrl: null,
+      transparentMasterUrl: null,
+      websiteReadyPath: archivePath,
+      websiteReadyUrl: null,
+      specification: { width: 1600, height: 1600, background: '#FFFFFF', format: 'jpeg' },
+    },
     error: null,
   };
 }
@@ -451,8 +527,8 @@ export async function assignImageDestination(image, {
   slot = image.slot,
   stockClient = null,
 } = {}) {
-  if (!['review', 'approved'].includes(image.status)) {
-    throw imageProcessingError('ipc_destination_assignment_not_allowed', 'Choose a Product Manager destination only after processing is ready for review or approved.');
+  if (!['review', 'approved', 'archived'].includes(image.status)) {
+    throw imageProcessingError('ipc_destination_assignment_not_allowed', 'Choose a Product Manager destination only after processing is ready for review, approved, or archived.');
   }
   const destination = productManagerDestination({
     sku: normalizeImageSku(sku),
@@ -475,14 +551,14 @@ export async function assignImageDestination(image, {
   };
 }
 
-export async function publishApprovedImage(job, image, {
+export async function applyArchivedImage(job, image, {
   actor,
   slot = image.slot,
   allowOverwrite = false,
   stockClient = null,
 }) {
   if (image.status === 'published') return image;
-  if (image.status !== 'approved') throw new Error('Only an explicitly approved image can be published');
+  if (image.status !== 'archived') throw new Error('Only an explicitly archived image can be applied to Product Manager');
   const destination = resolvedProductDestination(image, slot);
   if (destination.slot !== image.slot && !allowOverwrite) {
     throw imageProcessingError(
@@ -501,14 +577,17 @@ export async function publishApprovedImage(job, image, {
     );
   }
 
-  const sourcePath = image.outputStoragePath || storagePathFromPublicUrl(image.reviewUrl);
-  if (!sourcePath?.startsWith('staging/')) throw new Error('Approved output is not in staging storage');
+  const sourcePath = image.archive?.websiteReadyPath;
+  if (!sourcePath?.startsWith('image-processing/sources/')) throw new Error('Archived website-ready image is not available');
   const safeJob = job.id.replace(/[^a-zA-Z0-9_-]/g, '').slice(-16);
   const safeImage = image.id.replace(/[^a-zA-Z0-9_-]/g, '').slice(-16);
   const outputExtension = sourcePath.toLowerCase().endsWith('.png') ? 'png' : 'jpg';
   const livePath = `${destination.sku}/${destination.slot}-${safeJob}-${safeImage}.${outputExtension}`;
   const bucket = stock.storage.from(PRODUCT_BUCKET);
-  const { error: copyError } = await bucket.copy(sourcePath, livePath);
+  const archivedBuffer = await downloadPrivateSource(sourcePath);
+  const { error: copyError } = await bucket.upload(livePath, archivedBuffer, {
+    contentType: 'image/jpeg', cacheControl: 'max-age=31536000, immutable', upsert: false,
+  });
   if (copyError && !(await objectExists(bucket, livePath))) throw new Error(`Could not stage the Product Manager image: ${copyError.message}`);
   const liveUrl = bucket.getPublicUrl(livePath).data.publicUrl;
 
@@ -530,7 +609,7 @@ export async function publishApprovedImage(job, image, {
     sku: destination.sku,
     action: 'update',
     source: 'image_processing_centre',
-    publishMode: 'approved_review',
+    publishMode: 'archived_asset_apply',
     imageSlot: destination.slot,
     imageSource: image.source.type,
     oldValues: { [destination.field]: previousUrl },
@@ -556,6 +635,15 @@ export async function publishApprovedImage(job, image, {
     },
     error: null,
   };
+}
+
+// Compatibility guard: a stale client cannot convert an approved review into
+// a live product-image change. Future clients must use archive then apply.
+export async function publishApprovedImage() {
+  throw imageProcessingError(
+    'archive_required',
+    'Direct publishing is disabled. Save the approved result to the Image Archive, then explicitly apply the archived asset.',
+  );
 }
 
 export async function restorePublishedOriginal(job, image, { actor, stockClient = null }) {
