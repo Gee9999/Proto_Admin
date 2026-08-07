@@ -3,6 +3,7 @@ import { getPortalAdminClient, readSiteConfigJson } from './_site-config.js';
 import { defaultFulfillmentUsers } from './_fulfillment-defaults.js';
 import { normalizePhone } from './_phone.js';
 import { watiConfig, watiEnsureContact, watiSendNewOrder, NEW_ORDER_TEMPLATE } from './_wati-notify.js';
+import { buildSignedFulfillmentUrl, isFulfillmentLinkConfigured } from './_fulfillment-token.js';
 import { readTeamWhatsappSentMany, writeTeamWhatsappSent } from './_order-team-whatsapp.js';
 
 /**
@@ -74,7 +75,16 @@ export default async function handler(req, res) {
     }
 
     const customerName = order.customers?.name || order.customers?.business_name || 'Unknown customer';
-    const fulfillmentUrl = `${APP_ORIGIN}/fulfillment?id=${encodeURIComponent(order.id)}`;
+    // Signed link: the team opens it on a phone with no admin account. The
+    // signature scopes it to this one order and expires it.
+    const fulfillmentUrl = buildSignedFulfillmentUrl(APP_ORIGIN, order.id);
+    const signedLink = isFulfillmentLinkConfigured();
+    if (!signedLink) {
+      // Falls back to a plain /fulfillment?id= URL, which still requires an
+      // admin sign-in. Say so in the log rather than silently sending a link
+      // the team cannot open.
+      console.warn('order-team-whatsapp: no link signing secret set — sending a sign-in-only URL');
+    }
 
     const results = [];
     for (const recipient of recipients) {
@@ -108,6 +118,7 @@ export default async function handler(req, res) {
       total: results.length,
       results,
       record,
+      signedLink,
     });
   } catch (err) {
     console.error('order-team-whatsapp POST:', err?.message || err);

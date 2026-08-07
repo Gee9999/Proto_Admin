@@ -330,6 +330,22 @@ export async function fetchAllProductsAdmin({ onProgress } = {}) {
   return getAllCachedAdmin(onProgress);
 }
 
+/**
+ * Server-side replacement search for the fulfilment page.
+ *
+ * Deliberately not fetchAdminProductsPage: that pulls the whole catalogue into
+ * the browser to filter it, which is a heavy download on a warehouse phone and
+ * more data than a signed order link should carry.
+ */
+export async function searchReplacementProducts(query) {
+  const q = String(query || '').trim();
+  if (q.length < 2) return [];
+  const res = await fetch(`/api/fulfillment-product-search?q=${encodeURIComponent(q)}`);
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || 'Product search failed');
+  return json.rows || [];
+}
+
 export async function fetchCatalogArchiveCount() {
   const rows = await loadArchivedFromDB({ catalogOnly: true });
   return rows.length;

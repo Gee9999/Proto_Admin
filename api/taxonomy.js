@@ -1,4 +1,4 @@
-import { requireOwner } from './_admin-auth.js';
+import { requireOwner, requireAdminOrOrderToken } from './_admin-auth.js';
 import { createClient } from '@supabase/supabase-js';
 import { readSiteConfigJson, writeSiteConfigJson } from './_site-config.js';
 import { loadPlacementMapIfEnabled } from './_placements.js';
@@ -73,7 +73,12 @@ function taxonomyConflictResponse(res, err) {
 }
 
 export default async function handler(req, res) {
-  if (!(await requireOwner(req, res))) return;
+  // Reading the category tree is what the fulfilment page needs to label its
+  // packing sections, so a signed order link may GET it. Every write stays
+  // owner-only.
+  if (req.method === 'GET') {
+    if (!(await requireAdminOrOrderToken(req, res))) return;
+  } else if (!(await requireOwner(req, res))) return;
 
   if (req.method === 'GET') {
     try {

@@ -32,9 +32,19 @@ test('a missing or oversized PDF never cancels the alert', () => {
 });
 
 test('no WATI/WhatsApp sends remain in the order-notify path', () => {
+  // The customer-facing alert path stays email-only. The one deliberate WATI
+  // survivor is api/order-team-whatsapp.js, which broadcasts a new order to the
+  // fulfilment team's own numbers (CLAUDE.md, "Exception — internal team
+  // WhatsApp") and cannot reach a customer number.
   assert.doesNotMatch(notifySource, /watiSend|sendTemplateMessage|whatsappNumber/, 'no WATI calls');
   assert.ok(!fs.existsSync(new URL('../api/_wati.js', import.meta.url).pathname), '_wati.js deleted');
-  assert.ok(!fs.existsSync(new URL('../api/_wati-notify.js', import.meta.url).pathname), '_wati-notify.js deleted');
   assert.ok(!fs.existsSync(new URL('../api/team-whatsapp-test.js', import.meta.url).pathname), 'team WhatsApp test deleted');
   assert.match(notifySource, /email is the notification/i);
+});
+
+test('the internal team WhatsApp only ever reaches the fulfilment team', () => {
+  const teamSource = fs.readFileSync(new URL('../api/order-team-whatsapp.js', import.meta.url), 'utf8');
+  // Recipients come from the team roster file, never from the order's customer.
+  assert.match(teamSource, /fulfillment\/users\.json/, 'recipients come from the team roster');
+  assert.doesNotMatch(teamSource, /customers\?\.\s*phone|customer\.phone/, 'never a customer number');
 });
