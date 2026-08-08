@@ -54,6 +54,11 @@ async function lookupWebsiteStock(sb, code, displayCode) {
   return { row: null, matchedBy: null };
 }
 
+async function lookupWebsiteStockStrict(sb, code) {
+  const row = await lookupWebsiteStockExact(sb, code);
+  return { row, matchedBy: row ? 'code' : null };
+}
+
 async function lookupPositill(sb, code, displayCode) {
   const upper = String(code || '').trim().toUpperCase();
   let sqlRow = upper ? await getProductByCode(upper).catch(() => null) : null;
@@ -89,6 +94,15 @@ async function lookupPositill(sb, code, displayCode) {
   return { sqlRow: null, matchedBy: null };
 }
 
+async function lookupPositillStrict(sb, code) {
+  const upper = String(code || '').trim().toUpperCase();
+  if (!upper) return { sqlRow: null, matchedBy: null };
+  const sqlRow = await getProductByCode(upper).catch(() => null);
+  return sqlRow
+    ? { sqlRow: toSqlPreview(sqlRow), matchedBy: 'positill_code' }
+    : { sqlRow: null, matchedBy: null };
+}
+
 export function resolveWebsiteStatus({ websiteRow, sqlRow, dormantSkus, code }) {
   const sku = String(websiteRow?.sku || code || '').trim().toUpperCase();
   if (websiteRow?.sku) return 'live';
@@ -104,6 +118,7 @@ export async function resolveProductLoaderMatch(sb, {
   imageSlot = 1,
   dormantSkus = null,
   parseError = null,
+  strictExact = false,
 }) {
   if (parseError) {
     return {
@@ -148,8 +163,12 @@ export async function resolveProductLoaderMatch(sb, {
 
   for (const attempt of attempts) {
     const [webResult, positill] = await Promise.all([
-      lookupWebsiteStock(sb, attempt.candidate, displayCode),
-      lookupPositill(sb, attempt.candidate, displayCode),
+      strictExact
+        ? lookupWebsiteStockStrict(sb, attempt.candidate)
+        : lookupWebsiteStock(sb, attempt.candidate, displayCode),
+      strictExact
+        ? lookupPositillStrict(sb, attempt.candidate)
+        : lookupPositill(sb, attempt.candidate, displayCode),
     ]);
     if (webResult.row || positill.sqlRow) {
       websiteRow = webResult.row;

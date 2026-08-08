@@ -6,6 +6,7 @@ import { labelsToDbFields } from './_taxonomy-utils.js';
 import { fetchProductLookupMap, findProductBySku } from './_sku-match.js';
 import { canonicalPublishValues } from '../lib/catalogue-safety.mjs';
 import { normalizeUnitsOfIssue } from '../lib/selling-unit.mjs';
+import { previewPublishBlock } from '../lib/preview-publish-guard.mjs';
 
 function getStockClient() {
   return createClient(
@@ -21,6 +22,15 @@ export default async function handler(req, res) {
   if (!(await requireOwner(req, res))) return;
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).end();
+
+  // Preview is a review-only environment. This is deliberately enforced on
+  // the server before a catalogue client is created, not merely by disabling a
+  // button in the browser.
+  const previewBlock = previewPublishBlock();
+  if (previewBlock) return res.status(previewBlock.status).json({
+    error: previewBlock.error,
+    code: previewBlock.code,
+  });
 
   const {
     code,

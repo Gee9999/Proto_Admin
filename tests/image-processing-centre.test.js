@@ -18,7 +18,7 @@ describe('Image Processing Centre preview', () => {
     expect(queue).toContain('Retry queue load');
     expect(queue).toContain('No products are waiting in Image Processing Centre.');
     expect(queue).toContain('Loading queue...');
-    expect(queue).toContain('Review staged products before approval. Originals stay intact until publish.');
+    expect(queue).toContain('Preview-only image review. Originals stay intact; this screen cannot publish to live products.');
   });
 
   it('only checks live status for the queue rows instead of scanning the full website catalogue', () => {

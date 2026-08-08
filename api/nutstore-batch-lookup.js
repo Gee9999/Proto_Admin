@@ -68,7 +68,8 @@ export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).end();
 
-  const { paths } = req.body || {};
+  const { paths, purpose } = req.body || {};
+  const forImageProcessing = purpose === 'image_processing';
   if (!Array.isArray(paths) || !paths.length) {
     return res.status(400).json({ error: 'paths[] required (Nutstore file paths)' });
   }
@@ -101,9 +102,11 @@ export default async function handler(req, res) {
     const displayCode = group[0]?.displayCode || lookupKey;
     const match = await resolveProductLoaderMatch(sb, {
       code: displayCode,
+      fullCode: parsedRows[group[0]?.idx]?.parsed?.fullCode || null,
       displayCode,
-      imageSlot: 1,
+      imageSlot: parsedRows[group[0]?.idx]?.parsed?.imageSlot || 1,
       dormantSkus,
+      strictExact: forImageProcessing,
     });
     matchByStem.set(lookupKey, match);
   });
@@ -118,8 +121,19 @@ export default async function handler(req, res) {
       path: row.path,
       filename: row.filename,
       ...match,
-      imageSlot: 1,
+      imageSlot: row.parsed.imageSlot || 1,
       group,
+      // The Image Processing Centre must never queue an image against a
+      // fuzzy title/barcode match or a non-existent website SKU. The original
+      // Nutstore file stays in place; this only grants permission to queue it.
+      canQueue: !forImageProcessing || Boolean(
+        match.websiteRow
+        && match.matchedBy === 'code'
+        && String(match.websiteRow.sku || '').trim().toUpperCase() === String(match.code || '').trim().toUpperCase(),
+      ),
+      queueBlocker: forImageProcessing && !(match.websiteRow && match.matchedBy === 'code')
+        ? 'An exact existing website SKU is required before this image can enter the processing queue.'
+        : null,
     };
   });
 

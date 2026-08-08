@@ -397,6 +397,38 @@ export async function fixImageFromUrl(imageUrl, {
   };
 }
 
+/** Preview-only sibling of fixImageFromUrl for authenticated Nutstore files.
+ * The source buffer is never written back to a product; only the generated
+ * result is saved to a dated staging object. */
+export async function fixImageFromBuffer(buffer, contentType, filename = 'product.jpg', {
+  sku = 'product',
+  prompt,
+  imageStyle = IMAGE_STYLES.standard,
+  targetSlot = 1,
+  staging = false,
+} = {}) {
+  if (!buffer?.length) throw new Error('No source image data');
+  const style = imageStyle || IMAGE_STYLES.standard;
+  const finalPrompt = prompt || buildImagePrompt({ style, targetSlot });
+  const transformed = await transformWithOpenRouter(Buffer.from(buffer).toString('base64'), contentType || 'image/jpeg', {
+    prompt: finalPrompt,
+    model: resolveImageModel(style, targetSlot),
+    imageStyle: style,
+    targetSlot,
+  });
+  const resized = await resizeTo800White(transformed.buffer);
+  const uploadResult = await uploadTransformedImage(resized, filename, 'image/jpeg', { staging, sku, slot: targetSlot });
+  return {
+    url: typeof uploadResult === 'string' ? uploadResult : uploadResult.url,
+    storagePath: typeof uploadResult === 'object' ? uploadResult.storagePath : null,
+    model: transformed.model,
+    tokensIn: transformed.tokensIn,
+    tokensOut: transformed.tokensOut,
+    costUsd: transformed.costUsd,
+    imageStyle: style,
+  };
+}
+
 /** New Products upload — accepts raw base64 from browser compression. */
 export async function fixImageFromBase64(base64, contentType, filename = 'product.jpg', {
   imageStyle = IMAGE_STYLES.standard,

@@ -189,6 +189,13 @@ export default function ProductLoaderPanel({
   const [dormantSaving, setDormantSaving] = useState('');
   const [dormantLoadError, setDormantLoadError] = useState('');
   const [dormantRequested, setDormantRequested] = useState(false);
+  const [imageIntakeText, setImageIntakeText] = useState('');
+  const [imageIntakeItems, setImageIntakeItems] = useState([]);
+  const [imageIntakeLoading, setImageIntakeLoading] = useState(false);
+  const [imageIntakeError, setImageIntakeError] = useState('');
+  const [imageJobs, setImageJobs] = useState([]);
+  const [selectedImageJobId, setSelectedImageJobId] = useState('');
+  const [imageJobBusy, setImageJobBusy] = useState(false);
   const singleProductRef = useRef(null);
 
   const loadDormant = useCallback(async () => {
@@ -912,6 +919,86 @@ export default function ProductLoaderPanel({
     onShowToast?.(`Open Single Image tab and upload an image for ${code}`, 'success');
   };
 
+  const lookupImageIntake = async () => {
+    const paths = imageIntakeText.split(/\r?\n/).map((path) => path.trim()).filter(Boolean);
+    if (!paths.length) {
+      setImageIntakeError('Paste at least one Nutstore image path.');
+      return;
+    }
+    setImageIntakeLoading(true);
+    setImageIntakeError('');
+    try {
+      const res = await fetch('/api/nutstore-batch-lookup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths, purpose: 'image_processing' }),
+      });
+      const json = await readApiJson(res, { fallback: 'Nutstore image lookup failed' });
+      setImageIntakeItems(json.items || []);
+    } catch (err) {
+      setImageIntakeError(err.message || 'Nutstore image lookup failed');
+    } finally {
+      setImageIntakeLoading(false);
+    }
+  };
+
+  const queueImageIntakeItem = (item) => {
+    if (!item?.canQueue) return;
+    const key = `${item.code}:${item.imageSlot || 1}`;
+    const job = {
+      id: `${key}:${Date.now()}`,
+      key,
+      sku: item.code,
+      title: catalogueDisplayTitle(item),
+      targetSlot: item.imageSlot || 1,
+      nutstorePath: item.path,
+      originalUrl: `/api/nutstore-thumbnail?path=${encodeURIComponent(item.path)}`,
+      status: 'queued',
+      processedUrl: '',
+      history: [{ at: new Date().toISOString(), label: 'Queued from Nutstore after exact SKU and slot match.' }],
+    };
+    setImageJobs((previous) => {
+      if (previous.some((job) => job.key === key)) return previous;
+      return [...previous, job];
+    });
+    setSelectedImageJobId(imageJobs.find((existing) => existing.key === key)?.id || job.id);
+  };
+
+  const processSelectedImageJob = async () => {
+    const job = imageJobs.find((item) => item.id === selectedImageJobId);
+    if (!job || job.status !== 'queued') return;
+    setImageJobBusy(true);
+    setImageJobs((items) => items.map((item) => item.id === job.id ? {
+      ...item, status: 'processing', history: [...item.history, { at: new Date().toISOString(), label: 'Manual preview processing started.' }],
+    } : item));
+    try {
+      const res = await fetch('/api/image-processing-preview', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sku: job.sku, targetSlot: job.targetSlot, productTitle: job.title, nutstorePath: job.nutstorePath }),
+      });
+      const result = await readApiJson(res, { fallback: 'Preview image processing failed' });
+      setImageJobs((items) => items.map((item) => item.id === job.id ? {
+        ...item, status: 'ready_for_review', processedUrl: result.processedUrl, version: result.version,
+        history: [...item.history, { at: new Date().toISOString(), label: 'Processed preview is ready for before-and-after review.' }],
+      } : item));
+    } catch (err) {
+      setImageJobs((items) => items.map((item) => item.id === job.id ? {
+        ...item, status: 'needs_attention', error: err.message || 'Preview processing failed',
+        history: [...item.history, { at: new Date().toISOString(), label: 'Processing needs attention.' }],
+      } : item));
+    } finally {
+      setImageJobBusy(false);
+    }
+  };
+
+  const approveSelectedImageJob = () => {
+    const job = imageJobs.find((item) => item.id === selectedImageJobId);
+    if (!job?.processedUrl || job.status !== 'ready_for_review') return;
+    setImageJobs((items) => items.map((item) => item.id === job.id ? {
+      ...item, status: 'approved', history: [...item.history, { at: new Date().toISOString(), label: 'Approved for later production publishing. Preview never writes live products.' }],
+    } : item));
+    onShowToast?.('Preview approved. It remains staged; no live product was changed.', 'success');
+  };
+
   return (
     <div className="adm-panel" style={{ maxWidth: 1100 }}>
       {/* Header */}
@@ -991,7 +1078,19 @@ export default function ProductLoaderPanel({
           onSaveCategories={saveDormantCategories}
           onRemove={removeDormantRow}
           onOpen={openAdvanced}
-          onPublish={handlePublish}
+          imageIntakeText={imageIntakeText}
+          setImageIntakeText={setImageIntakeText}
+          imageIntakeItems={imageIntakeItems}
+          imageIntakeLoading={imageIntakeLoading}
+          imageIntakeError={imageIntakeError}
+          onLookupImageIntake={() => void lookupImageIntake()}
+          onQueueImageIntake={queueImageIntakeItem}
+          imageJobs={imageJobs}
+          selectedImageJobId={selectedImageJobId}
+          onSelectImageJob={setSelectedImageJobId}
+          imageJobBusy={imageJobBusy}
+          onProcessImageJob={() => void processSelectedImageJob()}
+          onApproveImageJob={approveSelectedImageJob}
         />
       )}
 
