@@ -2,7 +2,7 @@ import { requireOwner } from './_admin-auth.js';
 import { fixImageFromBuffer, fixImageFromUrl, IMAGE_STYLES } from './_image-pipeline.js';
 import { downloadNutstoreFile, isPathInLibrary } from './_nutstore-webdav.js';
 
-export const config = { api: { bodyParser: { sizeLimit: '2mb' } }, maxDuration: 60 };
+export const config = { api: { bodyParser: { sizeLimit: '15mb' } }, maxDuration: 60 };
 
 /**
  * This route intentionally has no path to website_stock, staging promotion, or
@@ -25,20 +25,39 @@ This is a review-only preview: the original image remains the source of truth an
 export function normalizePreviewProcessingRequest(body = {}) {
   const sourceImageUrl = String(body.sourceImageUrl || body.originalUrl || '').trim();
   const nutstorePath = String(body.nutstorePath || '').trim();
+  const sourceBase64 = String(body.sourceBase64 || '').trim();
+  const sourceContentType = String(body.sourceContentType || 'image/jpeg').trim();
   const sku = String(body.sku || '').trim().toUpperCase();
   const targetSlot = Math.min(4, Math.max(1, Number(body.targetSlot) || 1));
-  if (!sourceImageUrl && !nutstorePath) throw new Error('sourceImageUrl or nutstorePath is required');
+  if (!sourceImageUrl && !nutstorePath && !sourceBase64) throw new Error('sourceImageUrl, nutstorePath or sourceBase64 is required');
   if (sourceImageUrl && !/^https?:\/\//i.test(sourceImageUrl)) throw new Error('sourceImageUrl must be an http(s) URL');
   if (nutstorePath && !isPathInLibrary(nutstorePath)) throw new Error('nutstorePath must be within PTR Photos');
+  if (sourceBase64 && !/^image\/(?:avif|gif|jpe?g|png|webp)$/i.test(sourceContentType)) {
+    throw new Error('sourceContentType must be a supported image type');
+  }
+  if (sourceBase64 && !/^[A-Za-z0-9+/]+={0,2}$/.test(sourceBase64)) {
+    throw new Error('sourceBase64 must contain a valid image');
+  }
   if (!sku) throw new Error('sku is required');
   return {
     sourceImageUrl,
     nutstorePath,
+    sourceBase64,
+    sourceContentType,
     sku,
     targetSlot,
     productTitle: String(body.productTitle || '').trim(),
     instructions: String(body.instructions || '').trim(),
   };
+}
+
+// Locally selected files have no remote source URL. Keep that untouched image
+// visible in the review response instead of leaving the operator with an empty
+// "original" pane after processing.
+export function buildOriginalPreviewUrl(input) {
+  if (input.sourceImageUrl) return input.sourceImageUrl;
+  if (input.nutstorePath) return `/api/nutstore-thumbnail?path=${encodeURIComponent(input.nutstorePath)}`;
+  return `data:${input.sourceContentType};base64,${input.sourceBase64}`;
 }
 
 export default async function handler(req, res) {
@@ -59,7 +78,11 @@ export default async function handler(req, res) {
           sku: input.sku, targetSlot: input.targetSlot, imageStyle: IMAGE_STYLES.standard, prompt, staging: true,
         });
       })()
-      : await fixImageFromUrl(input.sourceImageUrl, {
+      : input.sourceBase64
+        ? await fixImageFromBuffer(Buffer.from(input.sourceBase64, 'base64'), input.sourceContentType, `${input.sku}.jpg`, {
+          sku: input.sku, targetSlot: input.targetSlot, imageStyle: IMAGE_STYLES.standard, prompt, staging: true,
+        })
+        : await fixImageFromUrl(input.sourceImageUrl, {
         sku: input.sku, targetSlot: input.targetSlot, imageStyle: IMAGE_STYLES.standard, prompt, staging: true,
       });
 
@@ -70,7 +93,7 @@ export default async function handler(req, res) {
       ok: true,
       status: 'review',
       previewOnly: true,
-      originalUrl: input.sourceImageUrl || `/api/nutstore-thumbnail?path=${encodeURIComponent(input.nutstorePath)}`,
+      originalUrl: buildOriginalPreviewUrl(input),
       processedUrl: result.url,
       version: result.storagePath || result.url,
       targetSlot: input.targetSlot,

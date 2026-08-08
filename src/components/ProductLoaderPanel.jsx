@@ -973,7 +973,12 @@ export default function ProductLoaderPanel({
     try {
       const res = await fetch('/api/image-processing-preview', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sku: job.sku, targetSlot: job.targetSlot, productTitle: job.title, nutstorePath: job.nutstorePath }),
+        body: JSON.stringify({
+          sku: job.sku, targetSlot: job.targetSlot, productTitle: job.title,
+          nutstorePath: job.nutstorePath,
+          sourceBase64: job.sourceBase64,
+          sourceContentType: job.sourceContentType,
+        }),
       });
       const result = await readApiJson(res, { fallback: 'Preview image processing failed' });
       setImageJobs((items) => items.map((item) => item.id === job.id ? {
@@ -997,6 +1002,45 @@ export default function ProductLoaderPanel({
       ...item, status: 'approved', history: [...item.history, { at: new Date().toISOString(), label: 'Approved for later production publishing. Preview never writes live products.' }],
     } : item));
     onShowToast?.('Preview approved. It remains staged; no live product was changed.', 'success');
+  };
+
+  const sendUploadedImageToCentre = async (item) => {
+    const exactSku = item?.websiteRow
+      && String(item.websiteRow.sku || '').trim().toUpperCase() === String(item.code || '').trim().toUpperCase();
+    if (!item?.file || !exactSku) {
+      onShowToast?.('This upload needs an exact existing website SKU before it can enter Image Processing Centre.', 'warning');
+      return;
+    }
+    const key = `${item.code}:${item.imageSlot || 1}`;
+    const existing = imageJobs.find((job) => job.key === key);
+    if (existing) {
+      setSelectedImageJobId(existing.id);
+      setActiveTab('image-centre');
+      onShowToast?.('That SKU and image slot is already in Image Processing Centre.', 'warning');
+      return;
+    }
+    try {
+      const sourceBase64 = await fileToBase64(item.file);
+      const job = {
+        id: `${key}:${Date.now()}`,
+        key,
+        sku: item.code,
+        title: catalogueDisplayTitle(item),
+        targetSlot: item.imageSlot || 1,
+        originalUrl: item.previewUrl || URL.createObjectURL(item.file),
+        sourceBase64,
+        sourceContentType: item.file.type || 'image/jpeg',
+        status: 'queued',
+        processedUrl: '',
+        history: [{ at: new Date().toISOString(), label: 'Uploaded image handed to Image Processing Centre after exact SKU and slot match.' }],
+      };
+      setImageJobs((jobs) => [...jobs, job]);
+      setSelectedImageJobId(job.id);
+      setActiveTab('image-centre');
+      onShowToast?.(`${item.filename} is queued in Image Processing Centre.`, 'success');
+    } catch (err) {
+      onShowToast?.(err.message || 'Could not prepare the uploaded image for review.', 'error');
+    }
   };
 
   return (
@@ -1060,6 +1104,8 @@ export default function ProductLoaderPanel({
           batchOverwrite={batchOverwrite}
           setBatchOverwrite={setBatchOverwrite}
           onShowToast={onShowToast}
+          onSendToImageCentre={sendUploadedImageToCentre}
+          imageCentreQueueCount={imageJobs.length}
         />
       )}
 
