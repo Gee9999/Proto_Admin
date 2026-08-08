@@ -87,11 +87,12 @@ export default async function handler(req, res) {
       const { categories, updatedAt } = await readTaxonomyForApi();
       if (req.query.counts === '1') {
         const onlyInStock = req.query.onlyInStock === '1' || req.query.onlyInStock === 'true';
+        const availableNowOnly = req.query.availableNowOnly === '1' || req.query.availableNowOnly === 'true';
         const stock = getStockClient();
         // Additional placements are counted only when the feature is enabled,
         // so badges stay identical to today until it is switched on.
         const placements = await loadPlacementMapIfEnabled(stock);
-        const counts = await buildCategoryProductCounts(stock, categories, { onlyInStock, placements });
+        const counts = await buildCategoryProductCounts(stock, categories, { onlyInStock, availableNowOnly, placements });
         // Counts need a full-table scan; a short edge cache is fine, but keep
         // it tight so admin badges and portal empty-hiding stay close to live.
         res.setHeader('Cache-Control', 's-maxage=15, stale-while-revalidate=45');

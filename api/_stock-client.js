@@ -1,5 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import { findProductBySku, fetchProductLookupMap } from './_sku-match.js';
+import { ARRIVED_STOCK_STATUSES } from '../lib/product-availability.mjs';
 
 /**
  * Stock Supabase client for serverless API routes.
@@ -105,4 +106,26 @@ export async function enrichRowsWithProductStock(supabase, rows, { includePrice 
         : {}),
     };
   });
+}
+
+/**
+ * Fetch the private incoming-stock rows that represent received container stock.
+ * Returns a Set of website SKUs so callers can filter without exposing the
+ * availability table to the browser.
+ */
+export async function fetchIncomingStockArrivalSkus(supabase) {
+  const arrived = new Set();
+  const { data, error } = await supabase
+    .from('website_product_availability')
+    .select('sku')
+    .in('incoming_status', ARRIVED_STOCK_STATUSES);
+  if (error) {
+    const text = `${error?.code || ''} ${error?.message || ''}`;
+    if (/PGRST205|42P01|website_product_availability/i.test(text)) return arrived;
+    throw error;
+  }
+  for (const row of data || []) {
+    if (row?.sku) arrived.add(row.sku);
+  }
+  return arrived;
 }

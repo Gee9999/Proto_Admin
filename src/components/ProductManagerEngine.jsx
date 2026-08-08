@@ -491,6 +491,7 @@ export default function ProductManagerEngine({
   const [page, setPage] = useState(1);
   const [pageSize] = useState(50);
   const [onlyInStock, setOnlyInStock] = useState(() => readOnlyInStockPref());
+  const [availableNowOnly, setAvailableNowOnly] = useState(false);
   const [toOrderOnly, setToOrderOnly] = useState(() => Boolean(initialToOrderOnly));
   // SKU whose per-row "To order" toggle is mid-flight (for spinner + disable).
   const [toOrderPendingSku, setToOrderPendingSku] = useState(null);
@@ -537,6 +538,7 @@ export default function ProductManagerEngine({
   useEffect(() => {
     setToOrderOnly(Boolean(initialToOrderOnly));
     setOnlyInStock(initialToOrderOnly ? false : readOnlyInStockPref());
+    setAvailableNowOnly(false);
     setPage(1);
     setCategoryPath([]);
   }, [initialToOrderOnly]);
@@ -554,7 +556,7 @@ export default function ProductManagerEngine({
     selectedRowsRef.current = new Map();
     lastSelectIdxRef.current = null;
     setSelectAllView(false);
-  }, [status, debouncedSearch, categoryPath.join('/'), archiveStockView, archiveSourceFilter, onlyInStock, toOrderOnly]);
+  }, [status, debouncedSearch, categoryPath.join('/'), archiveStockView, archiveSourceFilter, onlyInStock, availableNowOnly, toOrderOnly]);
 
   // Any catalogue mutation (single-row or bulk archive/restore/delete/make-live)
   // changes category membership — refresh BOTH badge sources so the sidebar
@@ -583,23 +585,26 @@ export default function ProductManagerEngine({
     } catch { /* ignore */ }
   }, []);
 
-  // Category badges must match what the list shows: when the stock toggle is
-  // on, load stock-filtered counts; otherwise the parent-supplied counts
-  // (all live rows) already match the default view.
+  // Category badges must match what the list shows: when a stock filter is on,
+  // load filtered counts; otherwise the parent-supplied counts already match
+  // the default view.
   const [inStockCounts, setInStockCounts] = useState(null);
   const [inStockCountsNonce, setInStockCountsNonce] = useState(0);
   useEffect(() => {
-    if (!(status === 'live' && onlyInStock)) {
+    if (!(status === 'live' && (onlyInStock || availableNowOnly))) {
       setInStockCounts(null);
       return undefined;
     }
     let cancelled = false;
-    fetchCategoryProductCounts({ onlyInStock: true })
+    fetchCategoryProductCounts({
+      onlyInStock,
+      availableNowOnly,
+    })
       .then((counts) => { if (!cancelled) setInStockCounts(counts); })
       .catch(() => { /* keep unfiltered counts as fallback */ });
     return () => { cancelled = true; };
-  }, [status, onlyInStock, inStockCountsNonce]);
-  const effectiveCategoryCounts = status === 'live' && onlyInStock && inStockCounts
+  }, [status, onlyInStock, availableNowOnly, inStockCountsNonce]);
+  const effectiveCategoryCounts = status === 'live' && (onlyInStock || availableNowOnly) && inStockCounts
     ? inStockCounts
     : categoryProductCounts;
 
@@ -620,8 +625,9 @@ export default function ProductManagerEngine({
     stockFilter: status === 'archived' ? archiveStockView : undefined,
     archivedSource: status === 'archived' && archiveStockView === 'archived' ? archiveSourceFilter : undefined,
     onlyInStock: status === 'live' && onlyInStock,
+    availableNowOnly: status === 'live' && availableNowOnly,
     toOrderOnly: status === 'live' && toOrderOnly,
-  }), [status, page, pageSize, debouncedSearch, categoryPath, archiveStockView, archiveSourceFilter, onlyInStock, toOrderOnly]);
+  }), [status, page, pageSize, debouncedSearch, categoryPath, archiveStockView, archiveSourceFilter, onlyInStock, availableNowOnly, toOrderOnly]);
 
   const { data, isLoading, isFetching, isPlaceholderData } = useCatalogQuery(catalogParams);
   const rowsStale = Boolean(data && data.page !== page);
@@ -1626,6 +1632,14 @@ export default function ProductManagerEngine({
                       checked: onlyInStock,
                       accentColor: '#8B1A1A',
                       onChange: (v) => handleOnlyInStockChange(v),
+                    },
+                    {
+                      key: 'arrived-stock',
+                      label: 'Stock has arrived only',
+                      hint: 'Show products whose container stock has landed at the warehouse but is not yet public',
+                      checked: availableNowOnly,
+                      accentColor: '#0f766e',
+                      onChange: (v) => { setAvailableNowOnly(v); setPage(1); },
                     },
                     !initialToOrderOnly && {
                       key: 'to-order',

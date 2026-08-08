@@ -3,6 +3,7 @@ import { join } from 'path';
 import { readSiteConfigJson, writeSiteConfigJson } from './_site-config.js';
 import { isPublishableOnWebsite } from '../lib/catalog-stock.mjs';
 import { isMotarroProduct, inferMotarroPathFromRow, injectMotarroIntoTree } from './_mottaro-category.js';
+import { fetchIncomingStockArrivalSkus } from './_stock-client.js';
 import { collectCountableNodeIds } from './_placements.js';
 import {
   escapeIlikePattern,
@@ -758,11 +759,16 @@ const COUNT_ROW_COLS = 'sku,category,subcategory_one,subcategory_two,subcategory
  * one of its own descendants counts once per node rather than inflating every
  * shared ancestor. Omit it and the counts are byte-identical to before.
  */
-export async function buildCategoryProductCounts(supabase, tree, { onlyInStock = false, placements = null } = {}) {
+export async function buildCategoryProductCounts(
+  supabase,
+  tree,
+  { onlyInStock = false, availableNowOnly = false, placements = null } = {},
+) {
   const counts = { __uncategorized__: 0, __all__: 0 };
   let mottaroLive = 0;
   let from = 0;
   const PAGE = 1000;
+  const arrivedSkus = availableNowOnly ? await fetchIncomingStockArrivalSkus(supabase) : null;
 
   while (true) {
     const { data, error } = await supabase
@@ -774,6 +780,7 @@ export async function buildCategoryProductCounts(supabase, tree, { onlyInStock =
     const batch = data || [];
     for (const row of batch) {
       if (onlyInStock && !isPublishableOnWebsite(row)) continue;
+      if (availableNowOnly && !arrivedSkus.has(row.sku)) continue;
       counts.__all__ += 1;
 
       const isMottaro = isMotarroProduct(row);

@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { describe, expect, it } from 'vitest';
-import { resolveProductAvailability } from '../lib/product-availability.mjs';
+import { isStockHasArrived, resolveProductAvailability } from '../lib/product-availability.mjs';
 
 const readSource = (relativePath) => readFile(new URL(`../${relativePath}`, import.meta.url), 'utf8');
 
@@ -13,7 +13,17 @@ describe('product availability contract', () => {
     expect(resolveProductAvailability({
       stockQty: 0,
       incoming: { incomingStatus: 'landed_awaiting_grv', incomingQty: 40 },
-    })).toMatchObject({ state: 'landed', canOrder: true });
+    })).toMatchObject({
+      state: 'landed',
+      label: 'Stock has arrived',
+      canOrder: true,
+    });
+    expect(resolveProductAvailability({
+      stockQty: 0,
+      incoming: { incomingStatus: 'landed_awaiting_grv', incomingQty: 40 },
+    }).guidance).toMatch(/prepared for sale/i);
+    expect(isStockHasArrived({ incomingStatus: 'landed_awaiting_grv', incomingQty: 40 })).toBe(true);
+    expect(isStockHasArrived({ incomingStatus: 'on_the_way', incomingQty: 40 })).toBe(false);
     expect(resolveProductAvailability({
       stockQty: 0,
       incoming: { incomingStatus: 'on_the_way', incomingQty: 40 },
@@ -39,8 +49,26 @@ describe('product availability contract', () => {
     ]);
     expect(page).toMatch(/Made \/ sourced to order/);
     expect(page).toMatch(/Incoming container stock/);
-    expect(page).toMatch(/Landed — awaiting GRV/);
+    expect(page).toMatch(/Stock has arrived/);
     expect(actions).toMatch(/action === 'setToOrder'/);
     expect(actions).toMatch(/action === 'setProductAvailability'/);
+  });
+
+  it('wires the Stock has arrived filter through the catalog and taxonomy counts', async () => {
+    const [engine, useCatalog, taxonomyAdmin, catalogApi, taxonomyApi, stockClient] = await Promise.all([
+      readSource('src/components/ProductManagerEngine.jsx'),
+      readSource('src/hooks/useCatalog.js'),
+      readSource('src/lib/taxonomyAdmin.js'),
+      readSource('api/catalog.js'),
+      readSource('api/taxonomy.js'),
+      readSource('api/_stock-client.js'),
+    ]);
+    expect(engine).toMatch(/Stock has arrived only/);
+    expect(engine).toMatch(/availableNowOnly/);
+    expect(useCatalog).toMatch(/availableNowOnly/);
+    expect(taxonomyAdmin).toMatch(/availableNowOnly/);
+    expect(catalogApi).toMatch(/availableNowOnly/);
+    expect(taxonomyApi).toMatch(/availableNowOnly/);
+    expect(stockClient).toMatch(/fetchIncomingStockArrivalSkus/);
   });
 });

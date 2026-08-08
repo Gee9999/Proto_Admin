@@ -1,6 +1,6 @@
 import { requireOwner } from './_admin-auth.js';
 import { loadTaxonomy } from './_taxonomy-utils.js';
-import { getStockClient, enrichRowsWithProductStock } from './_stock-client.js';
+import { getStockClient, enrichRowsWithProductStock, fetchIncomingStockArrivalSkus } from './_stock-client.js';
 import {
   adaptCatalogRow,
   applySearchFilter,
@@ -305,6 +305,7 @@ export default async function handler(req, res) {
   const categoryPath = parseCategoryPath(req.query.categoryPath);
   const sort = String(req.query.sort || 'title').trim();
   const onlyInStock = req.query.onlyInStock === 'true' || req.query.onlyInStock === '1';
+  const availableNowOnly = req.query.availableNowOnly === 'true' || req.query.availableNowOnly === '1';
   const toOrderOnly = req.query.toOrderOnly === 'true' || req.query.toOrderOnly === '1';
 
   try {
@@ -337,7 +338,7 @@ export default async function handler(req, res) {
       // invisible to the SQL count, so they force the full scan too — but only
       // for a category that actually has placements, so the fast path survives
       // everywhere else.
-      const useFullScan = onlyInStock || isMotarroBrowsePath(categoryPath) || term
+      const useFullScan = onlyInStock || availableNowOnly || isMotarroBrowsePath(categoryPath) || term
         || categoryPathExceedsFixedColumns(categoryPath) || placedSkus.size > 0 || bigSuppression;
       if (useFullScan) {
         let rows;
@@ -352,6 +353,10 @@ export default async function handler(req, res) {
         // rows, placed rows, and the >MAX big-list case are filtered here.
         if (suppressSet.size) rows = rows.filter((r) => !suppressSet.has(normalizeMemberSku(r.sku)));
         rows = await enrichRowsWithProductStock(sb, rows);
+        const arrivedSkus = availableNowOnly ? await fetchIncomingStockArrivalSkus(sb) : null;
+        if (availableNowOnly) {
+          rows = rows.filter((r) => arrivedSkus.has(r.sku));
+        }
         if (onlyInStock) {
           rows = rows.filter(isPublishableOnWebsite);
         }

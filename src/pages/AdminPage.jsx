@@ -3728,7 +3728,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                             <option value="none">No incoming stock</option>
                             <option value="on_the_way">On the way</option>
                             <option value="customs">In customs</option>
-                            <option value="landed_awaiting_grv">Landed — awaiting GRV</option>
+                            <option value="landed_awaiting_grv">Stock has arrived</option>
                             <option value="partially_received">Partially received</option>
                           </select>
                           {productForm.incomingStatus !== 'none' && (
@@ -3755,7 +3755,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                           )}
                           {['landed_awaiting_grv', 'partially_received'].includes(productForm.incomingStatus) && (
                             <span style={{ fontSize: 12, color: '#245aa7', fontWeight: 700 }}>
-                              Customers can order this while receiving is completed; the quote confirms final quantity.
+                              Stock has arrived at our warehouse and is being prepared for sale. Customers can add it to their order now; final availability will be confirmed on the quotation.
                             </span>
                           )}
                         </>

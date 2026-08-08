@@ -47,8 +47,9 @@ export async function fetchTaxonomy({ withCounts = false } = {}) {
   }
 }
 
-export async function fetchCategoryProductCounts({ onlyInStock = false, fresh = false } = {}) {
+export async function fetchCategoryProductCounts({ onlyInStock = false, availableNowOnly = false, fresh = false } = {}) {
   const stockParam = onlyInStock ? '&onlyInStock=1' : '';
+  const arrivalParam = availableNowOnly ? '&availableNowOnly=1' : '';
   // Let the server's 15s SWR edge cache serve this — it's a full website_stock
   // scan, and busting it (a unique ?_=Date.now() + no-store) forced that scan on
   // every dashboard load and every concurrent admin. Counts don't set the edit
@@ -59,7 +60,7 @@ export async function fetchCategoryProductCounts({ onlyInStock = false, fresh = 
   // the category shows its old count, or none, and a rename that worked looks
   // broken. Only that path pays for a fresh scan.
   const bust = fresh ? `&_=${Date.now()}` : '';
-  const res = await fetch(`/api/taxonomy?counts=1${stockParam}${bust}`, fresh ? { cache: 'no-store' } : undefined);
+  const res = await fetch(`/api/taxonomy?counts=1${stockParam}${arrivalParam}${bust}`, fresh ? { cache: 'no-store' } : undefined);
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || 'Failed to load category counts');
   // Do NOT set _taxonomyUpdatedAt here — see fetchTaxonomy note; the counts
