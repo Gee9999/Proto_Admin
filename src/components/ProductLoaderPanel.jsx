@@ -15,6 +15,7 @@ import categories from '../data/categories.json';
 import { isImageFile } from '../lib/parseIntakeFilename.js';
 import { readApiJson } from '../lib/apiError.js';
 import ProductLoaderNutstore from './productLoader/ProductLoaderNutstore';
+import ProductLoaderDormantQueue from './productLoader/ProductLoaderDormantQueue';
 import ProductLoaderUpload from './productLoader/ProductLoaderUpload';
 import ProductLoaderPublishSuccess from './productLoader/ProductLoaderPublishSuccess';
 import { ADMIN_REFRESH_EVENT } from '../lib/adminRefresh';
@@ -22,6 +23,7 @@ import { catalogueDisplayTitle, catalogueDescription } from '../lib/productLoade
 
 const LOADER_TABS = [
   { id: 'nutstore', label: 'Nutstore' },
+  { id: 'image-centre', label: 'Image Processing Centre' },
   { id: 'upload', label: 'Upload' },
 ];
 
@@ -185,13 +187,19 @@ export default function ProductLoaderPanel({
   const [dormantEdits, setDormantEdits] = useState({});
   const [dormantLoading, setDormantLoading] = useState(false);
   const [dormantSaving, setDormantSaving] = useState('');
+  const [dormantLoadError, setDormantLoadError] = useState('');
+  const [dormantRequested, setDormantRequested] = useState(false);
   const singleProductRef = useRef(null);
 
   const loadDormant = useCallback(async () => {
+    setDormantRequested(true);
     setDormantLoading(true);
+    setDormantLoadError('');
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000);
     try {
-      const res = await fetch('/api/product-loader-dormant');
-      const json = await res.json();
+      const res = await fetch('/api/product-loader-dormant', { signal: controller.signal });
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'Failed to load dormant queue');
       const rows = json.rows || [];
       setDormantRows(rows);
@@ -201,23 +209,31 @@ export default function ProductLoaderPanel({
       }
       setDormantEdits(edits);
     } catch (err) {
-      onShowToast?.(err.message || 'Failed to load dormant products', 'error');
+      const message = err?.name === 'AbortError'
+        ? 'Image Processing Centre timed out while loading. Retry to load it again.'
+        : (err.message || 'Failed to load image processing queue');
+      setDormantLoadError(message);
     } finally {
+      window.clearTimeout(timeoutId);
       setDormantLoading(false);
     }
-  }, [taxonomyTree, onShowToast]);
+  }, [taxonomyTree]);
 
   useEffect(() => {
-    void loadDormant();
-  }, [loadDormant]);
+    if (activeTab === 'image-centre' && !dormantRequested && !dormantLoading) {
+      void loadDormant();
+    }
+  }, [activeTab, dormantRequested, dormantLoading, loadDormant]);
 
   useEffect(() => {
     const onRefresh = (event) => {
-      if (event.detail === 'product-loader') void loadDormant();
+      if (event.detail === 'product-loader' && (activeTab === 'image-centre' || dormantRequested)) {
+        void loadDormant();
+      }
     };
     window.addEventListener(ADMIN_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(ADMIN_REFRESH_EVENT, onRefresh);
-  }, [loadDormant]);
+  }, [activeTab, dormantRequested, loadDormant]);
 
   useEffect(() => {
     let cancelled = false;
@@ -862,7 +878,7 @@ export default function ProductLoaderPanel({
     if (!item?.code) return;
     if (!batchDefaultCategoryId || !batchDefaultSub1Id) {
       onShowToast?.('Pick default category and subcategory first (folder tab or below)', 'warning');
-      setActiveTab('dormant');
+      setActiveTab('image-centre');
       return;
     }
     const labels = categoryLabelsFromIds(taxonomyTree, batchDefaultCategoryId, batchDefaultSub1Id, '');
@@ -957,6 +973,25 @@ export default function ProductLoaderPanel({
           batchOverwrite={batchOverwrite}
           setBatchOverwrite={setBatchOverwrite}
           onShowToast={onShowToast}
+        />
+      )}
+
+      {activeTab === 'image-centre' && (
+        <ProductLoaderDormantQueue
+          taxonomyTree={taxonomyTree}
+          rows={dormantRows}
+          edits={dormantEdits}
+          setEdits={setDormantEdits}
+          loading={dormantLoading}
+          saving={dormantSaving}
+          error={dormantLoadError}
+          loaded={dormantRequested}
+          onRefresh={() => void loadDormant()}
+          onRetry={() => void loadDormant()}
+          onSaveCategories={saveDormantCategories}
+          onRemove={removeDormantRow}
+          onOpen={openAdvanced}
+          onPublish={handlePublish}
         />
       )}
 

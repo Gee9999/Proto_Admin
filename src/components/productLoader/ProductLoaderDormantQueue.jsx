@@ -1,4 +1,4 @@
-import { Loader2, PackagePlus, RefreshCw, Sparkles, Trash2 } from 'lucide-react';
+import { AlertTriangle, Loader2, PackagePlus, RefreshCw, Trash2 } from 'lucide-react';
 import { classifyDormantRow, DORMANT_SECTION_LABELS } from '../../lib/parseIntakeFilename';
 
 function findNode(tree, id) {
@@ -23,7 +23,10 @@ export default function ProductLoaderDormantQueue({
   setEdits,
   loading,
   saving,
+  error = '',
+  loaded = false,
   onRefresh,
+  onRetry,
   onSaveCategories,
   onRemove,
   onOpen,
@@ -46,7 +49,9 @@ export default function ProductLoaderDormantQueue({
     if (!list.length) return null;
     return (
       <section key={key} className="pl-dormant-section">
-        <h4>{DORMANT_SECTION_LABELS[key]} <span className="adm-muted">({list.length})</span></h4>
+        <h4>
+          {DORMANT_SECTION_LABELS[key]} <span className="adm-muted">({list.length})</span>
+        </h4>
         <div className="pl-dormant-list">
           {list.map((row) => {
             const edit = edits[row.sku] || { categoryId: '', sub1Id: '', sub2Id: '', sub3Id: '', sub4Id: '' };
@@ -63,12 +68,26 @@ export default function ProductLoaderDormantQueue({
                   <span className="adm-muted">R{Number(row.price || 0).toFixed(2)}</span>
                 </div>
                 <div className="pl-dormant-card-fields">
-                  <select className="adm-select adm-select--enhanced" value={edit.categoryId} onChange={(e) => setEdits((prev) => ({ ...prev, [row.sku]: { ...edit, categoryId: e.target.value, sub1Id: '' } }))}>
+                  <select
+                    className="adm-select adm-select--enhanced"
+                    value={edit.categoryId}
+                    onChange={(e) => setEdits((prev) => ({
+                      ...prev,
+                      [row.sku]: { ...edit, categoryId: e.target.value, sub1Id: '' },
+                    }))}
+                  >
                     <option value="">Category</option>
                     {taxonomyTree.map((cat) => <option key={cat.id} value={cat.id}>{cat.label}</option>)}
                   </select>
                   {sub1Options.length > 0 && (
-                    <select className="adm-select adm-select--enhanced" value={edit.sub1Id} onChange={(e) => setEdits((prev) => ({ ...prev, [row.sku]: { ...edit, sub1Id: e.target.value } }))}>
+                    <select
+                      className="adm-select adm-select--enhanced"
+                      value={edit.sub1Id}
+                      onChange={(e) => setEdits((prev) => ({
+                        ...prev,
+                        [row.sku]: { ...edit, sub1Id: e.target.value },
+                      }))}
+                    >
                       <option value="">Subcategory</option>
                       {sub1Options.map((opt) => <option key={opt.id} value={opt.id}>{opt.label}</option>)}
                     </select>
@@ -102,15 +121,27 @@ export default function ProductLoaderDormantQueue({
   return (
     <div className="pl-section">
       <div className="pl-section-head-row">
-        <p className="pl-section-note">Products waiting for images, categories, or approval before going live.</p>
+        <p className="pl-section-note">Review staged products before approval. Originals stay intact until publish.</p>
         <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={onRefresh} disabled={loading}>
           {loading ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
-          Refresh
+          Refresh queue
         </button>
       </div>
 
-      {loading && !rows.length && <p className="adm-muted"><Loader2 size={14} className="spin" /> Loading…</p>}
-      {!loading && !rows.length && <p className="adm-muted">No dormant products yet.</p>}
+      {error && (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 12px', borderRadius: 8, border: '1px solid #fecaca', background: '#fef2f2', color: '#991b1b', marginBottom: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+            <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+            <span>{error}</span>
+          </div>
+          <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={onRetry} disabled={loading}>
+            Retry queue load
+          </button>
+        </div>
+      )}
+
+      {loading && !rows.length && <p className="adm-muted"><Loader2 size={14} className="spin" /> Loading queue...</p>}
+      {!loading && !rows.length && loaded && !error && <p className="adm-muted">No products are waiting in Image Processing Centre.</p>}
 
       {renderSection('waitingImages')}
       {renderSection('waitingCategories')}

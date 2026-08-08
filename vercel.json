@@ -97,6 +97,9 @@
     "api/customer-email-broadcast.js": {
       "maxDuration": 300
     },
+    "api/product-loader-dormant.js": {
+      "maxDuration": 60
+    },
     "api/nutstore-batch-lookup.js": {
       "maxDuration": 30
     },
