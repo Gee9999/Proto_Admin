@@ -322,12 +322,21 @@ export async function transformWithOpenRouter(base64, contentType, {
   };
 }
 
-export async function uploadTransformedImage(buffer, filename, contentType = 'image/png', { staging = false, sku, slot } = {}) {
+export async function uploadTransformedImage(buffer, filename, contentType = 'image/png', {
+  staging = false,
+  stagingPath = '',
+  sku,
+  slot,
+} = {}) {
   const supabase = getStockAdminClient();
   await supabase.storage.createBucket(BUCKET, { public: true }).catch(() => {});
 
+  const requestedStagingPath = String(stagingPath || '').trim();
+  if (requestedStagingPath && !requestedStagingPath.startsWith('staging/')) {
+    throw new Error('stagingPath must remain inside staging storage');
+  }
   const safeName = staging
-    ? buildStagingObjectPath(sku, slot)
+    ? (requestedStagingPath || buildStagingObjectPath(sku, slot))
     : `gen-${Date.now()}-${String(filename || 'product').replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.[^.]+$/, '')}.jpg`;
   const { error } = await supabase.storage.from(BUCKET).upload(safeName, buffer, { contentType, upsert: false });
   if (error) throw new Error(error.message);
@@ -350,6 +359,7 @@ export async function fixImageFromUrl(imageUrl, {
   referenceImageUrl = null,
   targetSlot = 1,
   staging = false,
+  stagingPath = '',
 } = {}) {
   const style = imageStyle || IMAGE_STYLES.standard;
   let refBase64 = null;
@@ -383,11 +393,49 @@ export async function fixImageFromUrl(imageUrl, {
     resized,
     `${sku}-s${targetSlot}.jpg`,
     'image/jpeg',
-    { staging, sku, slot: targetSlot },
+    { staging, stagingPath, sku, slot: targetSlot },
   );
   const url = typeof uploadResult === 'string' ? uploadResult : uploadResult.url;
   return {
     url,
+    storagePath: typeof uploadResult === 'object' ? uploadResult.storagePath : null,
+    model: transformed.model,
+    tokensIn: transformed.tokensIn,
+    tokensOut: transformed.tokensOut,
+    costUsd: transformed.costUsd,
+    imageStyle: style,
+  };
+}
+
+/** Preview-only sibling of fixImageFromUrl for authenticated Nutstore files.
+ * The source buffer is never written back to a product; only the generated
+ * result is saved to a dated staging object. */
+export async function fixImageFromBuffer(buffer, contentType, filename = 'product.jpg', {
+  sku = 'product',
+  prompt,
+  imageStyle = IMAGE_STYLES.standard,
+  targetSlot = 1,
+  staging = false,
+  stagingPath = '',
+} = {}) {
+  if (!buffer?.length) throw new Error('No source image data');
+  const style = imageStyle || IMAGE_STYLES.standard;
+  const finalPrompt = prompt || buildImagePrompt({ style, targetSlot });
+  const transformed = await transformWithOpenRouter(Buffer.from(buffer).toString('base64'), contentType || 'image/jpeg', {
+    prompt: finalPrompt,
+    model: resolveImageModel(style, targetSlot),
+    imageStyle: style,
+    targetSlot,
+  });
+  const resized = await resizeTo800White(transformed.buffer);
+  const uploadResult = await uploadTransformedImage(resized, filename, 'image/jpeg', {
+    staging,
+    stagingPath,
+    sku,
+    slot: targetSlot,
+  });
+  return {
+    url: typeof uploadResult === 'string' ? uploadResult : uploadResult.url,
     storagePath: typeof uploadResult === 'object' ? uploadResult.storagePath : null,
     model: transformed.model,
     tokensIn: transformed.tokensIn,
