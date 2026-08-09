@@ -6,6 +6,26 @@ function isMissingColumn(error, column) {
   return new RegExp(`column.*${column}|${column}.*does not exist`, 'i').test(String(error?.message || ''));
 }
 
+/**
+ * Only delete staged objects which were created under this exact review job.
+ * URL-only source images can be external, and must never be treated as
+ * deletable storage merely because their URL happens to contain /staging/.
+ */
+export function ownedImageJobStagingUrls(job = {}) {
+  const id = String(job.id || '').trim();
+  if (!id) return [];
+  const prefix = `staging/image-processing/${id}/`;
+  return [
+    ['source_url', 'source_storage_path'],
+    ['processed_url', 'processed_storage_path'],
+  ].flatMap(([urlKey, pathKey]) => {
+    const url = String(job[urlKey] || '').trim();
+    const declaredPath = String(job[pathKey] || '').trim();
+    const actualPath = storagePathFromPublicUrl(url);
+    return declaredPath.startsWith(prefix) && actualPath === declaredPath ? [url] : [];
+  });
+}
+
 /** Daily cron — remove expired Approval previews and staging/* storage objects. */
 export default async function handler(req, res) {
   if (!(await requireCronOrAdminKey(req, res))) return;
@@ -86,7 +106,7 @@ export default async function handler(req, res) {
   // source/candidate files expire after seven days if they were not applied.
   const { data: jobs, error: jobsError } = await sb
     .from('image_processing_review_jobs')
-    .select('id, source_url, processed_url')
+    .select('id, source_url, processed_url, source_storage_path, processed_storage_path')
     .in('status', ['queued', 'needs_attention', 'ready_for_review', 'approved'])
     .lte('expires_at', now)
     .limit(500);
@@ -95,7 +115,7 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: jobsError.message });
   }
   for (const job of jobs || []) {
-    const { removed } = await removeStagingObjects(sb, [job.source_url, job.processed_url], { skipLiveReferenced: false });
+    const { removed } = await removeStagingObjects(sb, ownedImageJobStagingUrls(job), { skipLiveReferenced: false });
     purgedImageJobFiles += removed;
     const { error: updateError } = await sb
       .from('image_processing_review_jobs')
