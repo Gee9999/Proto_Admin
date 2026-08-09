@@ -15,6 +15,7 @@ import categories from '../data/categories.json';
 import { isImageFile } from '../lib/parseIntakeFilename.js';
 import { readApiJson } from '../lib/apiError.js';
 import ProductLoaderNutstore from './productLoader/ProductLoaderNutstore';
+import ProductLoaderDormantQueue from './productLoader/ProductLoaderDormantQueue';
 import ProductLoaderUpload from './productLoader/ProductLoaderUpload';
 import ProductLoaderPublishSuccess from './productLoader/ProductLoaderPublishSuccess';
 import { ADMIN_REFRESH_EVENT } from '../lib/adminRefresh';
@@ -22,6 +23,7 @@ import { catalogueDisplayTitle, catalogueDescription } from '../lib/productLoade
 
 const LOADER_TABS = [
   { id: 'nutstore', label: 'Nutstore' },
+  { id: 'image-centre', label: 'Image Processing Centre' },
   { id: 'upload', label: 'Upload' },
 ];
 
@@ -185,13 +187,30 @@ export default function ProductLoaderPanel({
   const [dormantEdits, setDormantEdits] = useState({});
   const [dormantLoading, setDormantLoading] = useState(false);
   const [dormantSaving, setDormantSaving] = useState('');
+  const [dormantLoadError, setDormantLoadError] = useState('');
+  const [dormantRequested, setDormantRequested] = useState(false);
+  const [imageIntakeText, setImageIntakeText] = useState('');
+  const [imageIntakeItems, setImageIntakeItems] = useState([]);
+  const [imageIntakeLoading, setImageIntakeLoading] = useState(false);
+  const [imageIntakeError, setImageIntakeError] = useState('');
+  const [imageJobs, setImageJobs] = useState([]);
+  const [selectedImageJobId, setSelectedImageJobId] = useState('');
+  const [imageJobsLoading, setImageJobsLoading] = useState(false);
+  const [imageJobsRequested, setImageJobsRequested] = useState(false);
+  const [imageJobsError, setImageJobsError] = useState('');
+  const [imageProcessingHealth, setImageProcessingHealth] = useState(null);
+  const [imageJobBusy, setImageJobBusy] = useState('');
   const singleProductRef = useRef(null);
 
   const loadDormant = useCallback(async () => {
+    setDormantRequested(true);
     setDormantLoading(true);
+    setDormantLoadError('');
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000);
     try {
-      const res = await fetch('/api/product-loader-dormant');
-      const json = await res.json();
+      const res = await fetch('/api/product-loader-dormant', { signal: controller.signal });
+      const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error || 'Failed to load dormant queue');
       const rows = json.rows || [];
       setDormantRows(rows);
@@ -201,23 +220,64 @@ export default function ProductLoaderPanel({
       }
       setDormantEdits(edits);
     } catch (err) {
-      onShowToast?.(err.message || 'Failed to load dormant products', 'error');
+      const message = err?.name === 'AbortError'
+        ? 'Image Processing Centre timed out while loading. Retry to load it again.'
+        : (err.message || 'Failed to load image processing queue');
+      setDormantLoadError(message);
     } finally {
+      window.clearTimeout(timeoutId);
       setDormantLoading(false);
     }
-  }, [taxonomyTree, onShowToast]);
+  }, [taxonomyTree]);
+
+  const loadImageJobs = useCallback(async () => {
+    setImageJobsRequested(true);
+    setImageJobsLoading(true);
+    setImageJobsError('');
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), 15000);
+    try {
+      const [jobsResponse, healthResponse] = await Promise.all([
+        fetch('/api/image-processing-jobs?action=list', { signal: controller.signal }),
+        fetch('/api/image-processing-jobs?action=health', { signal: controller.signal }),
+      ]);
+      const jobsJson = await readApiJson(jobsResponse, { fallback: 'Failed to load the image-processing queue' });
+      setImageJobs(jobsJson.jobs || []);
+      setSelectedImageJobId((current) => (
+        (jobsJson.jobs || []).some((job) => job.id === current) ? current : (jobsJson.jobs || [])[0]?.id || ''
+      ));
+      if (healthResponse.ok) {
+        setImageProcessingHealth(await healthResponse.json().catch(() => null));
+      } else {
+        setImageProcessingHealth(null);
+      }
+    } catch (err) {
+      setImageJobsError(err?.name === 'AbortError'
+        ? 'Image Processing Centre timed out while loading. Retry to load it again.'
+        : (err.message || 'Failed to load the image-processing queue'));
+    } finally {
+      window.clearTimeout(timeoutId);
+      setImageJobsLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    void loadDormant();
-  }, [loadDormant]);
+    if (activeTab === 'image-centre') {
+      if (!dormantRequested && !dormantLoading) void loadDormant();
+      if (!imageJobsRequested && !imageJobsLoading) void loadImageJobs();
+    }
+  }, [activeTab, dormantRequested, dormantLoading, imageJobsRequested, imageJobsLoading, loadDormant, loadImageJobs]);
 
   useEffect(() => {
     const onRefresh = (event) => {
-      if (event.detail === 'product-loader') void loadDormant();
+      if (event.detail === 'product-loader' && (activeTab === 'image-centre' || dormantRequested)) {
+        void loadDormant();
+        void loadImageJobs();
+      }
     };
     window.addEventListener(ADMIN_REFRESH_EVENT, onRefresh);
     return () => window.removeEventListener(ADMIN_REFRESH_EVENT, onRefresh);
-  }, [loadDormant]);
+  }, [activeTab, dormantRequested, loadDormant, loadImageJobs]);
 
   useEffect(() => {
     let cancelled = false;
@@ -862,7 +922,7 @@ export default function ProductLoaderPanel({
     if (!item?.code) return;
     if (!batchDefaultCategoryId || !batchDefaultSub1Id) {
       onShowToast?.('Pick default category and subcategory first (folder tab or below)', 'warning');
-      setActiveTab('dormant');
+      setActiveTab('image-centre');
       return;
     }
     const labels = categoryLabelsFromIds(taxonomyTree, batchDefaultCategoryId, batchDefaultSub1Id, '');
@@ -894,6 +954,170 @@ export default function ProductLoaderPanel({
   const openAdvanced = (code) => {
     setActiveTab('upload');
     onShowToast?.(`Open Single Image tab and upload an image for ${code}`, 'success');
+  };
+
+  const lookupImageIntake = async () => {
+    const paths = imageIntakeText.split(/\r?\n/).map((path) => path.trim()).filter(Boolean);
+    if (!paths.length) {
+      setImageIntakeError('Paste at least one Nutstore image path.');
+      return;
+    }
+    setImageIntakeLoading(true);
+    setImageIntakeError('');
+    try {
+      const res = await fetch('/api/nutstore-batch-lookup', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths, purpose: 'image_processing' }),
+      });
+      const json = await readApiJson(res, { fallback: 'Nutstore image lookup failed' });
+      setImageIntakeItems(json.items || []);
+    } catch (err) {
+      setImageIntakeError(err.message || 'Nutstore image lookup failed');
+    } finally {
+      setImageIntakeLoading(false);
+    }
+  };
+
+  const imageProcessingApi = async (body, fallback) => {
+    const res = await fetch('/api/image-processing-jobs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return readApiJson(res, { fallback });
+  };
+
+  const queueImageIntakeItem = async (item) => {
+    if (!item?.canQueue) return;
+    setImageJobBusy('queue');
+    try {
+      const result = await imageProcessingApi({
+        action: 'queue',
+        sku: item.code,
+        targetSlot: item.imageSlot || 1,
+        nutstorePath: item.path,
+        filename: item.filename,
+      }, 'Could not queue this Nutstore image for review');
+      setSelectedImageJobId(result.job?.id || '');
+      await loadImageJobs();
+      onShowToast?.(`${item.code} is saved in the Image Processing Centre review queue.`, 'success');
+    } catch (err) {
+      onShowToast?.(err.message || 'Could not queue this Nutstore image for review.', 'error');
+    } finally {
+      setImageJobBusy('');
+    }
+  };
+
+  const processSelectedImageJob = async () => {
+    const job = imageJobs.find((item) => item.id === selectedImageJobId);
+    if (!job) return;
+    setImageJobBusy('process');
+    try {
+      await imageProcessingApi({ action: 'process', jobId: job.id }, 'Image processing failed');
+      await loadImageJobs();
+      onShowToast?.('Candidate created and held for review. No live image was changed.', 'success');
+    } catch (err) {
+      await loadImageJobs();
+      onShowToast?.(err.message || 'Image processing failed.', 'error');
+    } finally {
+      setImageJobBusy('');
+    }
+  };
+
+  const uploadManualCandidate = async (file) => {
+    const job = imageJobs.find((item) => item.id === selectedImageJobId);
+    if (!job || !file) return;
+    setImageJobBusy('candidate');
+    try {
+      const candidateBase64 = await fileToBase64(file);
+      await imageProcessingApi({
+        action: 'upload_candidate',
+        jobId: job.id,
+        candidateBase64,
+        candidateContentType: file.type || 'image/jpeg',
+      }, 'Could not save the manual candidate');
+      await loadImageJobs();
+      onShowToast?.('Manual candidate is ready for before-and-after review.', 'success');
+    } catch (err) {
+      onShowToast?.(err.message || 'Could not save the manual candidate.', 'error');
+    } finally {
+      setImageJobBusy('');
+    }
+  };
+
+  const approveSelectedImageJob = async ({ reviewChecklist, reviewNotes } = {}) => {
+    const job = imageJobs.find((item) => item.id === selectedImageJobId);
+    if (!job) return;
+    setImageJobBusy('approve');
+    try {
+      await imageProcessingApi({ action: 'approve', jobId: job.id, reviewChecklist, reviewNotes }, 'Could not approve this review candidate');
+      await loadImageJobs();
+      onShowToast?.('Review recorded. The staged image still has not changed the live catalogue.', 'success');
+    } catch (err) {
+      onShowToast?.(err.message || 'Could not approve this review candidate.', 'error');
+    } finally {
+      setImageJobBusy('');
+    }
+  };
+
+  const applySelectedImageJob = async (confirmSku) => {
+    const job = imageJobs.find((item) => item.id === selectedImageJobId);
+    if (!job) return;
+    setImageJobBusy('apply');
+    try {
+      await imageProcessingApi({ action: 'apply', jobId: job.id, confirmSku }, 'Could not apply this approved image');
+      await loadImageJobs();
+      onShowToast?.(`Approved image applied to ${job.sku} slot ${job.targetSlot}.`, 'success');
+    } catch (err) {
+      await loadImageJobs();
+      onShowToast?.(err.message || 'Could not apply this approved image.', 'error');
+    } finally {
+      setImageJobBusy('');
+    }
+  };
+
+  const discardSelectedImageJob = async () => {
+    const job = imageJobs.find((item) => item.id === selectedImageJobId);
+    if (!job) return;
+    setImageJobBusy('discard');
+    try {
+      await imageProcessingApi({ action: 'discard', jobId: job.id }, 'Could not discard this review job');
+      await loadImageJobs();
+      onShowToast?.('Review job discarded. Its staged files will not be applied.', 'success');
+    } catch (err) {
+      onShowToast?.(err.message || 'Could not discard this review job.', 'error');
+    } finally {
+      setImageJobBusy('');
+    }
+  };
+
+  const sendUploadedImageToCentre = async (item) => {
+    const exactSku = item?.websiteRow
+      && String(item.websiteRow.sku || '').trim().toUpperCase() === String(item.code || '').trim().toUpperCase();
+    if (!item?.file || !exactSku) {
+      onShowToast?.('This upload needs an exact existing website SKU before it can enter Image Processing Centre.', 'warning');
+      return;
+    }
+    setImageJobBusy('queue');
+    try {
+      const sourceBase64 = await fileToBase64(item.file);
+      const result = await imageProcessingApi({
+        action: 'queue',
+        sku: item.code,
+        targetSlot: item.imageSlot || 1,
+        sourceBase64,
+        sourceContentType: item.file.type || 'image/jpeg',
+        filename: item.filename,
+      }, 'Could not save this upload in Image Processing Centre');
+      setSelectedImageJobId(result.job?.id || '');
+      setActiveTab('image-centre');
+      await loadImageJobs();
+      onShowToast?.(`${item.filename} is saved in Image Processing Centre for manual review.`, 'success');
+    } catch (err) {
+      onShowToast?.(err.message || 'Could not prepare the uploaded image for review.', 'error');
+    } finally {
+      setImageJobBusy('');
+    }
   };
 
   return (
@@ -957,6 +1181,45 @@ export default function ProductLoaderPanel({
           batchOverwrite={batchOverwrite}
           setBatchOverwrite={setBatchOverwrite}
           onShowToast={onShowToast}
+          onSendToImageCentre={sendUploadedImageToCentre}
+          imageCentreQueueCount={imageJobs.filter((job) => !['applied', 'discarded', 'expired'].includes(job.status)).length}
+        />
+      )}
+
+      {activeTab === 'image-centre' && (
+        <ProductLoaderDormantQueue
+          taxonomyTree={taxonomyTree}
+          rows={dormantRows}
+          edits={dormantEdits}
+          setEdits={setDormantEdits}
+          loading={dormantLoading}
+          saving={dormantSaving}
+          error={dormantLoadError}
+          loaded={dormantRequested}
+          onRefresh={() => { void loadDormant(); void loadImageJobs(); }}
+          onRetry={() => { void loadDormant(); void loadImageJobs(); }}
+          onSaveCategories={saveDormantCategories}
+          onRemove={removeDormantRow}
+          onOpen={openAdvanced}
+          imageIntakeText={imageIntakeText}
+          setImageIntakeText={setImageIntakeText}
+          imageIntakeItems={imageIntakeItems}
+          imageIntakeLoading={imageIntakeLoading}
+          imageIntakeError={imageIntakeError}
+          onLookupImageIntake={() => void lookupImageIntake()}
+          onQueueImageIntake={queueImageIntakeItem}
+          imageJobs={imageJobs}
+          imageJobsLoading={imageJobsLoading}
+          imageJobsError={imageJobsError}
+          imageProcessingHealth={imageProcessingHealth}
+          selectedImageJobId={selectedImageJobId}
+          onSelectImageJob={setSelectedImageJobId}
+          imageJobBusy={imageJobBusy}
+          onProcessImageJob={() => void processSelectedImageJob()}
+          onUploadManualCandidate={uploadManualCandidate}
+          onApproveImageJob={approveSelectedImageJob}
+          onApplyImageJob={applySelectedImageJob}
+          onDiscardImageJob={() => void discardSelectedImageJob()}
         />
       )}
 

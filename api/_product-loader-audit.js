@@ -37,6 +37,32 @@ export async function logProductLoaderAudit(sb, {
   }
 }
 
+/**
+ * Write workflow evidence that must exist before a safety-sensitive action.
+ * The legacy helper deliberately best-effort logs routine Product Loader
+ * publishes; Image Processing Centre approval/apply is stricter and must stop
+ * if its audit evidence cannot be written.
+ */
+export async function writeRequiredProductPublishAudit(sb, input) {
+  const cleanSku = String(input?.sku || '').trim().toUpperCase();
+  if (!cleanSku) throw new Error('An audit SKU is required');
+  const payload = {
+    sku: cleanSku,
+    action: input?.action === 'create' ? 'create' : 'update',
+    source: String(input?.source || 'image_processing_centre'),
+    publish_mode: String(input?.publishMode || 'ipc_review'),
+    image_slot: input?.imageSlot != null ? Number(input.imageSlot) : null,
+    image_source: input?.imageSource ? String(input.imageSource) : null,
+    category_confidence: input?.categoryConfidence != null ? Number(input.categoryConfidence) : null,
+    old_values: input?.oldValues ?? null,
+    new_values: input?.newValues ?? {},
+    published_by: input?.publishedBy ? String(input.publishedBy) : null,
+    published_at: new Date().toISOString(),
+  };
+  const { error } = await sb.from('product_publish_audit').insert(payload);
+  if (error) throw new Error(`Could not record required image-processing audit evidence: ${error.message}`);
+}
+
 export function auditOutcomeFromRow(row) {
   const outcome = row?.new_values?.outcome;
   if (outcome === 'dormant') return 'dormant';

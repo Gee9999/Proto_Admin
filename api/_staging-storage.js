@@ -20,6 +20,62 @@ export function buildLiveObjectPath(sku, slot = 1) {
   return `${safeSku}/${s}.jpg`;
 }
 
+/**
+ * Immutable permanent object for an explicitly approved Image Processing
+ * Centre result. Unlike buildLiveObjectPath(), this never replaces the
+ * existing SKU/slot object, which keeps a rollback target intact and avoids
+ * changing storage before the database stale-write check succeeds.
+ */
+export function buildImageProcessingLiveObjectPath(sku, slot = 1, attemptId = '') {
+  const safeSku = String(sku || 'product').replace(/[^a-zA-Z0-9._-]/g, '_');
+  const s = Math.min(4, Math.max(1, Number(slot) || 1));
+  const safeAttempt = String(attemptId || Date.now()).replace(/[^a-zA-Z0-9._-]/g, '_');
+  return `image-processing/live/${safeSku}/s${s}/${safeAttempt}.jpg`;
+}
+
+function isImageProcessingStagingPath(path) {
+  return String(path || '').startsWith('staging/image-processing/');
+}
+
+function isImageProcessingLivePath(path) {
+  return String(path || '').startsWith('image-processing/live/');
+}
+
+/**
+ * Copy (never move) an approved IPC staging candidate into a versioned live
+ * location. The caller must still conditionally update website_stock after
+ * this succeeds; if that update loses a race, removeImageProcessingLiveUrl()
+ * removes this copy and the staged candidate remains recoverable.
+ */
+export async function copyImageProcessingStagedUrlToLive(supabase, url, sku, slot = 1, attemptId = '') {
+  const sourcePath = storagePathFromPublicUrl(url);
+  if (!isImageProcessingStagingPath(sourcePath)) {
+    throw new Error('Approved image is not an Image Processing Centre staging candidate');
+  }
+  const destinationPath = buildImageProcessingLiveObjectPath(sku, slot, attemptId);
+  const bucket = supabase.storage.from(BUCKET);
+  const { error } = await bucket.copy(sourcePath, destinationPath);
+  if (error) throw new Error(`Could not preserve approved image: ${error.message}`);
+  return { path: destinationPath, url: publicUrlForPath(supabase, destinationPath) };
+}
+
+/** Remove only an IPC versioned copy that was not applied to website_stock. */
+export async function removeImageProcessingLiveUrl(supabase, url) {
+  const path = storagePathFromPublicUrl(url);
+  if (!isImageProcessingLivePath(path)) return { removed: 0 };
+  const { error } = await supabase.storage.from(BUCKET).remove([path]);
+  if (error) {
+    console.warn('removeImageProcessingLiveUrl:', error.message);
+    return { removed: 0 };
+  }
+  return { removed: 1 };
+}
+
+export function isImageProcessingAssetUrl(url) {
+  const path = storagePathFromPublicUrl(url);
+  return isImageProcessingStagingPath(path) || isImageProcessingLivePath(path);
+}
+
 export function publicUrlForPath(supabase, path) {
   const { data: { publicUrl } } = supabase.storage.from(BUCKET).getPublicUrl(path);
   return publicUrl;

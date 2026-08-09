@@ -6,6 +6,8 @@ import { labelsToDbFields } from './_taxonomy-utils.js';
 import { fetchProductLookupMap, findProductBySku } from './_sku-match.js';
 import { canonicalPublishValues } from '../lib/catalogue-safety.mjs';
 import { normalizeUnitsOfIssue } from '../lib/selling-unit.mjs';
+import { previewPublishBlock } from '../lib/preview-publish-guard.mjs';
+import { isImageProcessingAssetUrl } from './_staging-storage.js';
 
 function getStockClient() {
   return createClient(
@@ -21,6 +23,15 @@ export default async function handler(req, res) {
   if (!(await requireOwner(req, res))) return;
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).end();
+
+  // Preview is a review-only environment. This is deliberately enforced on
+  // the server before a catalogue client is created, not merely by disabling a
+  // button in the browser.
+  const previewBlock = previewPublishBlock();
+  if (previewBlock) return res.status(previewBlock.status).json({
+    error: previewBlock.error,
+    code: previewBlock.code,
+  });
 
   const {
     code,
@@ -74,6 +85,12 @@ export default async function handler(req, res) {
   if (!Object.keys(slotUrls).length && imageUrl) slotUrls[singleSlot] = String(imageUrl).trim();
   const filledSlots = Object.keys(slotUrls).map(Number).sort((a, b) => a - b);
   if (!filledSlots.length) return res.status(400).json({ error: 'At least one image is required' });
+  if (Object.values(slotUrls).some((url) => isImageProcessingAssetUrl(url))) {
+    return res.status(409).json({
+      error: 'Image Processing Centre candidates must be applied through the Centre after review. The direct publish route cannot use them.',
+      code: 'image_processing_centre_only',
+    });
+  }
 
   const primarySlot = slotUrls[1] ? 1 : filledSlots[0];
   const imageUrlPrimary = slotUrls[primarySlot];
