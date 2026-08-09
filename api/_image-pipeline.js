@@ -1,6 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
 import { Jimp, HorizontalAlign, VerticalAlign, cssColorToHex } from 'jimp';
 import { buildStagingObjectPath } from './_staging-storage.js';
+import { getStockClient } from './_stock-client.js';
 
 const BUCKET = 'product-images';
 
@@ -162,11 +162,10 @@ Additional requirements: remove distracting backgrounds, preserve exact product 
 }
 
 function getStockAdminClient() {
-  return createClient(
-    process.env.VITE_STOCK_SUPABASE_URL,
-    process.env.VITE_STOCK_SUPABASE_KEY,
-    { auth: { autoRefreshToken: false, persistSession: false } },
-  );
+  // Keep the image processor on the same server-side stock client as the
+  // review-job API. That permits the private STOCK_SUPABASE_* variables and
+  // avoids a queue that works while processing fails due to a VITE_* mismatch.
+  return getStockClient();
 }
 
 function getOpenRouterKey() {
