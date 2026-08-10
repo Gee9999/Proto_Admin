@@ -17,6 +17,7 @@ import { readApiJson } from '../lib/apiError.js';
 import ProductLoaderNutstore from './productLoader/ProductLoaderNutstore';
 import ProductLoaderUpload from './productLoader/ProductLoaderUpload';
 import ProductLoaderPublishSuccess from './productLoader/ProductLoaderPublishSuccess';
+import ImageProcessingCentre from './productLoader/ImageProcessingCentre';
 import { ADMIN_REFRESH_EVENT } from '../lib/adminRefresh';
 import { catalogueDisplayTitle, catalogueDescription } from '../lib/productLoaderDisplay.js';
 
@@ -154,7 +155,16 @@ export default function ProductLoaderPanel({
   onInitialCodeConsumed,
   mainSiteUrl = 'https://site.proto.co.za',
   publishedBy = '',
+  isOwner = false,
+  initialTab = 'nutstore',
+  onOpenProductManager,
+  onOpenImageProcessing,
+  nutstoreSelection = [],
+  uploadSelection = [],
+  onNutstoreSelectionConsumed,
+  onUploadSelectionConsumed,
 }) {
+  const standaloneImageProcessing = initialTab === 'image-processing' && isOwner;
   const [activeTab, setActiveTab] = useState('nutstore');
   const [publishSuccess, setPublishSuccess] = useState(null);
   const fileRef = useRef(null);
@@ -188,6 +198,7 @@ export default function ProductLoaderPanel({
   const singleProductRef = useRef(null);
 
   const loadDormant = useCallback(async () => {
+    if (standaloneImageProcessing) return;
     setDormantLoading(true);
     try {
       const res = await fetch('/api/product-loader-dormant');
@@ -205,7 +216,7 @@ export default function ProductLoaderPanel({
     } finally {
       setDormantLoading(false);
     }
-  }, [taxonomyTree, onShowToast]);
+  }, [standaloneImageProcessing, taxonomyTree, onShowToast]);
 
   useEffect(() => {
     void loadDormant();
@@ -220,6 +231,7 @@ export default function ProductLoaderPanel({
   }, [loadDormant]);
 
   useEffect(() => {
+    if (standaloneImageProcessing) return undefined;
     let cancelled = false;
     fetch('/api/product-loader-diag?code=8626100145')
       .then((r) => r.json())
@@ -230,7 +242,7 @@ export default function ProductLoaderPanel({
       .then((json) => { if (!cancelled) setNutstoreStatus(json); })
       .catch(() => { if (!cancelled) setNutstoreStatus({ configured: false, connected: false }); });
     return () => { cancelled = true; };
-  }, []);
+  }, [standaloneImageProcessing]);
 
   const [code, setCode] = useState('');
   const [lookingUp, setLookingUp] = useState(false);
@@ -896,6 +908,21 @@ export default function ProductLoaderPanel({
     onShowToast?.(`Open Single Image tab and upload an image for ${code}`, 'success');
   };
 
+  if (standaloneImageProcessing) {
+    return (
+      <div className="adm-panel ipc-standalone-panel">
+        <ImageProcessingCentre
+          nutstoreSelection={nutstoreSelection}
+          uploadSelection={uploadSelection}
+          onNutstoreSelectionConsumed={onNutstoreSelectionConsumed}
+          onUploadSelectionConsumed={onUploadSelectionConsumed}
+          onShowToast={onShowToast}
+          onOpenProductManager={onOpenProductManager}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="adm-panel" style={{ maxWidth: 1100 }}>
       {/* Header */}
@@ -946,6 +973,9 @@ export default function ProductLoaderPanel({
           setBatchOverwrite={setBatchOverwrite}
           onShowToast={onShowToast}
           onPublished={(result) => setPublishSuccess(result)}
+          onProcessSelected={(selection) => {
+            onOpenImageProcessing?.({ nutstoreSelection: selection, uploadSelection: [] });
+          }}
         />
       )}
 
@@ -957,6 +987,9 @@ export default function ProductLoaderPanel({
           batchOverwrite={batchOverwrite}
           setBatchOverwrite={setBatchOverwrite}
           onShowToast={onShowToast}
+          onProcessFiles={(files) => {
+            onOpenImageProcessing?.({ nutstoreSelection: [], uploadSelection: files });
+          }}
         />
       )}
 

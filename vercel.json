@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
+  "buildCommand": "node scripts/check-image-processing-release-env.mjs && npm run build",
   "outputDirectory": "dist",
   "rewrites": [
     {
@@ -105,6 +105,9 @@
     },
     "api/bulk-image-replace.js": {
       "maxDuration": 60
+    },
+    "api/image-processing-jobs.js": {
+      "maxDuration": 300
     },
     "api/apply-category-moves.js": {
       "maxDuration": 300,
