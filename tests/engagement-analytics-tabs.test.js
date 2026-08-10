@@ -1,1 +1,25 @@
-import { describe, expect, it } from 'vitest';\nimport fs from 'node:fs';\nimport path from 'node:path';\n\ndescribe('engagement analytics preview', () => {\n  const component = fs.readFileSync(path.resolve(process.cwd(), 'src/components/EngagementAnalyticsTabs.jsx'), 'utf8');\n  const comms = fs.readFileSync(path.resolve(process.cwd(), 'src/components/CommsPanel.jsx'), 'utf8');\n\n  it('exposes the requested read-only engagement tabs', () => {\n    for (const label of ['Not opened', 'Opened', 'Repeat customers', 'First-time', 'Inactive 90d+', 'High-value']) expect(component).toContain(label);\n    expect(comms).toContain("setTab('engagement')");\n    expect(comms).toContain('<EngagementAnalyticsTabs');\n  });\n\n  it('uses read-only GET requests and does not send or mutate customers', () => {\n    expect(component).toContain("fetch('/api/email-campaigns')");\n    expect(component).toContain('fetch(` /api/admin-customers?tab=regular'.replace('` ', '`'));\n    expect(component).not.toContain("method: 'POST'");\n    expect(component).not.toContain("method: 'PATCH'");\n    expect(component).not.toContain("method: 'DELETE'");\n    expect(component).toContain('No messages are sent from this view.');\n  });\n});
+import { describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
+
+describe('engagement analytics preview', () => {
+  const component = fs.readFileSync(path.resolve(process.cwd(), 'src/components/EngagementAnalyticsTabs.jsx'), 'utf8');
+  const comms = fs.readFileSync(path.resolve(process.cwd(), 'src/components/CommsPanel.jsx'), 'utf8');
+
+  it('exposes the requested read-only engagement tabs', () => {
+    for (const label of ['Not opened', 'Opened', 'Repeat customers', 'First-time', 'Inactive 90d+', 'High-value']) {
+      expect(component).toContain(label);
+    }
+    expect(comms).toContain("setTab('engagement')");
+    expect(comms).toContain('<EngagementAnalyticsTabs');
+  });
+
+  it('uses read-only GET requests and does not send or mutate customers', () => {
+    expect(component).toContain("fetch('/api/email-campaigns')");
+    expect(component).toContain('fetch(`/api/admin-customers?tab=regular');
+    expect(component).not.toContain("method: 'POST'");
+    expect(component).not.toContain("method: 'PATCH'");
+    expect(component).not.toContain("method: 'DELETE'");
+    expect(component).toContain('No messages are sent from this view.');
+  });
+});
