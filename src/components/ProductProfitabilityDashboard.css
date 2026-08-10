@@ -1,0 +1,24 @@
+.pp-dashboard { display: grid; gap: 16px; }
+.pp-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; padding: 20px; border: 1px solid #dbe4ee; background: linear-gradient(135deg, #0f172a, #164e63); color: #fff; }
+.pp-header h2 { margin: 3px 0 6px; font: 800 24px/1.15 Outfit, sans-serif; }
+.pp-header p { margin: 0; color: #cbd5e1; font-size: 12px; line-height: 1.5; }
+.pp-eyebrow { color: #67e8f9 !important; font-size: 10px !important; font-weight: 900; letter-spacing: .09em; }
+.pp-controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pp-header .adm-btn-ghost { background: #fff; }
+.pp-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.pp-metric { min-height: 112px; padding: 15px; border: 1px solid #dbe4ee; border-top: 3px solid #0891b2; background: #fff; }
+.pp-metric > span { display: block; color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+.pp-metric > strong { display: block; margin-top: 8px; color: #0f172a; font-size: 22px; font-variant-numeric: tabular-nums; }
+.pp-metric > small { display: block; margin-top: 5px; color: #64748b; font-size: 10px; line-height: 1.4; }
+.pp-metric--unavailable { border-top-color: #d97706; background: #fffbeb; }
+.pp-metric--unavailable > strong { color: #92400e; font-size: 17px; }
+.pp-caveat { display: flex; align-items: flex-start; gap: 9px; padding: 12px 14px; border-left: 3px solid #d97706; background: #fffbeb; color: #78350f; font-size: 12px; }
+.pp-caveat strong, .pp-caveat span { display: block; }
+.pp-caveat span { margin-top: 2px; }
+.pp-source { margin: 4px 0 0; color: #64748b; font-size: 10px; font-weight: 500; }
+.pp-table td { vertical-align: top; font-variant-numeric: tabular-nums; }
+.pp-table td > strong, .pp-table td > small { display: block; }
+.pp-table td > small { margin-top: 3px; color: #64748b; font-size: 9px; }
+.pp-footnote { display: grid; gap: 3px; color: #64748b; font-size: 10px; line-height: 1.45; }
+@media (max-width: 900px) { .pp-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .pp-header { flex-direction: column; } }
+@media (max-width: 560px) { .pp-metrics { grid-template-columns: 1fr; } }
