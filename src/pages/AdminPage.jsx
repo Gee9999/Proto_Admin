@@ -85,7 +85,6 @@ import {
   subcategoryOptionsFromTree,
 } from '../lib/taxonomyAdmin';
 import { fetchCustomerImportBatches, approveCustomer, deleteCustomer, fetchCustomersPage, fetchProtoActiveCustomersPage, updateProtoActiveCustomer, updateCustomerAdmin, deleteProtoActiveCustomer, deleteAllProtoActiveCustomers, importProtoActiveCustomers, sendCustomerEmailBroadcast, fetchCrmContactsPage } from '../lib/customers';
-import { addHoldPreview, HOLD_PREVIEW_ID, holdPreviewEnabled } from '../lib/tradeApplicationHoldPreview';
 import { BUSINESS_TYPES } from '../lib/businessTypes';
 import { supabase } from '../lib/supabase';
 import { buildOrderNoteSections, createEmailOrderItems, generateOrderPdfBase64, buildEmailItemsFromOrder, base64ToBlob, resolveCustomerOrderPricing, deriveAutoNotesFromItems } from '../lib/orderDocuments';
@@ -540,8 +539,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   const [statsOrderTotal, setStatsOrderTotal] = useState(0);
 
   const [customerTab, setCustomerTab] = useState('regular');
-  const holdPreview = useMemo(() => holdPreviewEnabled(window.location.search), []);
-  const holdPreviewStateRef = useRef({ status: 'pending', reason: '' });
   const [customerSearch, setCustomerSearch] = useState('');
   // Which CSV upload to show in Pre-registration. '' = every contact.
   const [customerBatch, setCustomerBatch] = useState('');
@@ -715,15 +712,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
           businessType: customerBusinessType,
         });
       if (seq !== customersReqSeqRef.current) return; // superseded — drop it
-      const rows = addHoldPreview(data.rows, {
-        enabled: holdPreview,
-        tab: customerTab,
-        ...holdPreviewStateRef.current,
-      });
-      const total = data.total + (rows.length > data.rows.length ? 1 : 0);
-      customersCacheRef.current.set(key, { rows, total });
-      setCustomerRows(rows);
-      setCustomerTotal(total);
+      customersCacheRef.current.set(key, { rows: data.rows, total: data.total });
+      setCustomerRows(data.rows);
+      setCustomerTotal(data.total);
       if (data.migrationRequired && data.message) showToast(data.message, 'warning');
     } catch (err) {
       if (seq === customersReqSeqRef.current) {
@@ -1986,14 +1977,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       person.application_hold_reason || '',
     );
     if (reason === null) return;
-    if (holdPreview && person.id === HOLD_PREVIEW_ID) {
-      holdPreviewStateRef.current = { status: 'on_hold', reason: reason.trim() };
-      setCustomerRows((rows) => rows.filter((row) => row.id !== HOLD_PREVIEW_ID));
-      setCustomerTotal((total) => Math.max(0, total - 1));
-      closeCustomerProfile();
-      showToast('Preview application moved to On Hold');
-      return;
-    }
     setSaving(`hold-${person.id}`);
     try {
       await updateCustomerAdmin(person.id, {
@@ -2010,14 +1993,6 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   };
 
   const returnApplicationToReview = async (person) => {
-    if (holdPreview && person.id === HOLD_PREVIEW_ID) {
-      holdPreviewStateRef.current = { status: 'pending', reason: '' };
-      setCustomerTab('requests');
-      setCustomerPage(1);
-      closeCustomerProfile();
-      showToast('Preview application returned to Trade Requests');
-      return;
-    }
     setSaving(`review-${person.id}`);
     try {
       await updateCustomerAdmin(person.id, { application_status: 'pending' });
