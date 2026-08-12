@@ -150,6 +150,7 @@ function SectionSuspenseFallback({ label = 'Loading…' }) {
 // Modal-only — chunk downloads the first time the admin opens the dialog.
 const CustomerEmailModal = lazyRetry(() => import('../components/CustomerEmailModal'));
 const CommsPanel = lazyRetry(() => import('../components/CommsPanel'));
+const LeadFinderPanel = lazyRetry(() => import('../components/LeadFinderPanel'));
 // AddCustomerModal is tiny and eager (not lazy) so opening it can never hit a
 // stale-chunk load failure — which the recovery would resolve by reloading the
 // whole page (reads as "the button just refreshes").
@@ -3011,6 +3012,14 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                     onCompose={(target) => { setComposeTarget(target || null); setCustomerEmailOpen(true); }}
                     onShowToast={showToast}
                   />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
+
+            {activeSection === 'lead-finder' && (
+              <SectionErrorBoundary name="lead-finder" title="Lead Finder crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Loading Lead Finder…" />}>
+                  <LeadFinderPanel onShowToast={showToast} />
                 </Suspense>
               </SectionErrorBoundary>
             )}
