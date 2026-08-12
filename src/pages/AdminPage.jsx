@@ -1957,11 +1957,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       });
       await refreshPendingCount();
       await refreshDashboardStats();
-      // Switching the tab re-fires the customers effect, which loads the
-      // Approved list — a direct loadCustomers() here would read the OLD tab
-      // from this closure and fetch the requests list a second time.
-      setCustomerTab('regular');
-      setCustomerPage(1);
+      // Stay on Trade Requests and remove the approved application from the
+      // current list so admins can continue reviewing the next request.
+      await loadCustomers();
       closeCustomerProfile();
       const who = person.business_name || person.name || 'Customer';
       if (result.welcomeEmail === 'sent') showToast(`${who} approved — confirmation email sent`);
