@@ -43,7 +43,9 @@ export default async function handler(req, res) {
     if (tabKey === 'premium') {
       query = query.eq('tier', 'premium').eq('is_approved', true);
     } else if (tabKey === 'requests') {
-      query = query.eq('is_approved', false);
+      query = query.eq('is_approved', false).eq('application_status', 'pending');
+    } else if (tabKey === 'on-hold') {
+      query = query.eq('is_approved', false).eq('application_status', 'on_hold');
     } else if (tabKey === 'regular') {
       query = query.eq('is_approved', true);
     }
@@ -96,6 +98,7 @@ export default async function handler(req, res) {
       'country', 'province', 'city', 'accept_whatsapp', 'customer_code',
       'sales_last_12_months', 'invoice_count', 'last_purchase_date',
       'contact_name', 'first_name', 'tags',
+      'application_status', 'application_hold_reason', 'application_held_at',
     ]);
     const { id, ...rawPatch } = req.body || {};
     if (!id) return res.status(400).json({ error: 'id required' });
@@ -110,6 +113,32 @@ export default async function handler(req, res) {
       patch.customer_code = code || null;
     }
     if (!Object.keys(patch).length) return res.status(400).json({ error: 'No valid fields to update' });
+
+    if (patch.application_status !== undefined) {
+      const status = String(patch.application_status || '').trim().toLowerCase();
+      if (!['pending', 'on_hold', 'deactivated'].includes(status)) {
+        return res.status(400).json({ error: 'Application status must be pending, on_hold or deactivated' });
+      }
+      patch.application_status = status;
+      if (status === 'on_hold') {
+        patch.is_approved = false;
+        patch.application_hold_reason = String(patch.application_hold_reason || '').trim().slice(0, 500) || null;
+        patch.application_held_at = new Date().toISOString();
+      } else if (status === 'pending') {
+        patch.application_hold_reason = null;
+        patch.application_held_at = null;
+      } else {
+        patch.is_approved = false;
+        patch.application_hold_reason = null;
+        patch.application_held_at = null;
+      }
+    }
+
+    if (patch.is_approved === true) {
+      patch.application_status = 'pending';
+      patch.application_hold_reason = null;
+      patch.application_held_at = null;
+    }
 
     // Approval no longer requires a customer_code — codes are allocated
     // manually whenever the admin is ready, and are NEVER auto-generated. If a

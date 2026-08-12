@@ -86,6 +86,7 @@ function Chips({ items }) {
 }
 
 export default function CustomerApplicationDetails({ customer }) {
+  const isOnHold = customer.application_status === 'on_hold';
   const salesChannels = values(customer.sales_channels);
   const productCategories = values(customer.product_categories);
   const deliveryAddress = applicationAddress(customer);
@@ -104,14 +105,21 @@ export default function CustomerApplicationDetails({ customer }) {
           <span className="adm-application-kicker">Online trade application</span>
           <h3 id="customer-application-heading">Application details</h3>
         </div>
-        <span className={`adm-application-status adm-application-status--${customer.is_approved ? 'approved' : 'pending'}`}>
+        <span className={`adm-application-status adm-application-status--${customer.is_approved ? 'approved' : isOnHold ? 'on-hold' : 'pending'}`}>
           {customer.is_approved ? <CheckCircle size={13} aria-hidden="true" /> : <CircleHelp size={13} aria-hidden="true" />}
-          {customer.is_approved ? 'Approved' : 'Awaiting review'}
+          {customer.is_approved ? 'Approved' : isOnHold ? 'On hold' : 'Awaiting review'}
         </span>
       </div>
       <p className="adm-application-note">
         Answers captured through the online application. Contact preferences and addresses may reflect later customer updates.
       </p>
+
+      {isOnHold && (
+        <div className="adm-application-hold-note">
+          <strong>On-hold reason</strong>
+          <span>{text(customer.application_hold_reason) || 'No reason recorded.'}</span>
+        </div>
+      )}
 
       {hasApplicationAnswers(customer) ? (
         <div className="adm-application-grid">

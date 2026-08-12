@@ -53,4 +53,16 @@ describe('customer application details', () => {
     }));
     expect(markup).toContain('No structured online-application answers were captured');
   });
+
+  it('shows an on-hold application and its internal reason', () => {
+    const markup = renderToStaticMarkup(createElement(CustomerApplicationDetails, {
+      customer: {
+        is_approved: false,
+        application_status: 'on_hold',
+        application_hold_reason: 'Waiting for proof of trade.',
+      },
+    }));
+    expect(markup).toContain('On hold');
+    expect(markup).toContain('Waiting for proof of trade.');
+  });
 });

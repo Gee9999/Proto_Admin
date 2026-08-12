@@ -1,5 +1,5 @@
 const ORDER_TABS = new Set(['all', 'new', 'handed', 'progress', 'sent', 'paid']);
-const CUSTOMER_TABS = new Set(['requests', 'premium', 'regular']);
+const CUSTOMER_TABS = new Set(['requests', 'on-hold', 'premium', 'regular']);
 
 export function parsePositiveInt(raw, { name, min = 1, max = 200, fallback } = {}) {
   if (raw === undefined || raw === null || raw === '') {

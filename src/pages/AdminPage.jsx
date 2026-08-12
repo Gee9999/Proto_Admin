@@ -32,6 +32,7 @@ import {
   MapPin,
   Menu,
   PackagePlus,
+  PauseCircle,
   Pencil,
   Phone,
   RefreshCw,
@@ -681,7 +682,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
 
   // Tabs backed by their own panels (analytics, scheduled) are not customer
   // lists — never query the customers endpoint for them.
-  const CUSTOMER_LIST_TABS = new Set(['requests', 'regular', 'proto-active']);
+  const CUSTOMER_LIST_TABS = new Set(['requests', 'on-hold', 'regular', 'proto-active']);
 
   const loadCustomers = async () => {
     if (!CUSTOMER_LIST_TABS.has(customerTab)) return;
@@ -1970,6 +1971,41 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     } finally { setSaving(''); }
   };
 
+  const holdApplication = async (person) => {
+    const reason = window.prompt(
+      `Put ${person.business_name || person.name || person.email} on hold?\n\nOptional: enter what you still need or why you are waiting.`,
+      person.application_hold_reason || '',
+    );
+    if (reason === null) return;
+    setSaving(`hold-${person.id}`);
+    try {
+      await updateCustomerAdmin(person.id, {
+        application_status: 'on_hold',
+        application_hold_reason: reason.trim(),
+      });
+      await refreshPendingCount();
+      await loadCustomers();
+      closeCustomerProfile();
+      showToast('Application moved to On Hold');
+    } catch (err) {
+      showToast(err.message || 'Could not put application on hold', 'error');
+    } finally { setSaving(''); }
+  };
+
+  const returnApplicationToReview = async (person) => {
+    setSaving(`review-${person.id}`);
+    try {
+      await updateCustomerAdmin(person.id, { application_status: 'pending' });
+      await refreshPendingCount();
+      setCustomerTab('requests');
+      setCustomerPage(1);
+      closeCustomerProfile();
+      showToast('Application returned to Trade Requests');
+    } catch (err) {
+      showToast(err.message || 'Could not return application to review', 'error');
+    } finally { setSaving(''); }
+  };
+
   const removeCustomer = async (person, source = profileSource) => {
     if (!window.confirm(`Delete ${person.name || person.email}? This cannot be undone.`)) return;
     const savingKey = source === 'proto-active' ? `del-proto-${person.id}` : `del-${person.id}`;
@@ -1998,10 +2034,10 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   };
 
   const deactivateCustomer = async (person) => {
-    if (!window.confirm(`Deactivate ${person.name || person.email}? They will lose portal access.`)) return;
+    if (!window.confirm(`Deactivate ${person.name || person.email}? They will lose portal access, but their customer record and order history will be kept.`)) return;
     setSaving(`deact-${person.id}`);
     try {
-      await updateCustomerAdmin(person.id, { is_approved: false });
+      await updateCustomerAdmin(person.id, { is_approved: false, application_status: 'deactivated' });
       await loadCustomers();
       closeCustomerProfile();
       showToast('Customer deactivated');
@@ -2490,6 +2526,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
 
                 <div className="adm-customer-tabs">
                   <button onClick={() => setCustomerTab('requests')} className={`adm-tab${customerTab === 'requests' ? ' adm-tab--active' : ''}`}>Trade Requests</button>
+                  <button onClick={() => setCustomerTab('on-hold')} className={`adm-tab${customerTab === 'on-hold' ? ' adm-tab--active' : ''}`}>On Hold</button>
                   {/* Pre-registration is database-only by request. The contacts
                       are still imported, tagged, grouped and emailable from the
                       composer's Audience list — they are simply not browsed here. */}
@@ -2584,13 +2621,15 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                       </div>
                     ))}
                   </div>
-                ) : customerTab === 'requests' ? (
+                ) : customerTab === 'requests' || customerTab === 'on-hold' ? (
                   <div className="adm-list">
                     <div className="adm-list-head" style={{ gridTemplateColumns: '1.4fr 1fr 0.9fr 1.3fr 0.8fr 90px 200px' }}>
                       <span>Business Name</span><span>Location</span><span>Date Applied</span><span>Email / Phone</span><span>Whatsapp</span><span>Code</span><span>Actions</span>
                     </div>
                     {customerRows.length === 0 && !loading && (
-                      <div className="adm-empty" style={{ padding: '24px 0' }}>No pending trade requests.</div>
+                      <div className="adm-empty" style={{ padding: '24px 0' }}>
+                        {customerTab === 'on-hold' ? 'No applications are on hold.' : 'No pending trade requests.'}
+                      </div>
                     )}
                     {visibleCustomerRows.map((person) => (
                       <div key={person.id} className="adm-list-row" style={{ gridTemplateColumns: '1.4fr 1fr 0.9fr 1.3fr 0.8fr 90px 200px', alignItems: 'center' }}>
@@ -2630,6 +2669,15 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                         </div>
                         <div data-cell="actions" style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                           <button onClick={() => void openCustomerProfile(person)} className="adm-btn-ghost adm-btn-sm" style={{ padding: '4px 9px', fontSize: 11 }}>View details</button>
+                          {customerTab === 'on-hold' ? (
+                            <button onClick={() => void returnApplicationToReview(person)} className="adm-btn-ghost adm-btn-sm" disabled={saving === `review-${person.id}`}>
+                              {saving === `review-${person.id}` ? '…' : 'Return to review'}
+                            </button>
+                          ) : (
+                            <button onClick={() => void holdApplication(person)} className="adm-btn-ghost adm-btn-sm" disabled={saving === `hold-${person.id}`}>
+                              {saving === `hold-${person.id}` ? '…' : <><PauseCircle size={12} /> Put on hold</>}
+                            </button>
+                          )}
                           <button
                             onClick={() => void approveRequest(person)}
                             className="adm-btn-green adm-btn-sm"
@@ -3122,9 +3170,19 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                   </button>
                 </>
               )}
-              {profileSource !== 'proto-active' && (
+              {profileSource !== 'proto-active' && !profileCustomer.is_approved && profileCustomer.application_status !== 'on_hold' && (
+                <button onClick={() => void holdApplication(profileCustomer)} className="adm-btn-ghost" disabled={saving === `hold-${profileCustomer.id}`}>
+                  {saving === `hold-${profileCustomer.id}` ? '…' : <><PauseCircle size={14} /> Put on hold</>}
+                </button>
+              )}
+              {profileSource !== 'proto-active' && !profileCustomer.is_approved && profileCustomer.application_status === 'on_hold' && (
+                <button onClick={() => void returnApplicationToReview(profileCustomer)} className="adm-btn-ghost" disabled={saving === `review-${profileCustomer.id}`}>
+                  {saving === `review-${profileCustomer.id}` ? '…' : 'Return to review'}
+                </button>
+              )}
+              {profileSource !== 'proto-active' && profileCustomer.is_approved && (
                 <button onClick={() => void deactivateCustomer(profileCustomer)} className="adm-btn-ghost" disabled={saving === `deact-${profileCustomer.id}`}>
-                  {saving === `deact-${profileCustomer.id}` ? '…' : 'Deactivate'}
+                  {saving === `deact-${profileCustomer.id}` ? '…' : 'Deactivate account'}
                 </button>
               )}
               <button
