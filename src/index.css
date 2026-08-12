@@ -2114,6 +2114,23 @@ input, select, textarea { font-family: inherit; outline: none; }
   background: #f0fdf4;
 }
 
+.adm-application-status--on-hold {
+  color: #92400e;
+  background: #fffbeb;
+  border-color: #fcd34d;
+}
+
+.adm-application-hold-note {
+  display: grid;
+  gap: 4px;
+  margin: 14px 0;
+  padding: 12px 14px;
+  border-left: 3px solid #d6a817;
+  background: #fffbeb;
+  color: #78350f;
+  font-size: 13px;
+}
+
 .adm-application-note {
   margin: 9px 0 16px;
   color: #6b7280;
