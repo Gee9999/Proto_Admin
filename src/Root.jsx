@@ -27,6 +27,16 @@ const loadingFallback = (
   </div>
 );
 
+function recordStartupFailure(stage, error) {
+  const detail = {
+    stage,
+    code: error?.code || error?.name || 'unknown',
+    at: new Date().toISOString(),
+  };
+  console.error('[admin-startup]', detail);
+  try { sessionStorage.setItem('proto_admin_last_startup_failure', JSON.stringify(detail)); } catch { /* ignore */ }
+}
+
 export default function Root() {
   // Clear the one-shot chunk-reload guard only AFTER a successful mount, so a
   // stale-chunk reload that fixed things isn't undone before the app renders
@@ -68,6 +78,8 @@ export default function Root() {
 function AdminGate({ fulfillment = false }) {
   const [session, setSession] = useState(null);
   const [booting, setBooting] = useState(true);
+  const [startupError, setStartupError] = useState(null);
+  const [startupAttempt, setStartupAttempt] = useState(0);
 
   useEffect(() => {
     let mounted = true;
@@ -84,11 +96,11 @@ function AdminGate({ fulfillment = false }) {
         }
         const ok = await verifyAdminSession();
         if (!ok) {
-          await signOut();
           if (mounted) {
             setSession(null);
             setBooting(false);
           }
+          void signOut().catch(() => {});
           return;
         }
         if (mounted) {
@@ -96,9 +108,10 @@ function AdminGate({ fulfillment = false }) {
           
           setBooting(false);
         }
-      } catch {
+      } catch (error) {
         if (mounted) {
-          setSession(null);
+          recordStartupFailure('initial-session-check', error);
+          setStartupError('The admin session check took too long or could not connect.');
           setBooting(false);
         }
       }
@@ -106,7 +119,7 @@ function AdminGate({ fulfillment = false }) {
 
     void resolveSession();
 
-    const { data: { subscription } } = onAuthStateChange(async (s) => {
+    const handleAuthChange = async (s) => {
       if (!mounted) return;
       if (!s?.access_token) {
         setSession(null);
@@ -118,14 +131,28 @@ function AdminGate({ fulfillment = false }) {
         setSession(null);
         return;
       }
-      const ok = await verifyAdminSession();
-      if (!ok) {
-        await signOut();
-        setSession(null);
-        return;
+      try {
+        const ok = await verifyAdminSession();
+        if (!ok) {
+          setSession(null);
+          setBooting(false);
+          void signOut().catch(() => {});
+          return;
+        }
+        setSession(s);
+        setStartupError(null);
+      } catch (error) {
+        if (mounted) {
+          recordStartupFailure('auth-change-check', error);
+          setStartupError('The admin session check took too long or could not connect.');
+          setBooting(false);
+        }
       }
-      setSession(s);
-      
+    };
+    // Supabase advises against awaiting further auth calls inside its auth
+    // callback. Queue the work so the callback can return immediately.
+    const { data: { subscription } } = onAuthStateChange((s) => {
+      setTimeout(() => { void handleAuthChange(s); }, 0);
     });
 
     const onUnauthorized = () => { void signOut().then(() => setSession(null)); };
@@ -145,9 +172,52 @@ function AdminGate({ fulfillment = false }) {
       window.removeEventListener('proto-admin-unauthorized', onUnauthorized);
       window.removeEventListener('proto-admin-forbidden', onForbidden);
     };
-  }, []);
+  }, [startupAttempt]);
 
   if (booting) return loadingFallback;
+
+  if (startupError) {
+    return (
+      <div className="adm-login-page">
+        <div className="adm-login-layout">
+          <div className="adm-login-card adm-startup-error" role="alert">
+            <div className="adm-login-brand">
+              <div className="adm-login-logo">P</div>
+              <h1>Dashboard didn’t load</h1>
+              <p>{startupError}</p>
+            </div>
+            <p className="adm-startup-error__help">
+              Your work is safe. Check the connection and try again.
+            </p>
+            <div className="adm-startup-error__actions">
+              <button
+                type="button"
+                className="adm-btn-red adm-login-submit"
+                onClick={() => {
+                  setStartupError(null);
+                  setBooting(true);
+                  setStartupAttempt((attempt) => attempt + 1);
+                }}
+              >
+                Retry
+              </button>
+              <button
+                type="button"
+                className="adm-login-link"
+                onClick={() => {
+                  setSession(null);
+                  setStartupError(null);
+                  void signOut().catch(() => {});
+                }}
+              >
+                Sign out
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const email = session?.user?.email || '';
   const allowed = session && isAllowedAdminEmail(email);
@@ -157,20 +227,25 @@ function AdminGate({ fulfillment = false }) {
       <AdminLoginPage
         forbidden={!!session && !isAllowedAdminEmail(email)}
         onSignedIn={() => {
-          void getVerifiedSession().then(async (s) => {
-            if (!s) {
-              setSession(null);
-              return;
+          void (async () => {
+            try {
+              const s = await getVerifiedSession();
+              if (!s) {
+                setSession(null);
+                return;
+              }
+              const ok = await verifyAdminSession();
+              if (!ok) {
+                setSession(null);
+                void signOut().catch(() => {});
+                return;
+              }
+              setSession(s);
+            } catch (error) {
+              recordStartupFailure('sign-in-check', error);
+              setStartupError('The admin session check took too long or could not connect.');
             }
-            const ok = await verifyAdminSession();
-            if (!ok) {
-              await signOut();
-              setSession(null);
-              return;
-            }
-            setSession(s);
-            
-          });
+          })();
         }}
       />
     );

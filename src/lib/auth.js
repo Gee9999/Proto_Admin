@@ -1,4 +1,7 @@
 import { supabase } from './supabase';
+import { OperationTimeoutError, withTimeout } from './asyncTimeout';
+
+export const ADMIN_AUTH_TIMEOUT_MS = 10_000;
 
 export const ADMIN_ROLES = Object.freeze({
   OWNER: 'owner',
@@ -31,22 +34,42 @@ export async function getSession() {
 
 /** Validates JWT with Supabase — use on boot instead of getSession() alone. */
 export async function getVerifiedSession() {
-  const { data: { user }, error } = await supabase.auth.getUser();
-  if (error || !user?.email) return null;
+  const { data: { session }, error: sessionError } = await withTimeout(
+    supabase.auth.getSession(),
+    ADMIN_AUTH_TIMEOUT_MS,
+    'Supabase did not return the admin session in time.',
+    'admin_session_read_timeout',
+  );
+  if (sessionError) throw sessionError;
+  if (!session?.access_token) return null;
+
+  const { data: { user }, error } = await withTimeout(
+    supabase.auth.getUser(),
+    ADMIN_AUTH_TIMEOUT_MS,
+    'Supabase did not verify the admin session in time.',
+    'admin_session_timeout',
+  );
+  if (error) throw error;
+  if (!user?.email) return null;
   if (!isAllowedAdminEmail(user.email)) {
     await supabase.auth.signOut();
     return null;
   }
-  const { data: { session } } = await supabase.auth.getSession();
   return session;
 }
 
 export async function verifyAdminSession() {
   try {
-    const res = await fetch('/api/auth-check', { cache: 'no-store' });
+    const res = await fetch('/api/auth-check', {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(ADMIN_AUTH_TIMEOUT_MS),
+    });
     return res.ok;
-  } catch {
-    return false;
+  } catch (error) {
+    throw new OperationTimeoutError(
+      'The admin authorization service did not respond in time.',
+      error?.name === 'TimeoutError' ? 'admin_api_timeout' : 'admin_api_unavailable',
+    );
   }
 }
 
