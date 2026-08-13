@@ -49,6 +49,13 @@ export default async function handler(req, res) {
     department: match.department,
     category: match.category,
     stockOnHand: match.stockOnHand,
+    price: match.price,
+    priceSource: match.priceSource,
+    priceSourceLabel: match.priceSourceLabel,
+    positillSource: match.positillSource,
+    bridgeAttempted: match.bridgeAttempted,
+    erpPriceExVat: match.erpPriceExVat,
+    productSellPrice: match.productSellPrice,
     needsReview: match.needsReview,
   });
 }

@@ -161,7 +161,7 @@ export default async function handler(req, res) {
         warnings,
         canPublish: hasSource,
         needsReview: warnings.some((warning) => (
-          ['price_zero', 'image_exists', 'low_stock', 'needs_category'].includes(warning)
+          ['price_zero', 'price_source_cached', 'image_exists', 'low_stock', 'needs_category'].includes(warning)
         )),
       };
     }
@@ -183,7 +183,7 @@ export default async function handler(req, res) {
         imageSlot: 1,
         warnings,
         canPublish: true,
-        needsReview: warnings.some((w) => ['price_zero', 'low_stock', 'needs_category'].includes(w)),
+        needsReview: warnings.some((w) => ['price_zero', 'price_source_cached', 'low_stock', 'needs_category'].includes(w)),
       };
     }
 

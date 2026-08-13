@@ -6,6 +6,7 @@ import { labelsToDbFields } from './_taxonomy-utils.js';
 import { fetchProductLookupMap, findProductBySku } from './_sku-match.js';
 import { canonicalPublishValues } from '../lib/catalogue-safety.mjs';
 import { normalizeUnitsOfIssue } from '../lib/selling-unit.mjs';
+import { resolveProductByCode } from './_sql-provider.js';
 
 function getStockClient() {
   return createClient(
@@ -126,8 +127,27 @@ export default async function handler(req, res) {
     });
   }
 
+  // Re-read Positill on the server immediately before publishing. The lookup
+  // screen may have been open for a while, and the synchronised products/cache
+  // tables can lag by a sync interval. A new website product must never be
+  // created from that older price when the live bridge is unavailable.
+  const resolvedPositill = await resolveProductByCode(erpBarcode).catch(() => ({
+    product: null,
+    dataSource: null,
+    bridgeAttempted: true,
+  }));
+  if (!requireNew && !existing && resolvedPositill.dataSource !== 'erp_sql') {
+    return res.status(503).json({
+      error: 'Publishing paused because the live Positill price could not be verified. Retry when Live Positill SQL is connected.',
+      code: 'live_price_unavailable',
+      sku,
+    });
+  }
+
   const safeValues = canonicalPublishValues({
     product: canonicalProduct,
+    livePositill: resolvedPositill.product,
+    positillSource: resolvedPositill.dataSource,
     existing,
     submitted: {
       price,

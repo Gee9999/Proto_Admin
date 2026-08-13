@@ -20,6 +20,7 @@ import {
 import { catalogueDisplayTitle, loaderCodeLabel } from '../../lib/productLoaderDisplay.js';
 import LoaderCodeEllipsis from './LoaderCodeEllipsis.jsx';
 import CategoryPathSelect from './CategoryPathSelect';
+import { loaderPriceSourceLabel } from '../../../lib/catalogue-price.mjs';
 
 /**
  * Upload tab — one place for both a single image and a whole folder. Each
@@ -52,6 +53,7 @@ const WARNING_LABELS = {
   low_stock: 'No available stock',
   price_zero: 'Price missing',
   price_suspect_ex_vat: 'Price looks EX VAT — check Positill (×1.15 lands on .00/.50)',
+  price_source_cached: 'Live Positill unavailable — cached price needs review',
   needs_category: 'Category required',
   not_in_catalog: 'Positill code not found',
   too_many_variant_images: 'Maximum 4 images per colour',
@@ -319,6 +321,7 @@ export default function ProductLoaderUpload({
               <col style={{ width: '18%' }} />
               <col style={{ width: '12%' }} />
               <col style={{ width: '26%' }} />
+              <col style={{ width: 130 }} />
               <col style={{ width: 56 }} />
               <col style={{ width: 88 }} />
             </colgroup>
@@ -328,6 +331,7 @@ export default function ProductLoaderUpload({
                 <th>SKU</th>
                 <th>Positill / Colour</th>
                 <th>Description</th>
+                <th>Price incl. VAT</th>
                 <th>Slot</th>
                 <th>Status</th>
               </tr>
@@ -345,6 +349,7 @@ export default function ProductLoaderUpload({
                   <td className="pl-table-clip">
                     <LoaderCodeEllipsis value={catalogueDisplayTitle(row)} strong={false} fill />
                   </td>
+                  <td>R {Number(row.price || 0).toFixed(2)}<br /><span className="adm-muted">{row.priceSourceLabel || loaderPriceSourceLabel(row.priceSource)}</span></td>
                   <td>{row.imageSlot}</td>
                   <td className={row.status === 'error' ? 'pl-error' : ''}>{rowStatusLabel(row)}</td>
                 </tr>

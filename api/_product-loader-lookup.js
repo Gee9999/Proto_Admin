@@ -1,6 +1,11 @@
 import { codeLookupCandidates, baseCodeToken } from '../lib/code-normalize.mjs';
-import { looksLikeExVatPrice, resolveLoaderCustomerPrice } from '../lib/catalogue-price.mjs';
-import { getProductByCode } from './_sql-provider.js';
+import {
+  loaderPriceSourceLabel,
+  loaderPriceUsesCachedData,
+  looksLikeExVatPrice,
+  resolveLoaderCustomerPrice,
+} from '../lib/catalogue-price.mjs';
+import { resolveProductByCode } from './_sql-provider.js';
 import { toSqlPreview } from './_sql-stmast.js';
 import { parseLoaderFilename } from './_product-loader-filename.js';
 import { fetchProductLookupMap, findProductBySku } from './_sku-match.js';
@@ -56,8 +61,17 @@ async function lookupWebsiteStock(sb, code, displayCode) {
 
 async function lookupPositill(sb, code, displayCode) {
   const upper = String(code || '').trim().toUpperCase();
-  let sqlRow = upper ? await getProductByCode(upper).catch(() => null) : null;
-  if (sqlRow) return { sqlRow: toSqlPreview(sqlRow), matchedBy: 'positill_code' };
+  const resolved = upper
+    ? await resolveProductByCode(upper).catch(() => ({ product: null, dataSource: null, bridgeAttempted: true }))
+    : { product: null, dataSource: null, bridgeAttempted: false };
+  if (resolved.product) {
+    return {
+      sqlRow: toSqlPreview(resolved.product),
+      matchedBy: resolved.dataSource === 'erp_sql' ? 'positill_code' : 'positill_cache_code',
+      positillSource: resolved.dataSource,
+      bridgeAttempted: resolved.bridgeAttempted,
+    };
+  }
 
   const slug = slugPattern(displayCode || code);
   if (slug.length >= 2) {
@@ -82,11 +96,18 @@ async function lookupPositill(sb, code, displayCode) {
           dept: data.dept || '',
         }),
         matchedBy: 'positill_title',
+        positillSource: 'stmast_cache',
+        bridgeAttempted: resolved.bridgeAttempted,
       };
     }
   }
 
-  return { sqlRow: null, matchedBy: null };
+  return {
+    sqlRow: null,
+    matchedBy: null,
+    positillSource: null,
+    bridgeAttempted: resolved.bridgeAttempted,
+  };
 }
 
 export function resolveWebsiteStatus({ websiteRow, sqlRow, dormantSkus, code }) {
@@ -143,6 +164,8 @@ export async function resolveProductLoaderMatch(sb, {
   let webMatch = null;
   let sqlRow = null;
   let positillMatch = null;
+  let positillSource = null;
+  let bridgeAttempted = false;
   let matchedCandidate = null;
   let matchedSlot = clampedSlot;
 
@@ -156,6 +179,8 @@ export async function resolveProductLoaderMatch(sb, {
       webMatch = webResult.matchedBy;
       sqlRow = positill.sqlRow;
       positillMatch = positill.matchedBy;
+      positillSource = positill.positillSource;
+      bridgeAttempted = positill.bridgeAttempted;
       matchedCandidate = attempt.candidate;
       matchedSlot = attempt.slot;
       break;
@@ -186,6 +211,7 @@ export async function resolveProductLoaderMatch(sb, {
     productSellPrice: productRow?.sell_price,
     websitePrice: websiteRow?.price,
     positillPrice: rawPositillPrice,
+    positillSource,
   });
   const price = resolvedPrice.price;
   // The effective slot reflects the winning attempt: an exact full-code hit
@@ -202,6 +228,7 @@ export async function resolveProductLoaderMatch(sb, {
   if (!websiteRow && !sqlRow) warnings.push('not_in_catalog');
   if (websiteRow?.[SLOT_FIELDS[slot - 1]]) warnings.push('image_exists');
   if (!price) warnings.push('price_zero');
+  if (!websiteRow && loaderPriceUsesCachedData(resolvedPrice.source)) warnings.push('price_source_cached');
   // The July 2026 import captured EX-VAT prices where the incl-VAT ones
   // belong, and ~91 products published at the wrong price with nothing
   // flagging it. Hold anything matching that fingerprint for review.
@@ -210,7 +237,7 @@ export async function resolveProductLoaderMatch(sb, {
   if (available != null && Number(available) <= 0) warnings.push('low_stock');
   if (!websiteRow?.category && !sqlRow) warnings.push('needs_category');
 
-  const needsReview = warnings.some((w) => ['price_zero', 'price_suspect_ex_vat', 'image_exists', 'low_stock', 'needs_category'].includes(w));
+  const needsReview = warnings.some((w) => ['price_zero', 'price_source_cached', 'price_suspect_ex_vat', 'image_exists', 'low_stock', 'needs_category'].includes(w));
 
   return {
     code: effectiveCode,
@@ -218,6 +245,9 @@ export async function resolveProductLoaderMatch(sb, {
     title: hasCatalogMatch ? title : '',
     price,
     priceSource: resolvedPrice.source,
+    priceSourceLabel: loaderPriceSourceLabel(resolvedPrice.source),
+    positillSource,
+    bridgeAttempted,
     erpPriceExVat: rawPositillPrice || null,
     productSellPrice: productRow?.sell_price != null ? Number(productRow.sell_price) : null,
     unitsOfIssue: normalizeUnitsOfIssue(
