@@ -541,7 +541,7 @@ export default function ProductLoaderPanel({
         action: 'save',
         code: websiteRow?.sku || code,
         title: catalogueDisplayTitle({ code, title: sqlRow?.title, sqlRow, websiteRow }),
-        price: sqlRow?.price ?? websiteRow?.price ?? 0,
+        price: lookupData?.price ?? websiteRow?.price ?? sqlRow?.price ?? 0,
         description: catalogueDescription({ code, sqlRow, websiteRow }),
         ...labels,
       });
@@ -789,7 +789,7 @@ export default function ProductLoaderPanel({
   const handlePublish = async () => {
     if (!canPublish) return;
     const title = catalogueDisplayTitle({ code, title: sqlRow?.title, sqlRow, websiteRow });
-    const price = sqlRow?.price ?? websiteRow?.price ?? 0;
+    const price = lookupData?.price ?? websiteRow?.price ?? sqlRow?.price ?? 0;
     const catNode = findNode(taxonomyTree, categoryId);
     const sub1Node = findNode(taxonomyTree, sub1Id);
     const sub2Node = findNode(taxonomyTree, sub2Id);

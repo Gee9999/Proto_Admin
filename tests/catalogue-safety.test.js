@@ -69,4 +69,19 @@ describe('catalogue safety checks', () => {
       priceBasis: 'erp_ex_vat',
     })).toMatchObject({ price: 29.5, priceSource: 'website_stock.price_incl_vat' });
   });
+
+  it('rechecks live Positill during publication instead of using stale synchronised price', () => {
+    expect(canonicalPublishValues({
+      product: { sell_price: 5.22, stock_qty: 2, available_stock: 2 },
+      livePositill: { price: 8.26, onhand: 9, available: 7 },
+      positillSource: 'erp_sql',
+      submitted: { price: 6, stockQty: 2, availableStock: 2 },
+      priceBasis: 'erp_ex_vat',
+    })).toMatchObject({
+      price: 9.5,
+      priceSource: 'positill.live_price_a_ex_vat_converted',
+      stockQty: 9,
+      availableStock: 7,
+    });
+  });
 });

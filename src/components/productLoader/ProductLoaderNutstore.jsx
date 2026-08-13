@@ -15,6 +15,7 @@ import {
 import { readApiJson } from '../../lib/apiError.js';
 import { catalogueDisplayTitle, catalogueDescription, loaderCodeLabel } from '../../lib/productLoaderDisplay.js';
 import LoaderCodeEllipsis from './LoaderCodeEllipsis.jsx';
+import { loaderPriceSourceLabel, loaderPriceUsesCachedData } from '../../../lib/catalogue-price.mjs';
 
 function findNode(tree, id) {
   for (const n of tree) {
@@ -502,10 +503,14 @@ export default function ProductLoaderNutstore({
                   <td className="pl-table-clip">
                     <LoaderCodeEllipsis value={catalogueDisplayTitle(row)} strong={false} fill />
                   </td>
-                  <td>{row.price != null ? `R ${Number(row.price).toFixed(2)}` : '—'}</td>
+                  <td>
+                    {row.price != null ? `R ${Number(row.price).toFixed(2)}` : '—'}
+                    <br /><span className="adm-muted">{row.priceSourceLabel || loaderPriceSourceLabel(row.priceSource)}</span>
+                  </td>
                   <td>{row.stockOnHand ?? row.sqlRow?.available ?? '—'}</td>
                   <td className={row.processStatus === 'error' ? 'pl-error' : ''}>
                     {row.websiteStatus || row.group}
+                    {loaderPriceUsesCachedData(row.priceSource) ? ' — cached price; review' : ''}
                     {row.processError ? ` — ${row.processError}` : ''}
                   </td>
                 </tr>

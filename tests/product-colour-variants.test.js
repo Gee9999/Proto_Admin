@@ -99,8 +99,30 @@ describe('Product Loader colour variants', () => {
       positillPrice: 43.04,
     })).toEqual({
       price: 49.5,
-      source: 'positill.price_a_ex_vat_converted',
+      source: 'positill.cached_price_a_ex_vat_converted',
     });
+  });
+
+  it('uses live Positill ahead of a stale synchronised price for 8613100205', () => {
+    expect(resolveLoaderCustomerPrice({
+      productSellPrice: 5.22,
+      positillPrice: 8.26,
+      positillSource: 'erp_sql',
+    })).toEqual({
+      price: 9.5,
+      source: 'positill.live_price_a_ex_vat_converted',
+    });
+  });
+
+  it.each([
+    '8613100204', '8613100205', '8613100206', '8613100207',
+    '8613100208', '8613100209', '8613100210', '8613100211',
+  ])('keeps the %s colour range on the R9.50 live price', () => {
+    expect(resolveLoaderCustomerPrice({
+      productSellPrice: 5.22,
+      positillPrice: 8.26,
+      positillSource: 'erp_sql',
+    }).price).toBe(9.5);
   });
 
   it('repairs an established loader price carrying the ex-VAT fingerprint', () => {
