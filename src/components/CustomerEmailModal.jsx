@@ -3,7 +3,6 @@ import { BarChart2, Code2, Eye, ImagePlus, Loader2, Mail, Send, X } from 'lucide
 import EmailTemplateTests from './EmailTemplateTests';
 import { PROTO_URLS } from '../lib/protoUrls';
 import { BUSINESS_TYPES } from '../lib/businessTypes';
-import { fetchCustomerImportBatches } from '../lib/customers';
 import {
   MERGE_TAGS,
   PREVIEW_MERGE_VARS,
@@ -12,31 +11,20 @@ import {
   wrapBroadcastHtml,
 } from '../lib/emailMergeTags';
 
+/**
+ * Two audiences, deliberately. Approved trade customers are the real customer
+ * base; a group is an uploaded list that is not customers at all. The old
+ * middle ground (trade requests, pre-registration, "approved + pre-reg") made
+ * it far too easy to mail the wrong people.
+ *
+ * 'selected' is not offered here — it exists only for the "Email selected"
+ * action on the contacts list, which supplies the addresses itself.
+ */
 const AUDIENCE_OPTIONS = [
   {
     value: 'all-approved',
-    label: 'Approved trade customers only',
-    hint: 'Customers with trade portal access',
-  },
-  {
-    value: 'requests',
-    label: 'Trade requests only',
-    hint: 'Pending applications waiting for approval',
-  },
-  {
-    value: 'proto-active',
-    label: 'Pre-registration only',
-    hint: 'CRM contacts on the pre-registration email list',
-  },
-  {
-    value: 'all-portal',
-    label: 'Approved + Pre-registration',
-    hint: 'Everyone you can email (deduped by email)',
-  },
-  {
-    value: 'selected',
-    label: 'Specific people (enter emails)',
-    hint: 'Sends only to the exact addresses you enter below — good for testing or a handful of customers',
+    label: 'Approved trade customers',
+    hint: 'Everyone with trade portal access',
   },
 ];
 
@@ -50,9 +38,13 @@ export function parseEmailList(raw) {
   )];
 }
 
-function defaultAudienceForTab(customerTab) {
-  if (customerTab === 'requests') return 'requests';
-  if (customerTab === 'proto-active') return 'proto-active';
+/**
+ * Only two audiences exist now, so the customer tab no longer preselects a
+ * third. Opening the composer from the trade-requests tab used to default to
+ * a "requests" audience that the dropdown can no longer even show — which
+ * would have left an unsendable value selected.
+ */
+function defaultAudienceForTab() {
   return 'all-approved';
 }
 
@@ -99,6 +91,7 @@ export default function CustomerEmailModal({
   initialAudience = null,
   initialBusinessTypes = null,
   initialRecipients = null,
+  initialGroupId = null,
 }) {
   const [subject, setSubject] = useState('');
   const [introBody, setIntroBody] = useState('');
@@ -106,12 +99,10 @@ export default function CustomerEmailModal({
   const [htmlPane, setHtmlPane] = useState('split');
   const [showHtml, setShowHtml] = useState(false);
   const [audience, setAudience] = useState('all-approved');
-  // Pre-registration contacts have no business_type, so an import batch is
-  // the only way to segment that audience.
-  const [importBatch, setImportBatch] = useState('');
-  const [batches, setBatches] = useState([]);
-  const [batchError, setBatchError] = useState('');
+  const [groupsError, setGroupsError] = useState('');
   const [businessTypes, setBusinessTypes] = useState([]);
+  const [groups, setGroups] = useState([]);
+  const [groupId, setGroupId] = useState('');
   const [sending, setSending] = useState(false);
   const [testSending, setTestSending] = useState(false);
   // Explicit "send a test first?" step — a browser prompt() was easy to miss
@@ -147,7 +138,8 @@ export default function CustomerEmailModal({
       setRecipientsText(recips.join('\n'));
       setBusinessTypes([]);
     } else {
-      setAudience(initialAudience || defaultAudienceForTab(customerTab));
+      setAudience(initialAudience || defaultAudienceForTab());
+      setGroupId(initialGroupId || '');
       setRecipientsText('');
       const types = Array.isArray(initialBusinessTypes) ? initialBusinessTypes.filter(Boolean) : [];
       setBusinessTypes(types);
@@ -225,15 +217,16 @@ export default function CustomerEmailModal({
     let alive = true;
     void (async () => {
       try {
-        const list = await fetchCustomerImportBatches();
+        const res = await fetch('/api/email-groups');
+        const json = await res.json();
         if (!alive) return;
-        setBatches(list || []);
-        setBatchError('');
+        if (!res.ok) throw new Error(json.error || 'Groups could not be loaded');
+        setGroups(json.groups || []);
+        setGroupsError('');
       } catch (err) {
-        // Swallowing this meant the groups silently never appeared, with
-        // nothing on screen to say why. The endpoint is owner-only, so a
-        // non-owner admin sees an empty list and no explanation.
-        if (alive) setBatchError(err?.message || 'Upload groups could not be loaded');
+        // Never swallowed: without this the group list silently stays empty
+        // with nothing on screen to say why.
+        if (alive) setGroupsError(err?.message || 'Groups could not be loaded');
       }
     })();
     return () => { alive = false; };
@@ -244,31 +237,32 @@ export default function CustomerEmailModal({
   // invisible to anyone who did not already know to go looking for it.
   const audienceOptions = useMemo(() => {
     const base = AUDIENCE_OPTIONS.map((o) => ({ ...o }));
-    if (!batches.length) return base;
-    const groupOptions = batches.map((b) => ({
-      value: `proto-active::${b.label}`,
-      label: `Pre-registration — ${b.label} (${b.count})`,
-      hint: `Only the ${b.count} contact${b.count === 1 ? '' : 's'} from the ${b.label} upload`,
-    }));
-    const at = base.findIndex((o) => o.value === 'proto-active');
-    if (at === -1) return [...base, ...groupOptions];
-    return [...base.slice(0, at + 1), ...groupOptions, ...base.slice(at + 1)];
-  }, [batches]);
+    const groupOptions = groups
+      .filter((g) => g.memberCount > 0)
+      .map((g) => ({
+        value: `group::${g.id}`,
+        label: `Group — ${g.name} (${g.memberCount})`,
+        hint: g.description || `The ${g.memberCount} contacts uploaded to ${g.name}. Not customers.`,
+      }));
+    return [...base, ...groupOptions];
+  }, [groups]);
 
-  const audienceValue = audience === 'proto-active' && importBatch
-    ? `proto-active::${importBatch}`
-    : audience;
+  const audienceValue = audience === 'group' && groupId ? `group::${groupId}` : audience;
 
   const onAudienceChange = (raw) => {
-    const [aud, batch = ''] = String(raw).split('::');
+    const [aud, id = ''] = String(raw).split('::');
     setAudience(aud);
-    setImportBatch(batch);
+    setGroupId(aud === 'group' ? id : '');
+    // A group has no business_type to filter on, so any selection would only
+    // ever empty the send. Clear it rather than silently ignore it.
+    if (aud === 'group') setBusinessTypes([]);
   };
 
   const selectedAudience = useMemo(
     () => audienceOptions.find((opt) => opt.value === audienceValue) || audienceOptions[0],
     [audienceOptions, audienceValue],
   );
+
 
   const previewSubject = useMemo(
     () => applyMergeTags(subject.trim() || 'Subject line', PREVIEW_MERGE_VARS),
@@ -328,11 +322,12 @@ export default function CustomerEmailModal({
 
     // Name the group in the confirm dialog — sending to 246 contacts instead
     // of all 593 should not be a silent difference.
-    const batchNote = audience === 'proto-active' && importBatch ? ` (group: ${importBatch})` : '';
     const audienceLabel = isSelected
       ? `${selectedEmails.length} specific ${selectedEmails.length === 1 ? 'person' : 'people'}`
-      : `${selectedAudience.label}${businessTypes.length ? ` · ${businessTypes.join(', ')} only` : ' · all business types'}`;
-    if (!test && !window.confirm(`Send this email to: ${audienceLabel}${batchNote}?`)) return;
+      : audience === 'group'
+        ? selectedAudience.label
+        : `${selectedAudience.label}${businessTypes.length ? ` · ${businessTypes.join(', ')} only` : ' · all business types'}`;
+    if (!test && !window.confirm(`Send this email to: ${audienceLabel}?`)) return;
 
     if (test) {
       // A test is a self-preview with sample merge data + a [TEST] subject, so
@@ -349,8 +344,8 @@ export default function CustomerEmailModal({
           introText: introBody.trim(),
           htmlBlock: htmlBody.trim(),
           testEmail: testEmail.trim(),
-          businessTypes: isSelected ? [] : businessTypes,
-          importBatch: audience === 'proto-active' ? importBatch : '',
+          businessTypes: isSelected || audience === 'group' ? [] : businessTypes,
+          groupId: audience === 'group' ? groupId : '',
         });
         onShowToast?.(`Test email sent to ${testEmail.trim()}`, 'success');
       } catch (err) {
@@ -368,8 +363,8 @@ export default function CustomerEmailModal({
         subject: subject.trim(),
         introText: introBody.trim(),
         htmlBlock: htmlBody.trim(),
-        businessTypes: isSelected ? [] : businessTypes,
-        importBatch: audience === 'proto-active' ? importBatch : '',
+        businessTypes: isSelected || audience === 'group' ? [] : businessTypes,
+        groupId: audience === 'group' ? groupId : '',
         ...(isSelected ? { recipients: selectedEmails } : {}),
       });
       onShowToast?.(
@@ -444,8 +439,7 @@ export default function CustomerEmailModal({
             </select>
             <span className="adm-email-field__hint">
               {selectedAudience.hint}
-              {batchError ? ` — upload groups unavailable: ${batchError}` : ''}
-              {!batchError && !batches.length ? ' — no upload groups found yet' : ''}
+              {groupsError ? ` — groups unavailable: ${groupsError}` : ''}
             </span>
           </label>
 
@@ -483,28 +477,42 @@ export default function CustomerEmailModal({
             </label>
           )}
 
-          {audience !== 'selected' && (
-          <label className="adm-email-field">
-            <span className="adm-email-field__label">Business type</span>
-            <select
-              className="adm-field-input adm-select--enhanced"
-              value={businessTypes[0] || ''}
-              onChange={(e) => setBusinessTypes(e.target.value ? [e.target.value] : [])}
-            >
-              {/* Blank = everyone in the audience. There is deliberately no
-                  "Unspecified" option: an empty list means EVERYONE to the
-                  audience resolver, so it could never be a real segment. */}
-              <option value="">All business types — send to everyone</option>
-              {BUSINESS_TYPES.map((type) => (
-                <option key={type} value={type}>{type}</option>
-              ))}
-            </select>
+          {audience !== 'selected' && audience !== 'group' && (
+          <div className="adm-email-field">
+            <span className="adm-email-field__label">
+              Business type
+              {businessTypes.length > 0 && (
+                <button type="button" className="ce-types__clear" onClick={() => setBusinessTypes([])}>
+                  Clear ({businessTypes.length})
+                </button>
+              )}
+            </span>
+            {/* Checkboxes rather than a single select: segments overlap in
+                practice — a campaign for retail usually wants gift and craft
+                shops too. An empty list still means everyone. */}
+            <div className="ce-types">
+              {BUSINESS_TYPES.map((type) => {
+                const on = businessTypes.includes(type);
+                return (
+                  <label key={type} className={`ce-type${on ? ' ce-type--on' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={on}
+                      onChange={() => setBusinessTypes((prev) => (
+                        prev.includes(type) ? prev.filter((t) => t !== type) : [...prev, type]
+                      ))}
+                    />
+                    {type}
+                  </label>
+                );
+              })}
+            </div>
             <span className="adm-email-field__hint">
               {businessTypes.length
-                ? `Only ${businessTypes[0]} customers in this audience will receive it.`
-                : 'Leave as “All business types” to send to every customer in this audience.'}
+                ? `Only ${businessTypes.join(', ')} customers will receive it.`
+                : 'Nothing ticked — sends to every customer in this audience.'}
             </span>
-          </label>
+          </div>
           )}
 
           <div className="adm-email-field">

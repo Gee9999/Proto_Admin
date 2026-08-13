@@ -3302,6 +3302,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
             initialAudience={composeTarget?.audience || null}
             initialBusinessTypes={composeTarget?.businessTypes || null}
             initialRecipients={composeTarget?.recipients || null}
+            initialGroupId={composeTarget?.groupId || null}
           />
         </Suspense>
       )}

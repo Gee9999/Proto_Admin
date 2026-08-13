@@ -9900,3 +9900,75 @@ html, body { max-width: 100%; overflow-x: hidden; }
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
+
+/* ── Email Groups ─────────────────────────────────────────────────────────── */
+.eg-panel { display: grid; gap: 16px; }
+.eg-subtitle { margin: 6px 0 0; max-width: 76ch; line-height: 1.5; }
+.eg-muted { color: #94a3b8; font-weight: 600; }
+.eg-warn { color: #b45309; font-weight: 700; }
+
+.eg-drop {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 28px 20px; border: 2px dashed #cbd5e1; border-radius: 12px;
+  background: #f8fafc; cursor: pointer; text-align: center; color: #64748b;
+}
+.eg-drop:hover { border-color: #15803d; background: #f0fdf4; color: #15803d; }
+.eg-drop input { display: none; }
+.eg-drop__title { font-size: 14px; font-weight: 800; color: #0f172a; }
+.eg-drop__hint { font-size: 12px; max-width: 56ch; line-height: 1.5; }
+
+.eg-parsed { display: grid; gap: 14px; }
+.eg-parsed__summary {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 10px 12px; border-radius: 10px;
+  background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534;
+  font-size: 13px; font-weight: 600;
+}
+.eg-clear { margin-left: auto; background: none; border: 0; cursor: pointer; color: #166534; display: flex; }
+.eg-skipped { font-size: 12px; color: #64748b; }
+.eg-skipped summary { cursor: pointer; font-weight: 700; color: #b45309; }
+.eg-skipped ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+
+.eg-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.eg-field { display: grid; gap: 5px; font-size: 12px; font-weight: 700; color: #64748b; }
+.eg-field--wide { grid-column: 1 / -1; }
+.eg-field em { font-weight: 600; font-style: normal; color: #94a3b8; }
+.eg-field input, .eg-field select {
+  padding: 9px 11px; border: 1px solid #d1d5db; border-radius: 8px;
+  font-family: inherit; font-size: 13px; font-weight: 600; color: #0f172a; background: #fff;
+}
+.eg-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+.eg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.eg-card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; background: #fff; display: grid; gap: 6px; }
+.eg-card__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.eg-card__name { font-size: 14px; font-weight: 800; color: #0f172a; }
+.eg-card__count {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; font-weight: 800; color: #15803d;
+  background: #dcfce7; border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+}
+.eg-card__desc { margin: 0; font-size: 12px; color: #475569; line-height: 1.45; }
+.eg-card__meta { margin: 0; font-size: 11px; color: #94a3b8; font-weight: 600; }
+.eg-card__actions { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.eg-members { max-height: 50vh; overflow-y: auto; }
+
+/* Business-type multi-select in the email composer. */
+.ce-types {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 10px; border: 1px solid #d1d5db; border-radius: 8px;
+  background: #fff; max-height: 190px; overflow-y: auto;
+}
+.ce-type {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border: 1px solid #e2e8f0; border-radius: 999px;
+  background: #f8fafc; cursor: pointer;
+  font-size: 12px; font-weight: 700; color: #475569; white-space: nowrap;
+}
+.ce-type:hover { border-color: #94a3b8; }
+.ce-type--on { background: #dcfce7; border-color: #bbf7d0; color: #166534; }
+.ce-type input { accent-color: #15803d; cursor: pointer; margin: 0; }
+.ce-types__clear {
+  margin-left: 8px; background: none; border: 0; cursor: pointer;
+  font: inherit; font-size: 11px; font-weight: 800; color: #15803d; text-decoration: underline;
+}
