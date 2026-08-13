@@ -2,9 +2,9 @@
 
 Standalone admin app for Proto Trading. **Not** the main trade portal.
 
-- **Repo:** https://github.com/danieljoffeinfo-web/protoportal-admin
+- **Repo:** https://github.com/ProtoTrading1/Proto_Admin
 - **Production:** https://admin.proto.co.za (Vercel project `protoportal-admin`)
-- **Main portal (separate):** https://github.com/danieljoffeinfo-web/Proto-Website-
+- **Main portal (separate):** https://github.com/ProtoTrading1/ProtoMainSite
 
 ## Stack
 - Vite + React (JSX)

@@ -1,0 +1,113 @@
+/**
+ * Abandoned baskets — customers with an outstanding basket who have not
+ * checked out, with the customer detail needed to act on it.
+ *
+ * Source is `customer_account_carts` in the portal project (migration 057 of
+ * the ProtoMainSite repo). The portal empties a basket's items on
+ * `order_submit_succeeded`, so a row that still holds items is by definition
+ * un-checked-out. There is no separate abandonment table to maintain.
+ *
+ * The cart table has no foreign key to `customers` (it references
+ * `auth.users`), so PostgREST cannot embed the customer — the join is done
+ * here, in two reads.
+ */
+import { createClient } from '@supabase/supabase-js';
+import { requireAdminKey } from './_admin-auth.js';
+import {
+  buildAbandonedBaskets,
+  filterBaskets,
+  sortBaskets,
+  summariseBaskets,
+  SORT_KEYS,
+} from '../lib/abandoned-baskets.mjs';
+
+export const config = { maxDuration: 30 };
+
+const CART_COLUMNS = 'customer_id, items, activity_at, updated_at';
+const CUSTOMER_COLUMNS = [
+  'id', 'name', 'contact_name', 'first_name', 'business_name', 'email', 'phone',
+  'customer_code', 'tier', 'city', 'province', 'tags', 'is_approved',
+  'sales_last_12_months', 'last_purchase_date', 'last_email_type', 'last_email_at',
+  'created_at',
+].join(', ');
+
+const PAGE_SIZE = 1000;
+
+function getAdminClient() {
+  return createClient(
+    process.env.VITE_SUPABASE_URL,
+    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  );
+}
+
+/**
+ * Cart rows carry a full product snapshot per line, so the payload is large
+ * relative to the row count. Page rather than assume one request covers it.
+ */
+async function fetchAll(query, { from = 0 } = {}) {
+  const rows = [];
+  let offset = from;
+  for (;;) {
+    const { data, error } = await query.range(offset, offset + PAGE_SIZE - 1);
+    if (error) return { rows: null, error };
+    const batch = data || [];
+    rows.push(...batch);
+    if (batch.length < PAGE_SIZE) return { rows, error: null };
+    offset += PAGE_SIZE;
+  }
+}
+
+export default async function handler(req, res) {
+  if (!(await requireAdminKey(req, res))) return;
+  res.setHeader('Cache-Control', 'no-store');
+
+  if (req.method !== 'GET') {
+    res.setHeader('Allow', 'GET');
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  const supabase = getAdminClient();
+
+  const [cartResult, customerResult] = await Promise.all([
+    fetchAll(supabase.from('customer_account_carts').select(CART_COLUMNS).order('updated_at', { ascending: false })),
+    fetchAll(supabase.from('customers').select(CUSTOMER_COLUMNS)),
+  ]);
+
+  if (cartResult.error) {
+    // The portal owns migration 057. If the admin app is pointed at a project
+    // that predates it, say so plainly instead of returning a confusing 400.
+    if (/does not exist/i.test(cartResult.error.message || '')) {
+      return res.status(200).json({
+        available: false,
+        reason: 'The customer_account_carts table is not present in this Supabase project.',
+        summary: summariseBaskets([]),
+        baskets: [],
+      });
+    }
+    return res.status(400).json({ error: cartResult.error.message });
+  }
+  if (customerResult.error) return res.status(400).json({ error: customerResult.error.message });
+
+  const all = buildAbandonedBaskets({
+    carts: cartResult.rows,
+    customers: customerResult.rows,
+    now: Date.now(),
+  });
+
+  const staleness = String(req.query.staleness || 'all');
+  const search = String(req.query.search || '');
+  const sort = SORT_KEYS.includes(String(req.query.sort)) ? String(req.query.sort) : 'value';
+
+  const filtered = filterBaskets(all, { staleness, search });
+
+  return res.status(200).json({
+    available: true,
+    // Summary always describes the full picture, so the KPI row does not
+    // change meaning when a filter is applied.
+    summary: summariseBaskets(all),
+    filteredSummary: summariseBaskets(filtered),
+    baskets: sortBaskets(filtered, sort),
+    emptiedBasketCount: cartResult.rows.length - all.length,
+  });
+}
