@@ -964,9 +964,14 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   );
   const victorCanSend = isVictorSender(activeFulfillmentUser);
 
+  // "Mark as completed" only makes sense before the order reaches Payment, and
+  // only for someone allowed to record payment — so the actions column widens
+  // to fit the label exactly on the tabs where the button is shown.
+  const showMarkCompleted = orderTab !== 'paid' && victorCanSend;
+
   const orderListGridCols = orderTab === 'sent' || orderTab === 'paid'
-    ? '1.3fr 1.1fr 0.9fr 0.8fr 2fr 120px 56px'
-    : '1.4fr 1.3fr 1.1fr 0.8fr 1fr 160px 80px';
+    ? `1.3fr 1.1fr 0.9fr 0.8fr 2fr ${showMarkCompleted ? '272px' : '120px'} 56px`
+    : `1.4fr 1.3fr 1.1fr 0.8fr 1fr ${showMarkCompleted ? '312px' : '160px'} 80px`;
 
   const confirmationSentIds = useMemo(() => {
     const ids = new Set(Object.keys(confirmationSent).filter((id) => confirmationSent[id]?.sentAt));
@@ -2131,6 +2136,32 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     } finally { setSaving(''); }
   };
 
+  /**
+   * One click from any stage to the Payment tab, so finished orders stop
+   * cluttering the working tabs. "Payment received" is the only status the
+   * Payment tab holds outright, so that is the target; the server walks the
+   * intermediate stages itself (advanceOrderStatusToTarget).
+   *
+   * It is confirmed because the move cannot be undone — no route passes
+   * `force`, and canAdvanceTo only ever steps forward, so a stray click on a
+   * list row would otherwise strand an unpaid order as paid.
+   */
+  const markOrderCompleted = async (order) => {
+    if (!victorCanSend) {
+      showToast(PAYMENT_RECEIVED_FORBIDDEN, 'error');
+      return;
+    }
+    const label = order.order_number || order.id;
+    const confirmed = window.confirm(
+      `Mark order ${label} as completed?\n\n`
+      + 'This moves it to the Payment tab by setting its status to "payment received", '
+      + 'which records the payment date.\n\n'
+      + 'Orders only move forward, so this cannot be undone.',
+    );
+    if (!confirmed) return;
+    await advanceOrderStatus(order, 'payment received');
+  };
+
   const openFulfillment = (order) => {
     const items = (order.original_items || order.items || []).map((item) => ({
       ...item,
@@ -2914,6 +2945,20 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                                 title={teamWaSent[order.id]?.sentAt ? 'Send the team WhatsApp again' : 'WhatsApp this order to the team'}
                               >
                                 {saving === `wa-${order.id}` ? <Loader2 size={14} className="spin" /> : <MessageCircle size={14} />}
+                              </button>
+                            )}
+                            {showMarkCompleted && normalizeOrderStatus(order.status) !== 'payment received' && (
+                              <button
+                                type="button"
+                                onClick={() => void markOrderCompleted(order)}
+                                disabled={saving === `advance-${order.id}`}
+                                className="adm-btn-ghost adm-mark-complete"
+                                title="Move this order to the Payment tab"
+                              >
+                                {saving === `advance-${order.id}`
+                                  ? <Loader2 size={14} className="spin" />
+                                  : <CheckCircle size={14} />}
+                                Mark as completed
                               </button>
                             )}
                             <button onClick={() => window.open(`/fulfillment?id=${order.id}`, '_blank')} className="adm-icon-btn" title="Fulfil order (opens in new tab)" style={{ color: '#15803d' }}><ClipboardList size={14} /></button>

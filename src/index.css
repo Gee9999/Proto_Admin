@@ -2475,6 +2475,17 @@ input, select, textarea { font-family: inherit; outline: none; }
 .adm-btn-ghost:hover { border-color: #0f172a; color: #0f172a; }
 .adm-btn-ghost:disabled { opacity: 0.5; cursor: default; }
 .adm-btn-ghost.adm-btn-sm { padding: 7px 12px; font-size: 13px; border-radius: 10px; }
+/* Sits inside an order row's action strip, next to the icon buttons. Green on
+   hover because it advances the order rather than destroying anything. */
+.adm-btn-ghost.adm-mark-complete {
+  padding: 6px 10px;
+  gap: 6px;
+  font-size: 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.adm-btn-ghost.adm-mark-complete:hover:not(:disabled) { border-color: #15803d; color: #15803d; }
 
 .adm-icon-btn {
   display: inline-flex;
