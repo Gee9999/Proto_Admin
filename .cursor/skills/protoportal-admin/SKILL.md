@@ -9,8 +9,8 @@ description: Expert guide for the standalone Proto Admin Portal (admin.proto.co.
 
 | App | Repository | Production URL |
 |-----|------------|----------------|
-| **Admin portal (this skill)** | https://github.com/danieljoffeinfo-web/protoportal-admin | https://admin.proto.co.za |
-| Main trade portal | https://github.com/danieljoffeinfo-web/Proto-Website- | https://protoportal-main.vercel.app |
+| **Admin portal (this skill)** | https://github.com/ProtoTrading1/Proto_Admin | https://admin.proto.co.za |
+| Main trade portal | https://github.com/ProtoTrading1/ProtoMainSite | https://protoportal-main.vercel.app |
 
 The old embedded admin inside protoportal-main is **deprecated**. Never restore, reference, or deploy it.
 

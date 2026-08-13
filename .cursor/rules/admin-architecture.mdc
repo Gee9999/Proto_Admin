@@ -11,7 +11,7 @@ This is the **only** codebase for https://protoportal-admin.vercel.app.
 
 | | Admin (this repo) | Main portal |
 |--|-------------------|-------------|
-| Repo | `danieljoffeinfo-web/protoportal-admin` | `danieljoffeinfo-web/Proto-Website-` (protoportal-main) |
+| Repo | `ProtoTrading1/Proto_Admin` | `ProtoTrading1/ProtoMainSite` (protoportal-main) |
 | URL | protoportal-admin.vercel.app | protoportal-main.vercel.app |
 
 Never merge admin back into the main repo. Never reference or restore the old embedded admin in protoportal-main.
