@@ -156,6 +156,7 @@ const CommsPanel = lazyRetry(() => import('../components/CommsPanel'));
 import AddCustomerModal from '../components/AddCustomerModal';
 import ActionMenu from '../components/ActionMenu';
 import BridgeStatusDot from '../components/BridgeStatusDot';
+import LiveShoppersDot from '../components/LiveShoppersDot';
 const FulfillmentSettingsModal = lazyRetry(() => import('../components/FulfillmentSettingsModal'));
 import categories from '../data/categories.json';
 
@@ -2272,6 +2273,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
           </div>
           <div className="adm-header-actions">
             <BridgeStatusDot />
+            <LiveShoppersDot />
             <button type="button" onClick={goHome} className="adm-btn-ghost"><Home size={15} /><span className="adm-btn-text">Home</span></button>
             <button onClick={() => void refreshCurrentSection()} className="adm-btn-ghost"><RefreshCw size={15} /><span className="adm-btn-text">Refresh</span></button>
             <button onClick={onViewPortal} className="adm-btn-ghost"><ArrowLeftRight size={15} /><span className="adm-btn-text">Portal</span></button>
