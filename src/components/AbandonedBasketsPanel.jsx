@@ -32,6 +32,10 @@ const SORTS = [
   { key: 'name', label: 'Customer name' },
 ];
 
+/** The list is a worklist, not an archive — show a handful, reveal more on demand. */
+const PAGE_SIZES = [10, 25, 50, 0];
+const PAGE_SIZE_LABELS = { 0: 'Show all' };
+
 const STALENESS_LABELS = {
   active: 'Still shopping',
   cooling: 'Cooling off',
@@ -163,6 +167,7 @@ export default function AbandonedBasketsPanel() {
   const [staleness, setStaleness] = useState('all');
   const [sort, setSort] = useState('value');
   const [search, setSearch] = useState('');
+  const [pageSize, setPageSize] = useState(10);
   const [expanded, setExpanded] = useState(() => new Set());
 
   const load = useCallback(async () => {
@@ -207,6 +212,11 @@ export default function AbandonedBasketsPanel() {
   }, []);
 
   const baskets = useMemo(() => data?.baskets || [], [data]);
+  // Export always covers the full filtered set, not just what is on screen.
+  const visibleBaskets = useMemo(
+    () => (pageSize > 0 ? baskets.slice(0, pageSize) : baskets),
+    [baskets, pageSize],
+  );
   const summary = data?.summary;
   const filtered = data?.filteredSummary;
   const isFiltered = staleness !== 'all' || Boolean(search.trim());
@@ -304,6 +314,14 @@ export default function AbandonedBasketsPanel() {
               />
             </label>
             <span className="oa-select-wrap">
+              Show
+              <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+                {PAGE_SIZES.map((size) => (
+                  <option key={size} value={size}>{PAGE_SIZE_LABELS[size] || `${size} baskets`}</option>
+                ))}
+              </select>
+            </span>
+            <span className="oa-select-wrap">
               Sort by
               <select value={sort} onChange={(event) => setSort(event.target.value)}>
                 {SORTS.map((option) => (
@@ -349,7 +367,7 @@ export default function AbandonedBasketsPanel() {
                 </tr>
               </thead>
               <tbody>
-                {baskets.map((basket) => {
+                {visibleBaskets.map((basket) => {
                   const isOpen = expanded.has(basket.customerId);
                   return [
                     <tr
@@ -407,6 +425,15 @@ export default function AbandonedBasketsPanel() {
               </tbody>
             </table>
           </div>
+        )}
+
+        {baskets.length > visibleBaskets.length && (
+          <p className="oa-note ab-more-note">
+            Showing the top {visibleBaskets.length} of {baskets.length} by {SORTS.find((o) => o.key === sort)?.label.toLowerCase()}.
+            {' '}
+            <button type="button" className="ab-linkish" onClick={() => setPageSize(0)}>Show all</button>
+            {' · Export CSV always covers all '}{baskets.length}.
+          </p>
         )}
       </section>
     </div>

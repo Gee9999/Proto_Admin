@@ -31,15 +31,23 @@ export default function AnalyticsHub() {
         ))}
       </div>
 
-      <Suspense fallback={(
-        <div className="oa-loading">
-          <Loader2 size={20} className="spin" />
-          <span>Loading analytics…</span>
-        </div>
-      )}
-      >
-        <Active />
-      </Suspense>
+      {/*
+        Each view is its own lazy chunk, so switching tabs swaps a ~1000px
+        dashboard for a ~100px spinner. The page height collapsed and the
+        scroll position lurched — the "it drops down when I switch" bug. The
+        wrapper holds the height steady across the swap.
+      */}
+      <div className="oa-hub-view">
+        <Suspense fallback={(
+          <div className="oa-loading oa-loading--reserved">
+            <Loader2 size={20} className="spin" />
+            <span>Loading analytics…</span>
+          </div>
+        )}
+        >
+          <Active />
+        </Suspense>
+      </div>
     </div>
   );
 }

@@ -2697,6 +2697,17 @@ input, select, textarea { font-family: inherit; outline: none; }
 }
 .adm-shoppers-pill { gap: 6px; }
 
+/* Order Requests page-size control + range, sharing a row with the pager. */
+.adm-orders-pagebar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 4px 4px;
+}
+.adm-orders-pagebar__count { font-size: 12px; font-weight: 600; color: #64748b; }
+.adm-orders-pagebar > :last-child:not(.adm-orders-pagebar__count) { margin-left: auto; }
+
 /* Two status pills plus five buttons is a lot for one row. Shed the captions
    before the row runs out of width — the dot and the number still say
    everything, and the title attribute carries the rest. */
@@ -6077,8 +6088,12 @@ html, body { background: #f5f5f5; color: #111827; }
 .oa-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .oa-table th, .oa-table td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #f1f5f9; }
 .oa-table th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; }
-.oa-hub { display: grid; gap: 16px; }
+.oa-hub { display: grid; gap: 16px; align-content: start; }
 .oa-hub-tabs { margin-bottom: 0; }
+/* Holds the page height steady while a tab's chunk and data load, so the
+   tab strip stays put instead of the content collapsing underneath it. */
+.oa-hub-view { min-height: 70vh; }
+.oa-loading--reserved { align-items: center; min-height: 60vh; gap: 10px; }
 
 /* --- Abandoned Baskets ------------------------------------------------- */
 /* Type, cards and badges come from the shared analytics + admin scales
@@ -6171,6 +6186,11 @@ html, body { background: #f5f5f5; color: #111827; }
   font-size: 12px; font-weight: 700; color: #64748b;
 }
 .ab-lines-total strong { font-size: 15px; font-weight: 900; color: #0f172a; font-variant-numeric: tabular-nums; }
+.ab-more-note { margin-top: 12px; }
+.ab-linkish {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; font-weight: 800; color: #15803d; text-decoration: underline;
+}
 
 @media (max-width: 1200px) {
   .ab-stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

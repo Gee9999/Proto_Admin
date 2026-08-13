@@ -188,6 +188,9 @@ const ORDER_TAB_DEFS = [
 const ORDER_TAB_LABELS = Object.fromEntries(ORDER_TAB_DEFS.map((t) => [t.key, t.label]));
 
 const ADMIN_PAGE_SIZE = 50;
+/** Order Requests pages small by default — the tabs are a working queue, not an archive. */
+const ORDER_PAGE_SIZES = [10, 25, 50, 100];
+const ORDER_PAGE_SIZE_DEFAULT = 10;
 const CUSTOMER_SERVICE_SECTIONS = ['orders', 'customers', 'comms'];
 
 function sectionsForAdminRole(role) {
@@ -624,7 +627,19 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   });
   const [orderTab, setOrderTab] = useState('new');
   const [orderPage, setOrderPage] = useState(1);
+  const [orderPageSize, setOrderPageSize] = useState(() => {
+    const stored = Number(localStorage.getItem('adm-orders-page-size'));
+    return ORDER_PAGE_SIZES.includes(stored) ? stored : ORDER_PAGE_SIZE_DEFAULT;
+  });
   const [orderTotal, setOrderTotal] = useState(0);
+  /**
+   * Which request the rows on screen belong to. The `loading` flag below is
+   * shared by every section, so another section finishing its own load used to
+   * flip it false while orders were still in flight — and "No orders in this
+   * tab" would win for a few seconds. Comparing keys instead makes the
+   * pending state a property of the orders request itself.
+   */
+  const [ordersLoadedKey, setOrdersLoadedKey] = useState('');
   const [orderTabCounts, setOrderTabCounts] = useState(null);
   const [orderTrashEnabled, setOrderTrashEnabled] = useState(false);
   const [orderSearchDebounced, setOrderSearchDebounced] = useState('');
@@ -672,7 +687,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     const timer = setTimeout(() => setOrderSearchDebounced(orderSearch.trim()), 300);
     return () => clearTimeout(timer);
   }, [orderSearch]);
-  useEffect(() => { setOrderPage(1); }, [orderTab, orderSearchDebounced]);
+  useEffect(() => { setOrderPage(1); }, [orderTab, orderPageSize, orderSearchDebounced]);
   // Banner + Specials own their own load effects — see BannerPanel and SpecialsPanel.
 
 
@@ -893,7 +908,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     // flight at once; a slow response landing after a newer one used to
     // repaint the list with stale rows — the "order flickers away" bug. Only
     // the latest request may touch state.
-    const key = `${orderTab}|${orderPage}|${orderSearchDebounced}`;
+    const key = `${orderTab}|${orderPage}|${orderPageSize}|${orderSearchDebounced}`;
     const seq = (ordersReqSeqRef.current += 1);
     // Paint a previously seen tab instantly from cache while revalidating, so
     // switching tabs never blanks the list or shows another tab's orders.
@@ -902,6 +917,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       setOrders(cached.rows);
       paintedOrdersRef.current = cached.rows;
       setOrderTotal(cached.total);
+      setOrdersLoadedKey(key);
     } else if (ordersCacheKeyRef.current !== key) {
       // Unseen tab: clear rather than leave the previous tab's rows on screen.
       setOrders([]);
@@ -912,7 +928,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     try {
       const data = await fetchOrdersPage({
         page: orderPage,
-        pageSize: ADMIN_PAGE_SIZE,
+        pageSize: orderPageSize,
         search: orderSearchDebounced,
         tab: orderTab,
       });
@@ -943,6 +959,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         paintedOrdersRef.current = data.rows;
         setOrderTotal(data.total);
       }
+      // Marks the rows on screen as belonging to this request, whether or not
+      // the paint was skipped as unchanged.
+      setOrdersLoadedKey(key);
       if (data.tabCounts) {
         const countsSig = JSON.stringify(data.tabCounts);
         if (orderTabCountsSigRef.current !== countsSig) {
@@ -1310,7 +1329,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     }, 300);
     return () => clearTimeout(timer);
   }, [focusOrderId, activeSection, orders]);
-  useEffect(() => { if (activeSection === 'orders') void loadOrders(); }, [activeSection, orderPage, orderTab, orderSearchDebounced]);
+  useEffect(() => { if (activeSection === 'orders') void loadOrders(); }, [activeSection, orderPage, orderTab, orderPageSize, orderSearchDebounced]);
   useEffect(() => {
     if (activeSection !== 'orders') return;
     setOrdersBadgeSeen(newOrdersCount);
@@ -2234,7 +2253,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     } finally { setFulfillmentSaving(false); }
   };
 
-  const orderPages = Math.max(1, Math.ceil(orderTotal / ADMIN_PAGE_SIZE));
+  const orderPages = Math.max(1, Math.ceil(orderTotal / orderPageSize));
+  // True whenever the rows on screen are not the ones this tab/page asked for.
+  const ordersPending = ordersLoadedKey !== `${orderTab}|${orderPage}|${orderPageSize}|${orderSearchDebounced}`;
 
   const customerPages = Math.max(1, Math.ceil(customerTotal / ADMIN_PAGE_SIZE));
   // Compact view: first rows only, with an explicit Show all / Minimise
@@ -3022,20 +3043,44 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                       </div>
                     );
                   })}
-                  {loading && orders.length === 0 && (
+                  {ordersPending && orderRows.length === 0 && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 16px', color: '#6b7280', fontSize: 13 }}>
                       <Loader2 size={16} className="spin" /> Loading orders…
                     </div>
                   )}
-                  {!loading && orderRows.length === 0 && (
+                  {!ordersPending && orderRows.length === 0 && (
                     <div style={{ padding: '20px 16px', color: '#6b7280', fontSize: 13 }}>
                       {orderSearch ? 'No orders match your search.' : orderTab === 'all' ? 'No orders yet.' : `No orders in this tab.`}
                     </div>
                   )}
                 </div>
-                {orderPages > 1 && (
-                  <Pager page={orderPage} totalPages={orderPages} onChange={setOrderPage} />
-                )}
+                <div className="adm-orders-pagebar">
+                  <label className="oa-select-wrap">
+                    Show
+                    <select
+                      value={orderPageSize}
+                      onChange={(e) => {
+                        const next = Number(e.target.value);
+                        setOrderPageSize(next);
+                        try { localStorage.setItem('adm-orders-page-size', String(next)); } catch { /* ignore */ }
+                      }}
+                    >
+                      {ORDER_PAGE_SIZES.map((size) => (
+                        <option key={size} value={size}>{size} orders</option>
+                      ))}
+                    </select>
+                  </label>
+                  <span className="adm-orders-pagebar__count">
+                    {orderTotal > 0 && (
+                      <>
+                        {(orderPage - 1) * orderPageSize + 1}–{Math.min(orderPage * orderPageSize, orderTotal)} of {orderTotal}
+                      </>
+                    )}
+                  </span>
+                  {orderPages > 1 && (
+                    <Pager page={orderPage} totalPages={orderPages} onChange={setOrderPage} />
+                  )}
+                </div>
                 </>
                 )}
               </div>
