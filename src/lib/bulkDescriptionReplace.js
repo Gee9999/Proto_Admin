@@ -1,70 +1,73 @@
-// Bulk title replace — parse a BARCODE/TITLE spreadsheet, preview the matches
+// Bulk title replace — parse a SKU/TITLE spreadsheet, preview the matches
 // against the live catalogue, then apply. Titles are written to
 // website_stock.title (see api/bulk-description-replace.js).
 
 export const BULK_DESCRIPTION_MAX = 5000;
 
 const TITLE_HEADERS = ['TITLE', 'NAME', 'PRODUCT', 'DESCRIPTION'];
+const SKU_HEADERS = ['SKU', 'WEBSITE SKU', 'PRODUCT SKU', 'ITEM CODE', 'PRODUCT CODE', 'CODE'];
 
-/** Parse an .xlsx/.csv with BARCODE + (TITLE|NAME|PRODUCT|DESCRIPTION) → [{barcode, title}]. */
-export async function parseDescriptionSheet(file) {
-  const XLSX = await import('xlsx');
-  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-  const sheet = wb.Sheets[wb.SheetNames[0]];
-  if (!sheet) throw new Error('No sheet found in that file.');
-  const table = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
-  if (!table.length) throw new Error('That file appears to be empty.');
+const normalizeSku = (value) => String(value ?? '').trim().toUpperCase();
+
+/** Parse worksheet rows by exact SKU so shared barcodes can never merge variants. */
+export function parseDescriptionRows(table) {
+  if (!table?.length) throw new Error('That file appears to be empty.');
 
   let headerIdx = -1;
-  let barcodeCol = -1;
+  let skuCol = -1;
   let titleCol = -1;
   for (let i = 0; i < Math.min(table.length, 10); i += 1) {
     const rowCells = (table[i] || []).map((c) => String(c || '').trim().toUpperCase());
-    // Prefer exact header matches over substring, and never let the barcode and
-    // title resolve to the SAME column (e.g. a "PRODUCT BARCODE" header matches
-    // both — without this guard, titles would be overwritten with barcodes).
-    const bc = rowCells.indexOf('BARCODE') !== -1
-      ? rowCells.indexOf('BARCODE')
-      : rowCells.findIndex((c) => c.includes('BARCODE'));
-    let tc = rowCells.findIndex((c, idx) => idx !== bc && TITLE_HEADERS.includes(c));
-    if (tc === -1) tc = rowCells.findIndex((c, idx) => idx !== bc && TITLE_HEADERS.some((h) => c.includes(h)));
-    if (bc !== -1 && tc !== -1 && bc !== tc) { headerIdx = i; barcodeCol = bc; titleCol = tc; break; }
+    const sc = rowCells.findIndex((c) => SKU_HEADERS.includes(c));
+    let tc = rowCells.findIndex((c, idx) => idx !== sc && TITLE_HEADERS.includes(c));
+    if (tc === -1) tc = rowCells.findIndex((c, idx) => idx !== sc && TITLE_HEADERS.some((h) => c.includes(h)));
+    if (sc !== -1 && tc !== -1 && sc !== tc) { headerIdx = i; skuCol = sc; titleCol = tc; break; }
   }
   if (headerIdx === -1) {
-    throw new Error('Could not find BARCODE and TITLE columns. The first row must have a BARCODE header and a TITLE (or NAME/PRODUCT/DESCRIPTION) header.');
+    throw new Error('Could not find SKU and TITLE columns. The first rows must include a SKU header and a TITLE (or NAME/PRODUCT/DESCRIPTION) header.');
   }
 
-  // Last row wins if a barcode repeats (later rows treated as corrections).
+  // Last row wins only when the same exact SKU repeats as a later correction.
   const map = new Map();
   for (let i = headerIdx + 1; i < table.length; i += 1) {
     const row = table[i] || [];
-    const barcode = String(row[barcodeCol] ?? '').trim();
+    const sku = normalizeSku(row[skuCol]);
     const title = String(row[titleCol] ?? '').trim();
-    if (!barcode || !title) continue;
-    map.set(barcode, title);
+    if (!sku || !title) continue;
+    map.set(sku, title);
   }
-  const items = [...map.entries()].map(([barcode, title]) => ({ barcode, title }));
-  if (!items.length) throw new Error('No rows with both a barcode and a title were found.');
+  const items = [...map.entries()].map(([sku, title]) => ({ sku, title }));
+  if (!items.length) throw new Error('No rows with both a SKU and a title were found.');
   if (items.length > BULK_DESCRIPTION_MAX) {
     throw new Error(`Too many rows (${items.length}). Max ${BULK_DESCRIPTION_MAX} per run.`);
   }
   return items;
 }
 
-/** Look up the current title for each barcode; merge in the new title. */
+/** Parse an .xlsx/.csv with SKU + (TITLE|NAME|PRODUCT|DESCRIPTION) → [{sku, title}]. */
+export async function parseDescriptionSheet(file) {
+  const XLSX = await import('xlsx');
+  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+  const sheet = wb.Sheets[wb.SheetNames[0]];
+  if (!sheet) throw new Error('No sheet found in that file.');
+  const table = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
+  return parseDescriptionRows(table);
+}
+
+/** Look up the current title for each exact SKU; merge in the new title. */
 export async function previewDescriptions(items) {
   const res = await fetch('/api/bulk-description-replace', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ mode: 'preview', barcodes: items.map((i) => i.barcode) }),
+    body: JSON.stringify({ mode: 'preview', skus: items.map((i) => i.sku) }),
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || 'Preview failed');
-  const byBarcode = new Map(items.map((i) => [i.barcode, i.title]));
+  const bySku = new Map(items.map((i) => [normalizeSku(i.sku), i.title]));
   return (json.rows || []).map((r) => ({
     ...r,
-    newTitle: byBarcode.get(r.barcode) || '',
-    unchanged: r.found && (r.currentTitle || '').trim() === (byBarcode.get(r.barcode) || '').trim(),
+    newTitle: bySku.get(normalizeSku(r.sku)) || '',
+    unchanged: r.found && (r.currentTitle || '').trim() === (bySku.get(normalizeSku(r.sku)) || '').trim(),
   }));
 }
 
@@ -80,11 +83,11 @@ export async function applyDescriptions(items) {
   return json;
 }
 
-/** Download a CSV of barcodes that had no matching product. */
+/** Download a CSV of SKUs that had no matching product. */
 export function downloadUnmatchedCsv(rows) {
   const unmatched = (rows || []).filter((r) => !r.found);
   if (!unmatched.length) return;
-  const lines = [['BARCODE', 'NEW TITLE'], ...unmatched.map((r) => [r.barcode, r.newTitle || ''])];
+  const lines = [['SKU', 'NEW TITLE'], ...unmatched.map((r) => [r.sku, r.newTitle || ''])];
   const csv = lines
     .map((cols) => cols.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
     .join('\n');
@@ -92,7 +95,7 @@ export function downloadUnmatchedCsv(rows) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'unmatched-barcodes.csv';
+  a.download = 'unmatched-skus.csv';
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

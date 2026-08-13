@@ -49,7 +49,7 @@ export default function DescriptionReplacePanel({ onShowToast }) {
     if (!window.confirm(`Replace titles for ${applicable.length} product(s)?`)) return;
     setApplying(true);
     try {
-      const res = await applyDescriptions(applicable.map((r) => ({ barcode: r.barcode, title: r.newTitle })));
+      const res = await applyDescriptions(applicable.map((r) => ({ sku: r.sku, title: r.newTitle })));
       setResults(res);
       onShowToast?.(
         `Updated ${res.updated}${res.notFound ? `, ${res.notFound} not found` : ''}${res.failed ? `, ${res.failed} failed` : ''}`,
@@ -69,10 +69,10 @@ export default function DescriptionReplacePanel({ onShowToast }) {
   return (
     <div>
       <p className="adm-section-note">
-        Upload a spreadsheet with <strong>BARCODE</strong> and <strong>TITLE</strong> columns
-        (a NAME/PRODUCT/DESCRIPTION header also works). Each barcode is matched to a live
-        product and its <strong>title</strong> (product name) is replaced. Changes sync to the
-        storefront automatically.
+        Upload a spreadsheet with <strong>SKU</strong> and <strong>TITLE</strong> columns
+        (a NAME/PRODUCT/DESCRIPTION header also works). Each exact SKU is matched to one live
+        product and only that product&apos;s <strong>title</strong> is replaced. Barcodes are shown
+        for reference but are never used to match or update products.
       </p>
 
       <div className="adm-toolbar" style={{ gap: 10, marginBottom: 12 }}>
@@ -107,8 +107,8 @@ export default function DescriptionReplacePanel({ onShowToast }) {
             <table className="drp-table">
               <thead>
                 <tr>
-                  <th>Barcode</th>
                   <th>SKU</th>
+                  <th>Barcode</th>
                   <th>Current title</th>
                   <th>New title</th>
                   <th>Status</th>
@@ -116,9 +116,9 @@ export default function DescriptionReplacePanel({ onShowToast }) {
               </thead>
               <tbody>
                 {rows.slice(0, 500).map((r, i) => (
-                  <tr key={`${r.barcode}-${i}`} className={!r.found ? 'drp-row--missing' : r.unchanged ? 'drp-row--same' : ''}>
-                    <td><code style={{ fontSize: 11 }}>{r.barcode}</code></td>
-                    <td>{r.found ? (r.sku || '—') : <span className="adm-muted">—</span>}</td>
+                  <tr key={`${r.sku}-${i}`} className={!r.found ? 'drp-row--missing' : r.unchanged ? 'drp-row--same' : ''}>
+                    <td><code style={{ fontSize: 11 }}>{r.sku}</code></td>
+                    <td>{r.found ? (r.barcode || <span className="adm-muted">—</span>) : <span className="adm-muted">—</span>}</td>
                     <td className="drp-desc">{r.found ? (r.currentTitle || <span className="adm-muted">(empty)</span>) : <span className="adm-muted">—</span>}</td>
                     <td className="drp-desc">{r.newTitle}</td>
                     <td>
