@@ -5,11 +5,13 @@ import { lazyRetry } from '../lib/lazyRetry';
 const OrderAnalyticsDashboard = lazyRetry(() => import('./OrderAnalyticsDashboard'));
 const SearchAnalyticsDashboard = lazyRetry(() => import('./SearchAnalyticsDashboard'));
 const AbandonedBasketsPanel = lazyRetry(() => import('./AbandonedBasketsPanel'));
+const EngagementPanel = lazyRetry(() => import('./EngagementPanel'));
 
 const VIEWS = [
   { key: 'orders', label: 'Order Analytics', Component: OrderAnalyticsDashboard },
   { key: 'search', label: 'Search Analytics', Component: SearchAnalyticsDashboard },
   { key: 'baskets', label: 'Abandoned Baskets', Component: AbandonedBasketsPanel },
+  { key: 'engagement', label: 'Engagement', Component: EngagementPanel },
 ];
 
 export default function AnalyticsHub() {
