@@ -1,4 +1,6 @@
 import { findProductBySku, fetchProductLookupMap } from './_sku-match.js';
+import { resolveProductByCode } from './_sql-provider.js';
+import { customerPriceFromPositill } from '../lib/catalogue-price.mjs';
 
 function readNum(value, fallback = 0) {
   if (value === null || value === undefined || value === '') return fallback;
@@ -42,6 +44,26 @@ export async function ensureProductFromCatalogueRow(supabase, row) {
 export function formatSyncWarning(step, error) {
   const message = String(error?.message || error || 'unknown error').trim() || 'unknown error';
   return `${step}: ${message}`;
+}
+
+/**
+ * Convert a verified live Positill row into the values safe to restore to the
+ * customer website. Archive prices are historical snapshots and must never be
+ * reused as the publication authority.
+ */
+export function archivedRestoreValues(liveProduct, dataSource) {
+  if (dataSource !== 'erp_sql' || !liveProduct) {
+    throw new Error('Make Live paused because the current Positill price could not be verified. Retry when Live Positill SQL is connected.');
+  }
+
+  const price = customerPriceFromPositill(liveProduct.price);
+  if (!(price > 0)) {
+    throw new Error('Make Live paused because Positill returned a zero or invalid price. Correct the price in Positill and retry.');
+  }
+
+  const stockQty = readNum(liveProduct.onhand, 0);
+  const availableStock = readNum(liveProduct.available, stockQty);
+  return { price, stockQty, availableStock };
 }
 
 /** Pick the richest catalogue row per ERP barcode (live preferred over archive). */
@@ -102,7 +124,35 @@ export async function restoreArchivedToLive(supabase, sku, { keepLiveWhenOos = t
     throw new Error('New product preview — use Approval → Set live');
   }
 
-  await ensureProductFromCatalogueRow(supabase, archived);
+  // An archived row is a historical snapshot. Verify the current live ERP
+  // value before changing either table, then replace its stale price/stock so
+  // unarchive_product cannot copy an old value back onto the website.
+  const erpCode = String(archived.barcode || archived.product_sku || archived.sku || '').trim();
+  const liveResolution = await resolveProductByCode(erpCode).catch(() => ({
+    product: null,
+    dataSource: null,
+    bridgeAttempted: true,
+  }));
+  const liveValues = archivedRestoreValues(liveResolution.product, liveResolution.dataSource);
+  const { error: refreshArchiveErr } = await supabase
+    .from('archived_products')
+    .update({
+      price: liveValues.price,
+      stock_qty: liveValues.stockQty,
+      available_stock: liveValues.availableStock,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('sku', cleanSku);
+  if (refreshArchiveErr) throw refreshArchiveErr;
+
+  const refreshedArchived = {
+    ...archived,
+    price: liveValues.price,
+    stock_qty: liveValues.stockQty,
+    available_stock: liveValues.availableStock,
+  };
+
+  await ensureProductFromCatalogueRow(supabase, refreshedArchived);
 
   const { error: unErr } = await supabase.rpc('unarchive_product', { p_sku: cleanSku });
   if (unErr) throw unErr;
@@ -142,5 +192,32 @@ export async function restoreArchivedToLive(supabase, sku, { keepLiveWhenOos = t
     syncWarnings.push(formatSyncWarning('sync_website_from_products', syncErr));
   }
 
-  return { ok: true, sku: cleanSku, sync: syncResult, syncWarnings };
+  // General product synchronisation may still carry an older cached price.
+  // Enforce the verified live value last, then refresh the public storefront
+  // projection once more. A failure is fatal: reporting success with the old
+  // archive price would be worse than making the admin retry.
+  const { data: corrected, error: correctErr } = await supabase
+    .from('website_stock')
+    .update({
+      price: liveValues.price,
+      stock_qty: liveValues.stockQty,
+      available_stock: liveValues.availableStock,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('sku', cleanSku)
+    .select('sku');
+  if (correctErr) throw correctErr;
+  if (!corrected?.length) throw new Error('Restored product could not be verified in the live catalogue');
+
+  const { error: finalUpsertErr } = await supabase.rpc('upsert_website_product_from_stock', { p_website_sku: cleanSku });
+  if (finalUpsertErr) throw finalUpsertErr;
+
+  return {
+    ok: true,
+    sku: cleanSku,
+    price: liveValues.price,
+    priceSource: 'positill.live_price_a_ex_vat_converted',
+    sync: syncResult,
+    syncWarnings,
+  };
 }
