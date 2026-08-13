@@ -58,6 +58,26 @@ async function fetchAll(build) {
   }
 }
 
+/**
+ * Names a specific set of customers. Chunked because an `in` list becomes a
+ * query-string filter, and a few hundred uuids would overrun the URL.
+ */
+async function fetchCustomersByIds(supabase, ids) {
+  const unique = [...new Set(ids.filter(Boolean))];
+  if (!unique.length) return [];
+
+  const rows = [];
+  for (let i = 0; i < unique.length; i += 200) {
+    const { data, error } = await supabase
+      .from('customers')
+      .select(CUSTOMER_COLUMNS)
+      .in('id', unique.slice(i, i + 200));
+    if (error) throw error;
+    rows.push(...(data || []));
+  }
+  return rows;
+}
+
 export default async function handler(req, res) {
   if (!(await requireAdminKey(req, res))) return;
   res.setHeader('Cache-Control', 'no-store');
@@ -73,7 +93,7 @@ export default async function handler(req, res) {
   const supabase = getAdminClient();
 
   try {
-    const [visits, cartEvents, customers, campaigns] = await Promise.all([
+    const [visits, cartEvents, campaigns] = await Promise.all([
       fetchAll(() => supabase
         .from('customer_visits')
         .select('customer_id, session_id, started_at, last_seen_at')
@@ -85,11 +105,18 @@ export default async function handler(req, res) {
         .eq('event_type', 'cart_item_added')
         .gte('created_at', sinceIso)
         .order('created_at', { ascending: false })),
-      fetchAll(() => supabase.from('customers').select(CUSTOMER_COLUMNS)),
       readEmailCampaigns().catch(() => []),
     ]);
 
     const visitSummary = summariseVisits(visits || []);
+
+    // Only the customers who actually visited — reading the whole table to
+    // name a handful of visitors would grow with the customer base rather
+    // than with the answer.
+    const customers = await fetchCustomersByIds(
+      supabase,
+      visitSummary.byCustomer.map((row) => row.customerId),
+    );
 
     return res.status(200).json({
       range,

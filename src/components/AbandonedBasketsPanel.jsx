@@ -14,7 +14,9 @@ import {
   AlertTriangle, ChevronDown, ChevronRight, Download, Loader2, RefreshCw, Search,
 } from 'lucide-react';
 import { downloadCsv } from '../lib/exportReport';
-import { basketExportRows } from '../../lib/abandoned-baskets.mjs';
+import {
+  basketExportRows, filterBaskets, sortBaskets, summariseBaskets,
+} from '../../lib/abandoned-baskets.mjs';
 import { ADMIN_REFRESH_EVENT } from '../lib/adminRefresh';
 
 const STALENESS_FILTERS = [
@@ -170,13 +172,18 @@ export default function AbandonedBasketsPanel() {
   const [pageSize, setPageSize] = useState(10);
   const [expanded, setExpanded] = useState(() => new Set());
 
+  /**
+   * One request, no parameters. Filtering, sorting and searching all run on
+   * the data already in the browser — the endpoint reads every cart and the
+   * customers behind them, so re-fetching it per keystroke was doing that work
+   * again to answer a question the client could already answer. Refresh is the
+   * only thing that goes back to the server.
+   */
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const params = new URLSearchParams({ staleness, sort });
-      if (search.trim()) params.set('search', search.trim());
-      const res = await fetch(`/api/abandoned-baskets?${params}`);
+      const res = await fetch('/api/abandoned-baskets');
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || 'Failed to load abandoned baskets');
       setData(json);
@@ -186,13 +193,9 @@ export default function AbandonedBasketsPanel() {
     } finally {
       setLoading(false);
     }
-  }, [staleness, sort, search]);
+  }, []);
 
-  // Typing in the search box should not fire a request per keystroke.
-  useEffect(() => {
-    const timer = setTimeout(() => { void load(); }, search ? 300 : 0);
-    return () => clearTimeout(timer);
-  }, [load, search]);
+  useEffect(() => { void load(); }, [load]);
 
   useEffect(() => {
     const onRefresh = (event) => {
@@ -211,14 +214,18 @@ export default function AbandonedBasketsPanel() {
     });
   }, []);
 
-  const baskets = useMemo(() => data?.baskets || [], [data]);
+  const allBaskets = useMemo(() => data?.baskets || [], [data]);
+  const baskets = useMemo(
+    () => sortBaskets(filterBaskets(allBaskets, { staleness, search }), sort),
+    [allBaskets, staleness, search, sort],
+  );
   // Export always covers the full filtered set, not just what is on screen.
   const visibleBaskets = useMemo(
     () => (pageSize > 0 ? baskets.slice(0, pageSize) : baskets),
     [baskets, pageSize],
   );
   const summary = data?.summary;
-  const filtered = data?.filteredSummary;
+  const filtered = useMemo(() => summariseBaskets(baskets), [baskets]);
   const isFiltered = staleness !== 'all' || Boolean(search.trim());
 
   const handleExport = useCallback(() => {

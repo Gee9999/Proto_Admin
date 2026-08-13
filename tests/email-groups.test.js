@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   GROUP_CSV_COLUMNS,
@@ -141,5 +142,39 @@ describe('isPlausibleEmail', () => {
   it('passes ordinary addresses and rejects obvious junk', () => {
     ['a@b.co', 'jane.d+tag@example.co.za'].forEach((e) => expect(isPlausibleEmail(e)).toBe(true));
     ['', 'a@b', 'a b@c.com', 'a@b.c,d@e.f', null, undefined].forEach((e) => expect(isPlausibleEmail(e)).toBe(false));
+  });
+});
+
+describe('upsert conflict target (regression)', () => {
+  /**
+   * The first cut of migration 062 made the uniqueness index an EXPRESSION
+   * index on (group_id, lower(btrim(email))). PostgREST emits
+   * ON CONFLICT (group_id, email), which Postgres only matches against a
+   * unique index on those exact columns — so every upload failed with
+   * "no unique or exclusion constraint matching the ON CONFLICT
+   * specification". Nothing in the test suite caught it because the failure
+   * only happens in the database.
+   */
+  const migration = fs.readFileSync(
+    new URL('../migrations/063_email_group_members_conflict_target.sql', import.meta.url), 'utf8',
+  );
+  const api = fs.readFileSync(new URL('../api/email-groups.js', import.meta.url), 'utf8');
+
+  it('indexes the plain columns the upsert conflicts on', () => {
+    // Comments explain the old expression index, so assert on the SQL only.
+    const sql = migration.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
+    expect(sql).toMatch(/on public\.email_group_members \(group_id, email\)/);
+    // An expression in the executed statements is exactly what broke it.
+    expect(sql).not.toMatch(/lower\(btrim\(email\)\)/);
+  });
+
+  it('conflicts on the columns that index covers', () => {
+    expect(api).toMatch(/onConflict: 'group_id,email'/);
+  });
+
+  it('still normalises every address, which is what makes a plain index safe', () => {
+    // Without this the plain index would let Jane@x.com and jane@x.com both in.
+    const { members } = validateMemberPayload([{ email: '  JANE@Example.CO.ZA ' }]);
+    expect(members[0].email).toBe('jane@example.co.za');
   });
 });

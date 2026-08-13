@@ -69,10 +69,9 @@ export default async function handler(req, res) {
 
   const supabase = getAdminClient();
 
-  const [cartResult, customerResult] = await Promise.all([
-    fetchAll(supabase.from('customer_account_carts').select(CART_COLUMNS).order('updated_at', { ascending: false })),
-    fetchAll(supabase.from('customers').select(CUSTOMER_COLUMNS)),
-  ]);
+  const cartResult = await fetchAll(
+    supabase.from('customer_account_carts').select(CART_COLUMNS).order('updated_at', { ascending: false }),
+  );
 
   if (cartResult.error) {
     // The portal owns migration 057. If the admin app is pointed at a project
@@ -87,11 +86,29 @@ export default async function handler(req, res) {
     }
     return res.status(400).json({ error: cartResult.error.message });
   }
-  if (customerResult.error) return res.status(400).json({ error: customerResult.error.message });
+  // Only the customers who are actually holding something. Most rows in this
+  // table are emptied baskets from customers who did check out, so naming
+  // every customer would read the whole table to describe a fraction of it.
+  const holderIds = [...new Set(
+    cartResult.rows
+      .filter((row) => Array.isArray(row.items) && row.items.length > 0)
+      .map((row) => String(row.customer_id || ''))
+      .filter(Boolean),
+  )];
+
+  const customerRows = [];
+  for (let i = 0; i < holderIds.length; i += 200) {
+    const { data, error } = await supabase
+      .from('customers')
+      .select(CUSTOMER_COLUMNS)
+      .in('id', holderIds.slice(i, i + 200));
+    if (error) return res.status(400).json({ error: error.message });
+    customerRows.push(...(data || []));
+  }
 
   const all = buildAbandonedBaskets({
     carts: cartResult.rows,
-    customers: customerResult.rows,
+    customers: customerRows,
     now: Date.now(),
   });
 

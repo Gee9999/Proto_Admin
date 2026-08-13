@@ -27,12 +27,30 @@ function missingTable(error) {
   return /does not exist/i.test(error?.message || '');
 }
 
-async function countMembers(supabase, groupId) {
-  const { count } = await supabase
-    .from('email_group_members')
-    .select('id', { count: 'exact', head: true })
-    .eq('group_id', groupId);
-  return count || 0;
+/**
+ * Member counts for every group in one read.
+ *
+ * A head-count per group was one query per group — fine at three groups,
+ * needless at thirty. Only the group_id column is fetched, so the payload is
+ * a uuid per member rather than the member rows themselves.
+ */
+async function memberCounts(supabase) {
+  const counts = new Map();
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await supabase
+      .from('email_group_members')
+      .select('group_id')
+      .range(offset, offset + 1000 - 1);
+    if (error) throw error;
+    const batch = data || [];
+    batch.forEach((row) => {
+      const key = String(row.group_id);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    });
+    if (batch.length < 1000) return counts;
+    offset += 1000;
+  }
 }
 
 /** Insert in chunks, ignoring anyone already on the list. */
@@ -84,10 +102,11 @@ export default async function handler(req, res) {
         throw error;
       }
 
-      const groups = await Promise.all((data || []).map(async (group) => ({
+      const counts = await memberCounts(supabase);
+      const groups = (data || []).map((group) => ({
         ...group,
-        memberCount: await countMembers(supabase, group.id),
-      })));
+        memberCount: counts.get(String(group.id)) || 0,
+      }));
       return res.status(200).json({ available: true, groups });
     }
 

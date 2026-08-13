@@ -972,7 +972,14 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         if (badge != null) setNewOrdersCount(badge);
       }
     } catch (err) {
-      if (seq === ordersReqSeqRef.current) showToast(err.message || 'Failed to load orders', 'error');
+      if (seq === ordersReqSeqRef.current) {
+        showToast(err.message || 'Failed to load orders', 'error');
+        // Settle the key even on failure. Without this the list is stuck
+        // "Loading orders…" for good after one failed fetch, because nothing
+        // else ever marks the request finished — the toast would be the only
+        // hint anything went wrong.
+        setOrdersLoadedKey(key);
+      }
     } finally {
       if (seq === ordersReqSeqRef.current) setLoading(false);
     }
