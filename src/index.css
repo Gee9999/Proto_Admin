@@ -2656,6 +2656,10 @@ input, select, textarea { font-family: inherit; outline: none; }
   display: flex;
   gap: 10px;
   align-items: center;
+  /* The header caps at 1500px, so this row competes for width. Without this
+     the nowrap status pills shrink their box but not their text, and the
+     overflow lands on top of the next button. */
+  flex-shrink: 0;
 }
 
 /* Bridge (Positill SQL tunnel) live-status indicator in the header. */
@@ -2666,6 +2670,8 @@ input, select, textarea { font-family: inherit; outline: none; }
   padding: 5px 10px;
   border: 1px solid #e5e7eb;
   border-radius: 999px;
+  /* Its content is nowrap, so shrinking can only ever cause overflow. */
+  flex-shrink: 0;
   font-size: 12px;
   font-weight: 700;
   color: #6b7280;
@@ -2690,6 +2696,16 @@ input, select, textarea { font-family: inherit; outline: none; }
   text-align: right;
 }
 .adm-live-dot { gap: 6px; }
+
+/* Two status pills plus five buttons is a lot for one row. Shed the captions
+   before the row runs out of width — the dot and the number still say
+   everything, and the title attribute carries the rest. */
+@media (max-width: 1280px) {
+  .adm-live-dot .adm-bridge-dot__label { display: none; }
+}
+@media (max-width: 1120px) {
+  .adm-bridge-dot__label { display: none; }
+}
 
 @media (max-width: 640px) {
   .adm-bridge-dot__label { display: none; }
