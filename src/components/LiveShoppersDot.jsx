@@ -68,12 +68,12 @@ export default function LiveShoppersDot() {
   }[status];
 
   return (
-    <span className="adm-bridge-dot adm-live-dot" title={meta.label} aria-label={meta.label} role="img">
+    <span className="adm-bridge-dot adm-shoppers-pill" title={meta.label} aria-label={meta.label} role="img">
       <span
         className={`adm-bridge-dot__led${meta.pulse ? ' adm-bridge-dot__led--pulse' : ''}`}
         style={{ background: meta.color, boxShadow: `0 0 0 3px ${meta.color}22` }}
       />
-      <span className="adm-live-dot__count">{meta.text}</span>
+      <span className="adm-shoppers-pill__count">{meta.text}</span>
       <span className="adm-bridge-dot__label">browsing</span>
     </span>
   );

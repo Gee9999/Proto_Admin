@@ -2687,7 +2687,7 @@ input, select, textarea { font-family: inherit; outline: none; }
 @keyframes adm-bridge-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
 /* Live shopper count — same pill as the bridge status so the two read as a
    pair. The count carries the weight, the word beside it is the caption. */
-.adm-live-dot__count {
+.adm-shoppers-pill__count {
   font-size: 13px;
   font-weight: 900;
   color: #0f172a;
@@ -2695,13 +2695,13 @@ input, select, textarea { font-family: inherit; outline: none; }
   min-width: 10px;
   text-align: right;
 }
-.adm-live-dot { gap: 6px; }
+.adm-shoppers-pill { gap: 6px; }
 
 /* Two status pills plus five buttons is a lot for one row. Shed the captions
    before the row runs out of width — the dot and the number still say
    everything, and the title attribute carries the rest. */
 @media (max-width: 1280px) {
-  .adm-live-dot .adm-bridge-dot__label { display: none; }
+  .adm-shoppers-pill .adm-bridge-dot__label { display: none; }
 }
 @media (max-width: 1120px) {
   .adm-bridge-dot__label { display: none; }
