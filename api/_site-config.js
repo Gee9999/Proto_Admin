@@ -4,11 +4,15 @@ export const SITE_CONFIG_BUCKET = 'site-config';
 
 export function getPortalAdminClient() {
   const url = process.env.VITE_SUPABASE_URL;
-  const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  // Prefer Supabase's current server-only secret keys while retaining the
+  // legacy service-role variable during a controlled credential migration.
+  const key = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
-    throw new Error('Missing VITE_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    throw new Error('Missing VITE_SUPABASE_URL or SUPABASE_SECRET_KEY/SUPABASE_SERVICE_ROLE_KEY');
   }
-  return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } });
+  return createClient(url, key, {
+    auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+  });
 }
 
 export async function readSiteConfigJson(file, fallback = {}) {

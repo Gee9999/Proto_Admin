@@ -47,11 +47,11 @@ function StepTabs({ step }) {
   );
 }
 
-function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
+function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast, titleOnly = false }) {
   const folderRef = useRef(null);
   const abortRef = useRef(false);
 
-  const [mode, setMode] = useState('images'); // 'images' | 'descriptions'
+  const [mode, setMode] = useState(titleOnly ? 'descriptions' : 'images'); // 'images' | 'descriptions'
   const [step, setStep] = useState('select');
   const [scope, setScope] = useState('live');
   const [searchInput, setSearchInput] = useState('');
@@ -278,7 +278,7 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
         </div>
       </div>
 
-      <div className="adm-tabbar" role="tablist" aria-label="Replace mode" style={{ display: 'inline-flex', gap: 4, marginBottom: 14 }}>
+      {!titleOnly && <div className="adm-tabbar" role="tablist" aria-label="Replace mode" style={{ display: 'inline-flex', gap: 4, marginBottom: 14 }}>
         <button
           type="button"
           role="tab"
@@ -297,7 +297,7 @@ function BulkImageReplacePanelInner({ taxonomyTree = [], onShowToast }) {
         >
           Titles
         </button>
-      </div>
+      </div>}
 
       {mode === 'descriptions' && <DescriptionReplacePanel onShowToast={onShowToast} />}
 

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import {
   Archive,
   Download,
@@ -6,6 +6,7 @@ import {
   ImagePlus,
   Loader2,
   RefreshCw,
+  Sparkles,
   Upload,
 } from 'lucide-react';
 import { exportBatchReportCsv, isImageFile } from '../../lib/parseIntakeFilename';
@@ -21,12 +22,6 @@ import { catalogueDisplayTitle, loaderCodeLabel } from '../../lib/productLoaderD
 import LoaderCodeEllipsis from './LoaderCodeEllipsis.jsx';
 import CategoryPathSelect from './CategoryPathSelect';
 import { loaderPriceSourceLabel } from '../../../lib/catalogue-price.mjs';
-import {
-  clearProductLoaderUploadDraft,
-  getProductLoaderUploadDraft,
-  getProductLoaderUploadDraftRecovery,
-  saveProductLoaderUploadDraft,
-} from '../../lib/productLoaderUploadDraft';
 
 /**
  * Upload tab — one place for both a single image and a whole folder. Each
@@ -97,8 +92,7 @@ export default function ProductLoaderUpload({
   batchOverwrite,
   setBatchOverwrite,
   onShowToast,
-  onSendToImageCentre,
-  imageCentreQueueCount = 0,
+  onProcessFiles,
 }) {
   const folderRef = useRef(null);
   const filesRef = useRef(null);
@@ -111,27 +105,9 @@ export default function ProductLoaderUpload({
   const [elapsedMs, setElapsedMs] = useState(0);
   const [stats, setStats] = useState({ published: 0, dormant: 0, failed: 0 });
   const [groupColourVariants, setGroupColourVariants] = useState(true);
-  const [draftRestored, setDraftRestored] = useState(false);
-  const [draftRecovery, setDraftRecovery] = useState(() => getProductLoaderUploadDraftRecovery());
+  const [sourceFiles, setSourceFiles] = useState([]);
 
   const batchDefaultCategoryId = batchDefaultPathIds?.[0] || '';
-
-  // ProductLoaderPanel conditionally unmounts this tab. Keep the real File
-  // objects through tab changes so selected images do not silently disappear.
-  useEffect(() => {
-    const draft = getProductLoaderUploadDraft();
-    if (draft?.length) {
-      setItems(draft);
-      setDraftRestored(true);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (items.length) {
-      saveProductLoaderUploadDraft(items);
-      setDraftRecovery(getProductLoaderUploadDraftRecovery());
-    }
-  }, [items]);
 
   const grouped = useMemo(() => ({
     ready: items.filter((i) => i.group === 'ready'),
@@ -156,11 +132,9 @@ export default function ProductLoaderUpload({
       return;
     }
     setScanning(true);
+    setSourceFiles(files);
     setError('');
     setItems([]);
-    clearProductLoaderUploadDraft();
-    setDraftRecovery(null);
-    setDraftRestored(false);
     setStats({ published: 0, dormant: 0, failed: 0 });
     try {
       const merged = await lookupFilenames(files.map((f) => f.name), files, { groupColourVariants });
@@ -338,17 +312,6 @@ export default function ProductLoaderUpload({
     URL.revokeObjectURL(url);
   };
 
-  const discardDraft = () => {
-    for (const item of items) {
-      if (item.previewUrl?.startsWith('blob:')) URL.revokeObjectURL(item.previewUrl);
-    }
-    setItems([]);
-    clearProductLoaderUploadDraft();
-    setDraftRecovery(null);
-    setDraftRestored(false);
-    onShowToast?.('Upload draft discarded. No image was published.', 'success');
-  };
-
   const renderGroup = (key) => {
     const rows = grouped[key];
     if (!rows.length) return null;
@@ -365,7 +328,6 @@ export default function ProductLoaderUpload({
               <col style={{ width: 130 }} />
               <col style={{ width: 56 }} />
               <col style={{ width: 88 }} />
-              <col style={{ width: 150 }} />
             </colgroup>
             <thead>
               <tr>
@@ -376,7 +338,6 @@ export default function ProductLoaderUpload({
                 <th>Price incl. VAT</th>
                 <th>Slot</th>
                 <th>Status</th>
-                <th>Image review</th>
               </tr>
             </thead>
             <tbody>
@@ -395,13 +356,6 @@ export default function ProductLoaderUpload({
                   <td>R {Number(row.price || 0).toFixed(2)}<br /><span className="adm-muted">{row.priceSourceLabel || loaderPriceSourceLabel(row.priceSource)}</span></td>
                   <td>{row.imageSlot}</td>
                   <td className={row.status === 'error' ? 'pl-error' : ''}>{rowStatusLabel(row)}</td>
-                  <td>
-                    {row.file && row.websiteRow && String(row.websiteRow.sku || '').trim().toUpperCase() === String(row.code || '').trim().toUpperCase() ? (
-                      <button type="button" className="adm-btn-ghost adm-btn--sm" disabled={busy} onClick={() => onSendToImageCentre?.(row)}>Send to Centre</button>
-                    ) : (
-                      <span className="adm-muted">Needs exact existing SKU</span>
-                    )}
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -429,6 +383,11 @@ export default function ProductLoaderUpload({
         <button type="button" className="adm-btn-ghost" disabled={busy} onClick={() => !busy && folderRef.current?.click()}>
           <FolderOpen size={16} /> Choose image folder
         </button>
+        {onProcessFiles && sourceFiles.length > 0 && (
+          <button type="button" className="adm-btn-ghost" disabled={busy} onClick={() => onProcessFiles(sourceFiles)}>
+            <Sparkles size={14} /> Improve selected ({sourceFiles.length})
+          </button>
+        )}
         <input ref={filesRef} type="file" accept="image/*" multiple hidden onChange={(e) => { void handleFiles(e.target.files); e.target.value = ''; }} />
         <input ref={folderRef} type="file" accept="image/*" multiple webkitdirectory="" directory="" hidden onChange={(e) => { void handleFiles(e.target.files); e.target.value = ''; }} />
         <label className="pl-check">
@@ -443,28 +402,6 @@ export default function ProductLoaderUpload({
       </div>
 
       {error && <p className="pl-error">{error}</p>}
-
-      {items.length > 0 && (
-        <div style={{ margin: '12px 0', padding: '10px 12px', border: '1px solid #bfdbfe', borderRadius: 8, background: '#eff6ff', color: '#1e3a8a' }}>
-          <strong>{draftRestored ? 'Upload draft restored.' : 'Upload draft saved in this browser.'}</strong>{' '}
-          Your selected image{items.length === 1 ? '' : 's'} stay{items.length === 1 ? 's' : ''} here while you switch tabs. Nothing has been published.
-          <div className="pl-action-row" style={{ marginTop: 8 }}>
-            <button type="button" className="adm-btn-ghost adm-btn--sm" disabled={busy} onClick={discardDraft}>
-              Discard draft
-            </button>
-          </div>
-        </div>
-      )}
-
-      {!items.length && draftRecovery?.count > 0 && (
-        <div style={{ margin: '12px 0', padding: '10px 12px', border: '1px solid #fde68a', borderRadius: 8, background: '#fffbeb', color: '#92400e' }}>
-          A previous upload draft had {draftRecovery.count} image{draftRecovery.count === 1 ? '' : 's'}, but this browser was refreshed. Please choose the image again; it was never published.
-        </div>
-      )}
-
-      <p className="adm-muted" style={{ marginTop: 10 }}>
-        Your selected uploads stay here until you choose what to do with them. For image cleanup, use “Send to Centre”; only an exact existing website SKU and image slot can go there. {imageCentreQueueCount ? `${imageCentreQueueCount} item${imageCentreQueueCount === 1 ? '' : 's'} currently in the Image Processing Centre.` : ''}
-      </p>
 
       {items.length > 0 && (
         <>

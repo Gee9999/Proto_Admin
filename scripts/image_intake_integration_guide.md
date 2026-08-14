@@ -210,3 +210,20 @@ Keep these boundaries:
 - do not modify stock sync
 - do not expose SQL to the public internet
 - do not build product creation logic separately from the shared service unless needed
+
+## Optional Image Processor Boundary
+
+The self-hosted cleanup/background-removal worker is documented in `processor/README.md`. It is deliberately upstream of this product-creation service:
+
+1. Admin stages an original or a read-only copy from a selected folder.
+2. The processor claims the queue item and reads the signed staging URL.
+3. It preserves original bytes, produces a separate deterministic staged result, and reports quality metrics.
+4. Proto Admin shows the original and processed result side by side. Staff may approve, reject, or reprocess it.
+5. Approval alone never publishes. Publishing to an existing SKU/image slot is a separate owner action, and a published change can restore the previous URL.
+
+The processor is conservative around labels. Detached foreground objects can be loose stickers or barcode labels, but they can also be packaging or part of the product. Ambiguous cases are flagged `manual_label_barcode_review_required`; the worker does not decide that an attached or printed label should be removed.
+
+For the Image Processing Centre, do not call `create_product_from_image` automatically. That legacy helper remains a separate intake path. The centre writes no product image field until the owner has reviewed and explicitly published an approved staged result.
+4. Admin review chooses whether the staged result may proceed to the existing image-intake/product flow.
+
+The processor must never write back to Nutstore, publish products, update stock, or call `create_product_from_image` itself.
