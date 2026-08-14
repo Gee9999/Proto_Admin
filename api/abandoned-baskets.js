@@ -23,7 +23,9 @@ import {
 
 export const config = { maxDuration: 30 };
 
-const CART_COLUMNS = 'customer_id, items, activity_at, updated_at';
+// The API returns a curated payload; selecting the row keeps this endpoint
+// compatible both before and after the storefront basket-expiry migration.
+const CART_COLUMNS = '*';
 const CUSTOMER_COLUMNS = [
   'id', 'name', 'contact_name', 'first_name', 'business_name', 'email', 'phone',
   'customer_code', 'tier', 'city', 'province', 'tags', 'is_approved',
@@ -89,8 +91,20 @@ export default async function handler(req, res) {
   // Only the customers who are actually holding something. Most rows in this
   // table are emptied baskets from customers who did check out, so naming
   // every customer would read the whole table to describe a fraction of it.
+  const lifecycleRows = cartResult.rows.map((row) => {
+    const active = Array.isArray(row.items) && row.items.length > 0;
+    const archived = !active && Array.isArray(row.archived_items) && row.archived_items.length > 0;
+    if (!archived) return row;
+    return {
+      ...row,
+      items: row.archived_items,
+      activity_at: Date.parse(row.archived_at || row.updated_at || '') || row.activity_at,
+      _is_archived: true,
+    };
+  });
+
   const holderIds = [...new Set(
-    cartResult.rows
+    lifecycleRows
       .filter((row) => Array.isArray(row.items) && row.items.length > 0)
       .map((row) => String(row.customer_id || ''))
       .filter(Boolean),
@@ -107,7 +121,7 @@ export default async function handler(req, res) {
   }
 
   const all = buildAbandonedBaskets({
-    carts: cartResult.rows,
+    carts: lifecycleRows,
     customers: customerRows,
     now: Date.now(),
   });
@@ -125,6 +139,6 @@ export default async function handler(req, res) {
     summary: summariseBaskets(all),
     filteredSummary: summariseBaskets(filtered),
     baskets: sortBaskets(filtered, sort),
-    emptiedBasketCount: cartResult.rows.length - all.length,
+    emptiedBasketCount: lifecycleRows.length - all.length,
   });
 }

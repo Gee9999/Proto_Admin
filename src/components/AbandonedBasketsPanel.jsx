@@ -11,7 +11,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, ChevronDown, ChevronRight, Download, Loader2, RefreshCw, Search,
+  AlertTriangle, ChevronDown, ChevronRight, Download, Loader2, RefreshCw, RotateCcw, Search,
 } from 'lucide-react';
 import { downloadCsv } from '../lib/exportReport';
 import {
@@ -125,7 +125,7 @@ function CustomerDetail({ basket }) {
   );
 }
 
-function BasketLines({ basket }) {
+function BasketLines({ basket, onRestore, restoring }) {
   return (
     <div className="ab-detail-basket">
       <div className="oa-subhead">
@@ -158,6 +158,22 @@ function BasketLines({ basket }) {
         <span>Basket total (incl. VAT)</span>
         <strong>{moneyExact(basket.value)}</strong>
       </div>
+      {basket.archived && (
+        <div style={{ marginTop: 16 }}>
+          <button
+            type="button"
+            className="adm-btn-red"
+            onClick={() => onRestore(basket)}
+            disabled={restoring}
+          >
+            {restoring ? <Loader2 size={15} className="star-spinning" /> : <RotateCcw size={15} />}
+            {restoring ? 'Restoring…' : 'Restore to basket for 3 days'}
+          </button>
+          <p className="oa-note" style={{ marginTop: 8 }}>
+            This is allowed only when the customer has no newer active basket.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
@@ -171,6 +187,8 @@ export default function AbandonedBasketsPanel() {
   const [search, setSearch] = useState('');
   const [pageSize, setPageSize] = useState(10);
   const [expanded, setExpanded] = useState(() => new Set());
+  const [restoringId, setRestoringId] = useState('');
+  const [actionMessage, setActionMessage] = useState('');
 
   /**
    * One request, no parameters. Filtering, sorting and searching all run on
@@ -235,6 +253,27 @@ export default function AbandonedBasketsPanel() {
     downloadCsv(`abandoned-baskets-${new Date().toISOString().slice(0, 10)}.csv`, columns, rows);
   }, [baskets]);
 
+  const restoreBasket = useCallback(async (basket) => {
+    if (!window.confirm(`Restore ${basket.name}'s expired basket for three days?`)) return;
+    setRestoringId(basket.customerId);
+    setActionMessage('');
+    try {
+      const res = await fetch('/api/abandoned-baskets-restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ customerId: basket.customerId }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error || 'Basket could not be restored');
+      setActionMessage(`${basket.name}'s basket was restored for three days.`);
+      await load();
+    } catch (restoreError) {
+      setActionMessage(restoreError.message);
+    } finally {
+      setRestoringId('');
+    }
+  }, [load]);
+
   if (data && data.available === false) {
     return (
       <div className="oa-error">
@@ -271,6 +310,7 @@ export default function AbandonedBasketsPanel() {
       </div>
 
       {error && <div className="oa-error">{error}</div>}
+      {actionMessage && <div className="oa-note" role="status">{actionMessage}</div>}
 
       {summary && (
         <div className="oa-stat-grid ab-stat-grid">
@@ -413,7 +453,7 @@ export default function AbandonedBasketsPanel() {
                       <td className="ab-num">{idleLabel(basket.ageDays)}</td>
                       <td>
                         <span className={`ab-badge ab-badge--${basket.staleness}`}>
-                          {STALENESS_LABELS[basket.staleness] || basket.staleness}
+                          {basket.archived ? 'Expired' : (STALENESS_LABELS[basket.staleness] || basket.staleness)}
                         </span>
                       </td>
                     </tr>,
@@ -422,7 +462,11 @@ export default function AbandonedBasketsPanel() {
                         <td colSpan={8}>
                           <div className="ab-detail">
                             <CustomerDetail basket={basket} />
-                            <BasketLines basket={basket} />
+                            <BasketLines
+                              basket={basket}
+                              onRestore={restoreBasket}
+                              restoring={restoringId === basket.customerId}
+                            />
                           </div>
                         </td>
                       </tr>
