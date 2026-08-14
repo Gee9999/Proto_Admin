@@ -248,6 +248,7 @@ export default function ImageProcessingCentre({
   onNutstoreSelectionConsumed,
   onUploadSelectionConsumed,
   onShowToast,
+  onOpenNutstore,
 }) {
   const folderRef = useRef(null);
   const fileRef = useRef(null);
@@ -816,10 +817,13 @@ export default function ImageProcessingCentre({
       <div className="ipc-sources">
         <article className="ipc-source-card">
           <div className="ipc-source-icon"><FolderOpen size={19} /></div>
-          <div><strong>Selected from Nutstore</strong><span>{nutstoreSelection.length ? `${nutstoreSelection.length} image(s) waiting to be added` : 'Select images in the Nutstore tab, then choose Improve selected.'}</span></div>
-          <button type="button" className="adm-btn-red" disabled={!nutstoreSelection.length || Boolean(busy) || nutstoreConnection.status === 'missing' || !intakeCanStart} onClick={() => void queueNutstore()}>
-            {busy === 'nutstore' ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />} Add selected
-          </button>
+          <div><strong>Selected from Nutstore</strong><span>{nutstoreSelection.length ? `${nutstoreSelection.length} image(s) waiting to be added` : 'Choose source images in PTR Photos, then return here to process them.'}</span></div>
+          <div className="ipc-source-actions">
+            {onOpenNutstore && <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={onOpenNutstore}><FolderOpen size={14} /> Open Nutstore</button>}
+            <button type="button" className="adm-btn-red" disabled={!nutstoreSelection.length || Boolean(busy) || nutstoreConnection.status === 'missing' || !intakeCanStart} onClick={() => void queueNutstore()}>
+              {busy === 'nutstore' ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />} Add selected
+            </button>
+          </div>
         </article>
         <article className="ipc-source-card">
           <div className="ipc-source-icon"><Upload size={19} /></div>

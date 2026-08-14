@@ -887,6 +887,12 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     window.scrollTo({ top: 0, behavior: 'instant' });
   }, []);
 
+  const openNutstore = useCallback(() => {
+    setActiveSection('product-loader');
+    setLoadingError('');
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, []);
+
   // `fresh` bypasses the counts endpoint's edge cache. Pass it after a write:
   // otherwise a rename can read back counts computed up to a minute earlier and
   // the renamed category shows a stale badge — or none — as if it had failed.
@@ -2504,6 +2510,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                     isOwner={customer?.role === 'owner'}
                     initialTab="image-processing"
                     onOpenProductManager={openProductManagerForSku}
+                    onOpenNutstore={customer?.role === 'owner' ? openNutstore : undefined}
                     nutstoreSelection={imageProcessingHandoff.nutstoreSelection}
                     uploadSelection={imageProcessingHandoff.uploadSelection}
                     onNutstoreSelectionConsumed={() => setImageProcessingHandoff((current) => ({ ...current, nutstoreSelection: [] }))}

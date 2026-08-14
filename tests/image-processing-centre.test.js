@@ -123,6 +123,8 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(centreSource).toContain('aria-controls="ipc-queue-panel"');
     expect(centreSource).toContain('role="tabpanel"');
     expect(centreSource).toContain('aria-describedby="ipc-instructions-help"');
+    expect(centreSource).toContain('Open Nutstore');
+    expect(centreSource).toContain('onOpenNutstore');
   });
 
   it('offers a separate discard action for approved staged images', () => {
