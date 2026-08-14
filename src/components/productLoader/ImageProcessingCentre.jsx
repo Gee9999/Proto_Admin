@@ -292,6 +292,7 @@ export default function ImageProcessingCentre({
   const fileRef = useRef(null);
   const processInFlightRef = useRef('');
   const executionInFlightRef = useRef(new Set());
+  const executionAuthorizationRef = useRef(new Set());
   const queueMutationVersionRef = useRef(0);
   const lastQueueMutationAtRef = useRef(0);
   const queueLoadSequenceRef = useRef(0);
@@ -300,6 +301,7 @@ export default function ImageProcessingCentre({
   const [workerUnavailable, setWorkerUnavailable] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState('');
+  const [executionAuthorizationVersion, setExecutionAuthorizationVersion] = useState(0);
   const [selectedJobId, setSelectedJobId] = useState('');
   const [slots, setSlots] = useState({});
   const [destination, setDestination] = useState({ status: 'idle', product: null, error: '' });
@@ -320,6 +322,9 @@ export default function ImageProcessingCentre({
 
   const summary = useMemo(() => summarizeImageProcessingJobs(jobs), [jobs]);
   const selectedJob = jobs.find((job) => job.id === selectedJobId) || jobs[0] || null;
+  const selectedJobExecutionAuthorized = selectedJob
+    ? executionAuthorizationRef.current.has(selectedJob.id)
+    : false;
   const hasActiveJobs = jobs.some((job) => ACTIVE_STATUSES.has(job.status));
   const archivedJobs = jobs.filter((job) => ['archived', 'published', 'restored'].includes(job.status));
   const queuedJobs = jobs.filter((job) => !['archived', 'published', 'restored'].includes(job.status));
@@ -442,6 +447,13 @@ export default function ImageProcessingCentre({
     lastQueueMutationAtRef.current = Date.now();
   }, []);
 
+  const authorizeExecution = useCallback((incoming) => {
+    for (const job of incoming || []) {
+      if (job?.id) executionAuthorizationRef.current.add(job.id);
+    }
+    setExecutionAuthorizationVersion((version) => version + 1);
+  }, []);
+
   const loadJobs = useCallback(async ({ quiet = false } = {}) => {
     const loadSequence = ++queueLoadSequenceRef.current;
     const mutationVersion = queueMutationVersionRef.current;
@@ -510,6 +522,7 @@ export default function ImageProcessingCentre({
     try {
       const created = await createNutstoreImageJobs(nutstoreSelection, processingOptions);
       markQueueMutation();
+      authorizeExecution(created);
       mergeJobs(created);
       setWorkerUnavailable(false);
       onNutstoreSelectionConsumed?.();
@@ -534,6 +547,7 @@ export default function ImageProcessingCentre({
     try {
       const created = await createUploadedImageJobs(files, processingOptions);
       markQueueMutation();
+      authorizeExecution(created);
       mergeJobs(created);
       setWorkerUnavailable(false);
       if (consumeHandoff) onUploadSelectionConsumed?.();
@@ -558,6 +572,7 @@ export default function ImageProcessingCentre({
     try {
       const updated = await updateImageProcessingJob(job.id, action, details);
       markQueueMutation();
+      if (action === 'retry') authorizeExecution([updated]);
       mergeJobs([updated]);
       setWorkerUnavailable(false);
       onShowToast?.(
@@ -705,11 +720,14 @@ export default function ImageProcessingCentre({
   useEffect(() => {
     if (busy || processInFlightRef.current) return undefined;
     const resumable = jobs.find((job) => (
-      EXECUTABLE_STATUSES.has(job.status)
+      executionAuthorizationRef.current.has(job.id)
+      && EXECUTABLE_STATUSES.has(job.status)
       && !executionInFlightRef.current.has(job.id)
       && !hasRecentExecutionMarker(job.id)
     ));
-    const candidate = resumable || jobs.find((job) => job.status === 'queued');
+    const candidate = resumable || jobs.find((job) => (
+      job.status === 'queued' && executionAuthorizationRef.current.has(job.id)
+    ));
     if (!candidate) return undefined;
 
     processInFlightRef.current = candidate.id;
@@ -746,7 +764,7 @@ export default function ImageProcessingCentre({
       }
     })();
     return undefined;
-  }, [busy, jobs, loadJobs, markQueueMutation, mergeJobs]);
+  }, [busy, executionAuthorizationVersion, jobs, loadJobs, markQueueMutation, mergeJobs]);
 
   const runBulkReviewAction = async (action) => {
     const candidates = jobs.filter((job) => REVIEW_STATUSES.has(job.status));
@@ -1018,7 +1036,8 @@ export default function ImageProcessingCentre({
                 </>}
                 {['failed', 'error', 'rejected'].includes(selectedJob.status) && <button type="button" className="adm-btn-red" disabled={Boolean(busy)} onClick={() => void runAction(selectedJob, 'retry')}><RotateCcw size={14} /> Retry processing</button>}
                 {CLEARABLE_STATUSES.has(selectedJob.status) && <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void clearJob(selectedJob)}><Trash2 size={14} /> {selectedJob.status === 'approved' ? 'Discard staged image' : 'Clear from queue'}</button>}
-                {ACTIVE_STATUSES.has(selectedJob.status) && <span className="ipc-wait"><Clock3 size={14} /> {selectedJob.status === 'processing' ? 'Removing the background and preparing the catalogue image…' : 'Waiting to start; this page processes queued images automatically.'}</span>}
+                {ACTIVE_STATUSES.has(selectedJob.status) && !selectedJobExecutionAuthorized && <button type="button" className="adm-btn-red" disabled={Boolean(busy)} onClick={() => authorizeExecution([selectedJob])}><Sparkles size={14} /> {selectedJob.status === 'queued' ? 'Start processing' : 'Resume processing'}</button>}
+                {ACTIVE_STATUSES.has(selectedJob.status) && <span className="ipc-wait"><Clock3 size={14} /> {selectedJobExecutionAuthorized ? (selectedJob.status === 'processing' ? 'Removing the background and preparing the catalogue image…' : 'Waiting to start; this page will process this explicitly authorized image.') : 'Recovered safely. Processing will not start until you click the button.'}</span>}
               </div>
               {APPROVED_STATUSES.has(selectedJob.status) && (
                 <div className="ipc-publish-box">
