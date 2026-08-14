@@ -6,6 +6,7 @@ import {
   ImagePlus,
   Loader2,
   RefreshCw,
+  Sparkles,
   Upload,
 } from 'lucide-react';
 import { exportBatchReportCsv, isImageFile } from '../../lib/parseIntakeFilename';
@@ -91,6 +92,7 @@ export default function ProductLoaderUpload({
   batchOverwrite,
   setBatchOverwrite,
   onShowToast,
+  onProcessFiles,
 }) {
   const folderRef = useRef(null);
   const filesRef = useRef(null);
@@ -103,6 +105,7 @@ export default function ProductLoaderUpload({
   const [elapsedMs, setElapsedMs] = useState(0);
   const [stats, setStats] = useState({ published: 0, dormant: 0, failed: 0 });
   const [groupColourVariants, setGroupColourVariants] = useState(true);
+  const [sourceFiles, setSourceFiles] = useState([]);
 
   const batchDefaultCategoryId = batchDefaultPathIds?.[0] || '';
 
@@ -129,6 +132,7 @@ export default function ProductLoaderUpload({
       return;
     }
     setScanning(true);
+    setSourceFiles(files);
     setError('');
     setItems([]);
     setStats({ published: 0, dormant: 0, failed: 0 });
@@ -379,6 +383,11 @@ export default function ProductLoaderUpload({
         <button type="button" className="adm-btn-ghost" disabled={busy} onClick={() => !busy && folderRef.current?.click()}>
           <FolderOpen size={16} /> Choose image folder
         </button>
+        {onProcessFiles && sourceFiles.length > 0 && (
+          <button type="button" className="adm-btn-ghost" disabled={busy} onClick={() => onProcessFiles(sourceFiles)}>
+            <Sparkles size={14} /> Improve selected ({sourceFiles.length})
+          </button>
+        )}
         <input ref={filesRef} type="file" accept="image/*" multiple hidden onChange={(e) => { void handleFiles(e.target.files); e.target.value = ''; }} />
         <input ref={folderRef} type="file" accept="image/*" multiple webkitdirectory="" directory="" hidden onChange={(e) => { void handleFiles(e.target.files); e.target.value = ''; }} />
         <label className="pl-check">

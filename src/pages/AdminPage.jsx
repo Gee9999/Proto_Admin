@@ -192,11 +192,14 @@ const ADMIN_PAGE_SIZE = 50;
 const ORDER_PAGE_SIZES = [10, 25, 50, 100];
 const ORDER_PAGE_SIZE_DEFAULT = 10;
 const CUSTOMER_SERVICE_SECTIONS = ['orders', 'customers', 'comms'];
+const OWNER_ONLY_SECTIONS = new Set(['image-processing', 'title-replace']);
 
 function sectionsForAdminRole(role) {
-  return role === 'customer_service'
-    ? CUSTOMER_SERVICE_SECTIONS
-    : NAV_GROUPS.map((item) => item.id);
+  if (role === 'customer_service') return CUSTOMER_SERVICE_SECTIONS;
+  const allSections = NAV_GROUPS.map((item) => item.id);
+  return role === 'owner'
+    ? allSections
+    : allSections.filter((section) => !OWNER_ONLY_SECTIONS.has(section));
 }
 const randFormatter = new Intl.NumberFormat('en-ZA', { style: 'currency', currency: 'ZAR', minimumFractionDigits: 2, maximumFractionDigits: 4 });
 
@@ -502,6 +505,11 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     return allowedSectionIds.includes(preferred) ? preferred : allowedSectionIds[0] || 'orders';
   });
   const [productLoaderCode, setProductLoaderCode] = useState('');
+  const [imageProcessingHandoff, setImageProcessingHandoff] = useState({
+    nutstoreSelection: [],
+    uploadSelection: [],
+  });
+  const [productManagerSearch, setProductManagerSearch] = useState('');
   const [siteContentTab, setSiteContentTab] = useState('featured');
   const { data: dashStats } = useDashboardStats();
   const [loading, setLoading] = useState(false);
@@ -859,6 +867,25 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     setToast({ message, type });
     setTimeout(() => setToast(null), 4000);
   };
+
+  const openProductManagerForSku = useCallback((sku) => {
+    const cleanSku = String(sku || '').trim().toUpperCase();
+    if (!cleanSku) return;
+    setProductManagerSearch(cleanSku);
+    setActiveSection('catalogue');
+    setLoadingError('');
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, []);
+
+  const openImageProcessingCentre = useCallback((handoff = {}) => {
+    setImageProcessingHandoff({
+      nutstoreSelection: Array.isArray(handoff.nutstoreSelection) ? handoff.nutstoreSelection : [],
+      uploadSelection: Array.isArray(handoff.uploadSelection) ? handoff.uploadSelection : [],
+    });
+    setActiveSection('image-processing');
+    setLoadingError('');
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, []);
 
   // `fresh` bypasses the counts endpoint's edge cache. Pass it after a write:
   // otherwise a rename can read back counts computed up to a minute earlier and
@@ -1318,7 +1345,10 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     // Deep links must respect the same role allowlist as the visible sidebar.
     // Without this check, a restricted user could open a hidden section with
     // `?section=...` even though the navigation correctly omitted it.
-    if (section && allowedSectionIds.includes(section)) setActiveSection(section);
+    if (section === 'image-replace' && allowedSectionIds.includes('image-processing')) {
+      // Retired legacy deep links now enter the reviewed Image Processing Centre.
+      setActiveSection('image-processing');
+    } else if (section && allowedSectionIds.includes(section)) setActiveSection(section);
     if (tab) setOrderTab(tab);
     if (focus) setFocusOrderId(focus);
     if (section || tab || focus) {
@@ -2361,6 +2391,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                 onRefreshStats={refreshDashboardStats}
                 initialStatus="live"
                 initialToOrderOnly={activeSection === 'to-order'}
+                initialSearch={activeSection === 'catalogue' ? productManagerSearch : ''}
                 statuses={['live']}
                 showCategorySidebar={activeSection !== 'to-order'}
                 title={activeSection === 'to-order' ? 'To-order products' : 'Product Manager'}
@@ -2455,17 +2486,40 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                   initialCode={productLoaderCode}
                   onInitialCodeConsumed={() => setProductLoaderCode('')}
                   publishedBy={customer?.email || ''}
+                  isOwner={customer?.role === 'owner'}
+                  onOpenProductManager={openProductManagerForSku}
+                  onOpenImageProcessing={customer?.role === 'owner' ? openImageProcessingCentre : undefined}
                 />
                 </Suspense>
               </SectionErrorBoundary>
             )}
 
-            {activeSection === 'image-replace' && (
-              <SectionErrorBoundary name="image-replace" title="Image Replace crashed" resetKey={activeSection}>
-                <Suspense fallback={<LazySectionFallback label="Loading Image Replace…" />}>
+            {activeSection === 'image-processing' && (
+              <SectionErrorBoundary name="image-processing" title="Image Processing Centre crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Loading Image Processing Centre…" />}>
+                  <ProductLoaderPanel
+                    taxonomyTree={taxonomyTree}
+                    onShowToast={showToast}
+                    publishedBy={customer?.email || ''}
+                    isOwner={customer?.role === 'owner'}
+                    initialTab="image-processing"
+                    onOpenProductManager={openProductManagerForSku}
+                    nutstoreSelection={imageProcessingHandoff.nutstoreSelection}
+                    uploadSelection={imageProcessingHandoff.uploadSelection}
+                    onNutstoreSelectionConsumed={() => setImageProcessingHandoff((current) => ({ ...current, nutstoreSelection: [] }))}
+                    onUploadSelectionConsumed={() => setImageProcessingHandoff((current) => ({ ...current, uploadSelection: [] }))}
+                  />
+                </Suspense>
+              </SectionErrorBoundary>
+            )}
+
+            {activeSection === 'title-replace' && (
+              <SectionErrorBoundary name="title-replace" title="Title Replace crashed" resetKey={activeSection}>
+                <Suspense fallback={<LazySectionFallback label="Loading Title Replace…" />}>
                   <BulkImageReplacePanel
                     taxonomyTree={taxonomyTree}
                     onShowToast={showToast}
+                    titleOnly
                   />
                 </Suspense>
               </SectionErrorBoundary>
