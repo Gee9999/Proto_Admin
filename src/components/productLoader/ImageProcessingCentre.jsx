@@ -293,6 +293,7 @@ export default function ImageProcessingCentre({
   const processInFlightRef = useRef('');
   const executionInFlightRef = useRef(new Set());
   const queueMutationVersionRef = useRef(0);
+  const lastQueueMutationAtRef = useRef(0);
   const queueLoadSequenceRef = useRef(0);
   const [jobs, setJobs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -438,6 +439,7 @@ export default function ImageProcessingCentre({
 
   const markQueueMutation = useCallback(() => {
     queueMutationVersionRef.current += 1;
+    lastQueueMutationAtRef.current = Date.now();
   }, []);
 
   const loadJobs = useCallback(async ({ quiet = false } = {}) => {
@@ -450,7 +452,15 @@ export default function ImageProcessingCentre({
         loadSequence !== queueLoadSequenceRef.current
         || mutationVersion !== queueMutationVersionRef.current
       ) return;
-      setJobs(rows);
+      setJobs((current) => {
+        const hasLocallyActiveJob = current.some((job) => ACTIVE_STATUSES.has(job.status));
+        const mutationIsRecent = Date.now() - lastQueueMutationAtRef.current < 30_000;
+        // Do not let a briefly stale empty index erase work that this tab just
+        // created. The durable backend listing remains authoritative after the
+        // short consistency window.
+        if (!rows.length && hasLocallyActiveJob && mutationIsRecent) return current;
+        return rows;
+      });
       setWorkerUnavailable(false);
       setError('');
     } catch (err) {

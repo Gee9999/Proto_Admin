@@ -40,8 +40,30 @@ export async function writeImageJob(job) {
 }
 
 export async function readImageJobIndex() {
-  const data = await readSiteConfigJson(INDEX_FILE, { jobs: [] });
-  return Array.isArray(data?.jobs) ? data.jobs : [];
+  // Storage object downloads can briefly return a cached copy of index.json
+  // immediately after an upsert.  That made a newly-created queue appear and
+  // then disappear on the next poll.  The jobs directory listing is backed by
+  // Storage metadata, so use it as the authoritative discovery mechanism and
+  // keep index.json only as a compatibility/fallback record.
+  try {
+    const supabase = getPortalAdminClient();
+    const { data, error } = await supabase.storage.from(SITE_CONFIG_BUCKET).list(`${ROOT}/jobs`, {
+      limit: MAX_INDEX_JOBS,
+      offset: 0,
+      sortBy: { column: 'updated_at', order: 'desc' },
+    });
+    if (error) throw error;
+    return (data || [])
+      .filter((entry) => String(entry?.name || '').endsWith('.json'))
+      .map((entry) => ({
+        id: String(entry.name).slice(0, -'.json'.length),
+        updatedAt: entry.updated_at || entry.updatedAt || entry.created_at || entry.createdAt || '',
+      }))
+      .filter((entry) => entry.id);
+  } catch {
+    const data = await readSiteConfigJson(INDEX_FILE, { jobs: [] });
+    return Array.isArray(data?.jobs) ? data.jobs : [];
+  }
 }
 
 export async function indexImageJob(job) {

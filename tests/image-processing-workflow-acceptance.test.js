@@ -44,7 +44,9 @@ describe('Image Processing Centre owner-safety acceptance contract', () => {
     expect(loadJobs).toContain('const mutationVersion = queueMutationVersionRef.current');
     expect(loadJobs).toContain('loadSequence !== queueLoadSequenceRef.current');
     expect(loadJobs).toContain('mutationVersion !== queueMutationVersionRef.current');
-    expect(loadJobs).toContain('setJobs(rows)');
+    expect(loadJobs).toContain('setJobs((current) =>');
+    expect(loadJobs).toContain('!rows.length && hasLocallyActiveJob && mutationIsRecent');
+    expect(loadJobs).toContain('return rows;');
     expect(queueUploads).toContain('markQueueMutation();');
     expect(queueUploads).toContain('mergeJobs(created);');
   });
