@@ -17,6 +17,7 @@ const nutstoreSource = fs.readFileSync(new URL('../src/components/productLoader/
 const uploadSource = fs.readFileSync(new URL('../src/components/productLoader/ProductLoaderUpload.jsx', import.meta.url), 'utf8');
 const adminSource = fs.readFileSync(new URL('../src/pages/AdminPage.jsx', import.meta.url), 'utf8');
 const sidebarSource = fs.readFileSync(new URL('../src/components/GroupedSidebar.jsx', import.meta.url), 'utf8');
+const centreSource = fs.readFileSync(new URL('../src/components/productLoader/ImageProcessingCentre.jsx', import.meta.url), 'utf8');
 
 afterEach(() => {
   vi.useRealTimers();
@@ -112,6 +113,16 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(panelSource).toContain('onOpenImageProcessing?.({ nutstoreSelection: selection');
     expect(panelSource).not.toContain("...(isOwner ? [{ id: 'image-processing'");
     expect(adminSource).toContain("isOwner={customer?.role === 'owner'}");
+  });
+
+  it('exposes the workflow map and accessible queue relationships', () => {
+    expect(centreSource).toContain('aria-label="Image processing workflow"');
+    expect(centreSource).toContain('Choose treatment');
+    expect(centreSource).toContain('Review result');
+    expect(centreSource).toContain('Archive or apply');
+    expect(centreSource).toContain('aria-controls="ipc-queue-panel"');
+    expect(centreSource).toContain('role="tabpanel"');
+    expect(centreSource).toContain('aria-describedby="ipc-instructions-help"');
   });
 
   it('turns a stalled queue request into a retryable error', async () => {
