@@ -73,13 +73,13 @@ describe('Image Processing Centre owner-safety acceptance contract', () => {
     const clearService = sourceSection(serviceSource, 'export async function clearUnpublishedImage', 'async function objectExists');
     const clearUi = sourceSection(centreSource, 'const clearJob = async', 'useEffect(() => {\n    if (busy || processInFlightRef.current)');
 
-    expect(centreSource).toContain("const CLEARABLE_STATUSES = new Set(['review', 'ready', 'completed', 'failed', 'error', 'rejected'])");
+    expect(centreSource).toContain("const CLEARABLE_STATUSES = new Set(['review', 'ready', 'completed', 'approved', 'failed', 'error', 'rejected'])");
     expect(centreSource).toContain("['failed', 'error', 'rejected'].includes(selectedJob.status)");
     expect(clearUi).toContain('It does not change any product or Nutstore image.');
     expect(clearUi).toContain('await clearImageProcessingJob(job.id);');
     expect(jobsAdapterSource).toContain("body: JSON.stringify({ action: 'clear' })");
-    expect(serviceSource).toContain("const CLEARABLE_IMAGE_STATUSES = new Set(['review', 'ready', 'completed', 'failed', 'error', 'rejected'])");
-    expect(clearService).toContain('Approved or published images cannot be cleared from this queue');
+    expect(serviceSource).toContain("const CLEARABLE_IMAGE_STATUSES = new Set(['review', 'ready', 'completed', 'approved', 'failed', 'error', 'rejected'])");
+    expect(clearService).toContain('Archived or published images cannot be cleared from this queue');
   });
 
   it('keeps restore as a separate action, available only after an explicit Product Manager send', () => {
