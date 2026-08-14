@@ -9,6 +9,7 @@ const centreSource = readSource('../src/components/productLoader/ImageProcessing
 const jobsAdapterSource = readSource('../src/lib/imageProcessingJobs.js');
 const jobsRouteSource = readSource('../api/image-processing-jobs.js');
 const serviceSource = readSource('../api/_image-processing-service.js');
+const stylesheetSource = readSource('../src/index.css');
 
 function sourceSection(source, start, end) {
   const startIndex = source.indexOf(start);
@@ -19,6 +20,22 @@ function sourceSection(source, start, end) {
 }
 
 describe('Image Processing Centre owner-safety acceptance contract', () => {
+  it('shows the complete square review asset without visually cropping its edges', () => {
+    expect(stylesheetSource).toContain('.ipc-preview-image { display: grid; width: 100%; height: auto; aspect-ratio: 1 / 1;');
+    expect(stylesheetSource).toContain('object-fit: contain; object-position: center;');
+    expect(stylesheetSource).not.toContain('.ipc-preview-image { height: 210px; }');
+  });
+
+  it('opens both review images in an accessible full-size lightbox', () => {
+    expect(centreSource).toContain('function ImageLightbox({ label, url, onClose })');
+    expect(centreSource).toContain('role="dialog" aria-modal="true"');
+    expect(centreSource).toContain('if (event.key === \'Escape\') onClose();');
+    expect(centreSource).toContain('aria-label={`View ${label} full size`}');
+    expect(centreSource).toContain('Click to enlarge');
+    expect(stylesheetSource).toContain('.ipc-image-lightbox { position: fixed;');
+    expect(stylesheetSource).toContain('.ipc-image-lightbox__content > img');
+  });
+
   it('keeps a newly queued local upload visible when an earlier queue load returns late', () => {
     const loadJobs = sourceSection(centreSource, 'const loadJobs = useCallback', 'useEffect(() => { void loadJobs();');
     const queueUploads = sourceSection(centreSource, 'const queueUploads = async', 'const runAction = async');
