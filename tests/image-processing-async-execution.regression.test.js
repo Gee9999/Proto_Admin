@@ -163,7 +163,7 @@ describe('Image Processing Centre asynchronous fal execution contract', () => {
     ))).toBe(true);
   });
 
-  it('starts execution once, polls processing state, and displays the After image when fal finishes', async () => {
+  it('explicitly resumes a recovered job once, polls processing state, and displays the After image when fal finishes', async () => {
     vi.useFakeTimers();
     let state = {
       id: 'job-async', filename: 'ABC1.png', sku: 'ABC1', status: 'queued',
@@ -206,6 +206,14 @@ describe('Image Processing Centre asynchronous fal execution contract', () => {
       });
       await act(async () => {
         await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      const startButton = [...container.querySelectorAll('button')]
+        .find((button) => button.textContent.includes('Start processing'));
+      expect(startButton).toBeTruthy();
+      await act(async () => {
+        startButton.click();
         await Promise.resolve();
       });
 

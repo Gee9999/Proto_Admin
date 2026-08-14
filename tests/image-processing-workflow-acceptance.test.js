@@ -51,6 +51,14 @@ describe('Image Processing Centre owner-safety acceptance contract', () => {
     expect(queueUploads).toContain('mergeJobs(created);');
   });
 
+  it('does not automatically charge recovered queued jobs without a fresh operator click', () => {
+    const executionEffect = sourceSection(centreSource, 'useEffect(() => {\n    if (busy || processInFlightRef.current)', 'const runBulkReviewAction = async');
+    expect(executionEffect).toContain('executionAuthorizationRef.current.has(job.id)');
+    expect(centreSource).toContain("selectedJob.status === 'queued' ? 'Start processing' : 'Resume processing'");
+    expect(centreSource).toContain('Recovered safely. Processing will not start until you click the button.');
+    expect(centreSource).toContain('authorizeExecution(created);');
+  });
+
   it('records manual approval without publishing or changing Product Manager', () => {
     const approvalBranch = sourceSection(jobsRouteSource, "} else if (action === 'approve')", "} else if (action === 'assign_destination')");
     const approvalService = sourceSection(serviceSource, 'export function markImageApproved', 'export async function archiveApprovedImage');
