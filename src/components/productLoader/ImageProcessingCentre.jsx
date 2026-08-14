@@ -15,6 +15,7 @@ import {
   Trash2,
   Upload,
   X,
+  ZoomIn,
 } from 'lucide-react';
 import {
   createNutstoreImageJobs,
@@ -133,13 +134,43 @@ function treatmentVerificationCopy(job) {
   return 'The manual repair changed only the intended area; the real product, branding and proportions remain unchanged.';
 }
 
+function ImageLightbox({ label, url, onClose }) {
+  useEffect(() => {
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [onClose]);
+
+  return (
+    <div className="ipc-image-lightbox" role="dialog" aria-modal="true" aria-label={`${label} full-size preview`} onClick={onClose}>
+      <div className="ipc-image-lightbox__content" onClick={(event) => event.stopPropagation()}>
+        <header>
+          <strong>{label}</strong>
+          <span>Full image · click outside or press Escape to close</span>
+          <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={onClose} autoFocus><X size={15} /> Close</button>
+        </header>
+        <img src={url} alt={`${label} full-size product`} />
+      </div>
+    </div>
+  );
+}
+
 function PreviewPane({ label, url, emptyText, websiteReady = false }) {
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   return (
     <figure className="ipc-preview-pane">
       <figcaption>{label}</figcaption>
       <div className={`ipc-preview-image${websiteReady ? ' ipc-preview-image--white' : ''}`}>
-        {url ? <img src={url} alt={`${label} product`} /> : <span><ImageOff size={22} />{emptyText}</span>}
+        {url ? (
+          <button type="button" className="ipc-preview-open" onClick={() => setLightboxOpen(true)} aria-label={`View ${label} full size`}>
+            <img src={url} alt={`${label} product`} />
+            <span className="ipc-preview-open__hint"><ZoomIn size={14} /> Click to enlarge</span>
+          </button>
+        ) : <span><ImageOff size={22} />{emptyText}</span>}
       </div>
+      {lightboxOpen && <ImageLightbox label={label} url={url} onClose={() => setLightboxOpen(false)} />}
     </figure>
   );
 }
@@ -149,6 +180,7 @@ function RepairablePreviewPane({ label, url, emptyText, repairEnabled, selection
   const imageRef = useRef(null);
   const dragRef = useRef(null);
   const [renderedRect, setRenderedRect] = useState(null);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
 
   const syncRenderedRect = useCallback(() => {
     const frame = frameRef.current;
@@ -220,7 +252,12 @@ function RepairablePreviewPane({ label, url, emptyText, repairEnabled, selection
     <figure className="ipc-preview-pane">
       <figcaption>{label}</figcaption>
       <div ref={frameRef} className="ipc-preview-image ipc-preview-image--white ipc-repair-frame">
-        {url ? <img ref={imageRef} src={url} alt={`${label} product`} onLoad={syncRenderedRect} /> : <span><ImageOff size={22} />{emptyText}</span>}
+        {url ? (
+          <button type="button" className="ipc-preview-open" disabled={repairEnabled} onClick={() => setLightboxOpen(true)} aria-label={repairEnabled ? 'Finish targeted repair selection before enlarging this image' : `View ${label} full size`}>
+            <img ref={imageRef} src={url} alt={`${label} product`} onLoad={syncRenderedRect} />
+            {!repairEnabled && <span className="ipc-preview-open__hint"><ZoomIn size={14} /> Click to enlarge</span>}
+          </button>
+        ) : <span><ImageOff size={22} />{emptyText}</span>}
         {url && renderedRect && (
           <div
             className={`ipc-repair-layer${repairEnabled ? ' ipc-repair-layer--active' : ''}`}
@@ -238,6 +275,7 @@ function RepairablePreviewPane({ label, url, emptyText, repairEnabled, selection
           </div>
         )}
       </div>
+      {lightboxOpen && <ImageLightbox label={label} url={url} onClose={() => setLightboxOpen(false)} />}
     </figure>
   );
 }
