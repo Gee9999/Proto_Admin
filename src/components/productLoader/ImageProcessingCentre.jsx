@@ -600,6 +600,18 @@ export default function ImageProcessingCentre({
     }));
   };
 
+  const setAllReviewConfirmations = (jobId, checked) => {
+    setReviewChecklists((current) => ({
+      ...current,
+      [jobId]: {
+        correctSku: checked,
+        labelsPreserved: checked,
+        cleanEdgesBackground: checked,
+        treatmentVerified: checked,
+      },
+    }));
+  };
+
   const approveSelectedJob = async () => {
     if (!selectedJob || !reviewChecklistComplete) return;
     await runAction(selectedJob, 'approve', {
@@ -1020,11 +1032,14 @@ export default function ImageProcessingCentre({
               {REVIEW_STATUSES.has(selectedJob.status) && (
                 <fieldset className="ipc-review-checklist">
                   <legend>Required human review</legend>
-                  <label><input type="checkbox" checked={selectedReviewChecklist.correctSku} onChange={(event) => setReviewConfirmation(selectedJob.id, 'correctSku', event.target.checked)} /><span><strong>Correct SKU and product parts</strong><small>The chosen exact SKU matches this image and every visible product part belongs to it.</small></span></label>
-                  <label><input type="checkbox" checked={selectedReviewChecklist.labelsPreserved} onChange={(event) => setReviewConfirmation(selectedJob.id, 'labelsPreserved', event.target.checked)} /><span><strong>Labels, text and quantity preserved</strong><small>Branding, words, numbers, measurements and advertised pack quantity are unchanged and legible.</small></span></label>
-                  <label><input type="checkbox" checked={selectedReviewChecklist.cleanEdgesBackground} onChange={(event) => setReviewConfirmation(selectedJob.id, 'cleanEdgesBackground', event.target.checked)} /><span><strong>Clean edges and background</strong><small>No clipped edges, halos, stray pixels, unwanted objects or false product detail remain.</small></span></label>
-                  {treatmentVerificationRequired && <label className="ipc-review-checklist-special"><input type="checkbox" checked={selectedReviewChecklist.treatmentVerified} onChange={(event) => setReviewConfirmation(selectedJob.id, 'treatmentVerified', event.target.checked)} /><span><strong>Treatment-specific verification</strong><small>{treatmentVerificationCopy(selectedJob)}</small></span></label>}
-                  {!reviewChecklistComplete && <p>Approval stays locked until every required confirmation is complete.</p>}
+                  <label className="ipc-review-checklist-primary"><input type="checkbox" checked={reviewChecklistComplete} onChange={(event) => setAllReviewConfirmations(selectedJob.id, event.target.checked)} /><span><strong>I reviewed the enlarged image and confirm it is correct</strong><small>Check the SKU, labels/quantity, edges/background and the treatment warning where shown.</small></span></label>
+                  <details className="ipc-review-checklist-details"><summary>Show individual checks</summary>
+                    <label><input type="checkbox" checked={selectedReviewChecklist.correctSku} onChange={(event) => setReviewConfirmation(selectedJob.id, 'correctSku', event.target.checked)} /><span><strong>Correct SKU and product parts</strong><small>The chosen exact SKU matches this image and every visible product part belongs to it.</small></span></label>
+                    <label><input type="checkbox" checked={selectedReviewChecklist.labelsPreserved} onChange={(event) => setReviewConfirmation(selectedJob.id, 'labelsPreserved', event.target.checked)} /><span><strong>Labels, text and quantity preserved</strong><small>Branding, words, numbers, measurements and advertised pack quantity are unchanged and legible.</small></span></label>
+                    <label><input type="checkbox" checked={selectedReviewChecklist.cleanEdgesBackground} onChange={(event) => setReviewConfirmation(selectedJob.id, 'cleanEdgesBackground', event.target.checked)} /><span><strong>Clean edges and background</strong><small>No clipped edges, halos, stray pixels, unwanted objects or false product detail remain.</small></span></label>
+                    {treatmentVerificationRequired && <label className="ipc-review-checklist-special"><input type="checkbox" checked={selectedReviewChecklist.treatmentVerified} onChange={(event) => setReviewConfirmation(selectedJob.id, 'treatmentVerified', event.target.checked)} /><span><strong>Treatment-specific verification</strong><small>{treatmentVerificationCopy(selectedJob)}</small></span></label>}
+                  </details>
+                  {!reviewChecklistComplete && <p>Approve unlocks after you confirm the enlarged image above.</p>}
                 </fieldset>
               )}
               {selectedJob.error && <p className="ipc-job-error"><AlertTriangle size={14} /> {selectedJob.error}</p>}
