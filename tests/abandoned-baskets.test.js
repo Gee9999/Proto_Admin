@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
   basketActivityMs,
@@ -10,6 +11,9 @@ import {
   summariseBasket,
   summariseBaskets,
 } from '../lib/abandoned-baskets.mjs';
+
+const apiSource = fs.readFileSync(new URL('../api/abandoned-baskets.js', import.meta.url), 'utf8');
+const panelSource = fs.readFileSync(new URL('../src/components/AbandonedBasketsPanel.jsx', import.meta.url), 'utf8');
 
 const DAY = 24 * 60 * 60 * 1000;
 const NOW = Date.UTC(2026, 7, 13, 12, 0, 0);
@@ -112,7 +116,7 @@ describe('stalenessBucket', () => {
     expect(stalenessBucket(2)).toBe('active');
     expect(stalenessBucket(3)).toBe('cooling');
     expect(stalenessBucket(7)).toBe('cooling');
-    expect(stalenessBucket(8)).toBe('stale');
+    expect(stalenessBucket(15)).toBe('stale');
     expect(stalenessBucket(null)).toBe('unknown');
   });
 });
@@ -170,6 +174,11 @@ describe('buildAbandonedBaskets', () => {
       now: NOW,
     });
     expect(rows.map((r) => r.staleness)).toEqual(['active', 'cooling', 'stale']);
+  });
+
+  it('keeps a basket cooling through day fourteen', () => {
+    expect(stalenessBucket(14)).toBe('cooling');
+    expect(stalenessBucket(14.01)).toBe('stale');
   });
 });
 
@@ -258,5 +267,20 @@ describe('basketExportRows', () => {
     expect(exported[0]).toMatchObject({ Customer: 'Thabo Nkosi', SKU: 'SKU1', Qty: 2 });
     expect(exported[1].SKU).toBe('SKU2');
     expect(exported.every((row) => row.Email === 'thabo@example.com')).toBe(true);
+  });
+});
+
+describe('basket retention controls', () => {
+  it('lets an admin mark an idle saved basket active without changing its contents', () => {
+    expect(apiSource).toContain("action !== 'mark-active'");
+    expect(apiSource).toContain("update({ activity_at: now, updated_at: new Date(now).toISOString() })");
+    expect(apiSource).not.toMatch(/update\(\{[^}]*items/s);
+    expect(panelSource).toContain('Mark active now');
+  });
+
+  it('makes the unlimited retention policy explicit', () => {
+    expect(panelSource).toContain('All signed-in customer baskets are saved indefinitely');
+    expect(panelSource).toContain('Gone Cold (14+ Days)');
+    expect(panelSource).toContain('Saved indefinitely until the customer clears or submits it');
   });
 });

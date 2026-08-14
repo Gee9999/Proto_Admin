@@ -62,12 +62,53 @@ export default async function handler(req, res) {
   if (!(await requireAdminKey(req, res))) return;
   res.setHeader('Cache-Control', 'no-store');
 
-  if (req.method !== 'GET') {
-    res.setHeader('Allow', 'GET');
+  if (!['GET', 'POST'].includes(req.method)) {
+    res.setHeader('Allow', 'GET, POST');
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   const supabase = getAdminClient();
+
+  if (req.method === 'POST') {
+    const customerId = String(req.body?.customerId || '').trim();
+    const action = String(req.body?.action || '').trim();
+    if (!customerId || action !== 'mark-active') {
+      return res.status(400).json({ error: 'A customer and the mark-active action are required.' });
+    }
+
+    const { data: existing, error: readError } = await supabase
+      .from('customer_account_carts')
+      .select('customer_id, items, revision')
+      .eq('customer_id', customerId)
+      .maybeSingle();
+    if (readError) return res.status(400).json({ error: readError.message });
+    if (!existing || !Array.isArray(existing.items) || !existing.items.length) {
+      return res.status(404).json({ error: 'This customer no longer has a saved basket.' });
+    }
+
+    const now = Date.now();
+    let update = supabase
+      .from('customer_account_carts')
+      .update({ activity_at: now, updated_at: new Date(now).toISOString() })
+      .eq('customer_id', customerId);
+    if (Number.isSafeInteger(Number(existing.revision))) {
+      update = update.eq('revision', Number(existing.revision));
+    }
+    const { data: refreshed, error: updateError } = await update
+      .select(CART_COLUMNS)
+      .maybeSingle();
+    if (updateError) return res.status(400).json({ error: updateError.message });
+    if (!refreshed) {
+      return res.status(409).json({ error: 'The basket changed while it was being refreshed. Refresh the page and try again.' });
+    }
+    return res.status(200).json({
+      ok: true,
+      customerId,
+      activityAt: refreshed.activity_at,
+      updatedAt: refreshed.updated_at,
+      lineCount: refreshed.items.length,
+    });
+  }
 
   const cartResult = await fetchAll(
     supabase.from('customer_account_carts').select(CART_COLUMNS).order('updated_at', { ascending: false }),
