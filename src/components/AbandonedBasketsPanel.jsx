@@ -11,7 +11,8 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle, ChevronDown, ChevronRight, Download, Loader2, RefreshCw, Search,
+  AlertTriangle, ChevronDown, ChevronRight, Download, Infinity as InfinityIcon,
+  Loader2, RefreshCw, Search,
 } from 'lucide-react';
 import { downloadCsv } from '../lib/exportReport';
 import {
@@ -125,11 +126,27 @@ function CustomerDetail({ basket }) {
   );
 }
 
-function BasketLines({ basket }) {
+function BasketLines({ basket, markingActive, onMarkActive }) {
   return (
     <div className="ab-detail-basket">
-      <div className="oa-subhead">
-        {basket.lineCount} {basket.lineCount === 1 ? 'product' : 'products'} in the basket
+      <div className="ab-detail-basket-head">
+        <div>
+          <div className="oa-subhead">
+            {basket.lineCount} {basket.lineCount === 1 ? 'product' : 'products'} in the basket
+          </div>
+          <span className="ab-kept-note"><InfinityIcon size={14} /> Saved indefinitely until the customer clears or submits it</span>
+        </div>
+        {basket.staleness !== 'active' && (
+          <button
+            type="button"
+            className="adm-btn-ghost"
+            disabled={markingActive}
+            onClick={(event) => { event.stopPropagation(); onMarkActive(basket); }}
+          >
+            {markingActive ? <Loader2 size={15} className="star-spinning" /> : <RefreshCw size={15} />}
+            Mark active now
+          </button>
+        )}
       </div>
       <div className="ab-lines">
         {basket.items.map((item) => (
@@ -171,6 +188,7 @@ export default function AbandonedBasketsPanel() {
   const [search, setSearch] = useState('');
   const [pageSize, setPageSize] = useState(10);
   const [expanded, setExpanded] = useState(() => new Set());
+  const [markingActiveId, setMarkingActiveId] = useState('');
 
   /**
    * One request, no parameters. Filtering, sorting and searching all run on
@@ -235,6 +253,25 @@ export default function AbandonedBasketsPanel() {
     downloadCsv(`abandoned-baskets-${new Date().toISOString().slice(0, 10)}.csv`, columns, rows);
   }, [baskets]);
 
+  const markActive = useCallback(async (basket) => {
+    setMarkingActiveId(basket.customerId);
+    setError('');
+    try {
+      const res = await fetch('/api/abandoned-baskets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'mark-active', customerId: basket.customerId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || 'Failed to mark the basket active');
+      await load();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setMarkingActiveId('');
+    }
+  }, [load]);
+
   if (data && data.available === false) {
     return (
       <div className="oa-error">
@@ -292,7 +329,7 @@ export default function AbandonedBasketsPanel() {
           </div>
           <div className="oa-stat-card">
             <div className="oa-stat-val">{summary.staleCount}</div>
-            <div className="oa-stat-label">Gone Cold (7+ Days)</div>
+            <div className="oa-stat-label">Gone Cold (14+ Days)</div>
           </div>
           <div className="oa-stat-card">
             <div className="oa-stat-val">{summary.totalUnits}</div>
@@ -308,6 +345,7 @@ export default function AbandonedBasketsPanel() {
             <p className="oa-note ab-subtitle">
               Customers holding a basket they have not checked out. A basket is emptied
               automatically when the order is submitted, so everything below is still outstanding.
+              All signed-in customer baskets are saved indefinitely; “gone cold” only means no activity for fourteen days.
             </p>
           </div>
           <div className="oa-panel-actions">
@@ -422,7 +460,11 @@ export default function AbandonedBasketsPanel() {
                         <td colSpan={8}>
                           <div className="ab-detail">
                             <CustomerDetail basket={basket} />
-                            <BasketLines basket={basket} />
+                            <BasketLines
+                              basket={basket}
+                              markingActive={markingActiveId === basket.customerId}
+                              onMarkActive={markActive}
+                            />
                           </div>
                         </td>
                       </tr>
