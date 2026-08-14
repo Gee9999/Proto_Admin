@@ -31,7 +31,7 @@ const EXECUTABLE_STATUSES = new Set(['processing', 'retrying']);
 const REVIEW_STATUSES = new Set(['review', 'ready', 'completed']);
 const APPROVED_STATUSES = new Set(['approved']);
 const ARCHIVED_STATUSES = new Set(['archived']);
-const CLEARABLE_STATUSES = new Set(['review', 'ready', 'completed', 'failed', 'error', 'rejected']);
+const CLEARABLE_STATUSES = new Set(['review', 'ready', 'completed', 'approved', 'failed', 'error', 'rejected']);
 const EXECUTION_MARKER_PREFIX = 'proto:image-processing:execute:';
 const EXECUTION_MARKER_TTL_MS = 10 * 60_000;
 const PRODUCT_MANAGER_SLOTS = Object.freeze([
@@ -631,7 +631,8 @@ export default function ImageProcessingCentre({
   };
 
   const clearJob = async (job) => {
-    const confirmed = window.confirm(`Clear ${job.filename} from the queue? This removes its private upload and staged processed preview. It does not change any product or Nutstore image.`);
+    const approvedWarning = job.status === 'approved' ? ' This discards the approved staged result before it is saved to the Image Archive.' : '';
+    const confirmed = window.confirm(`Clear ${job.filename} from the queue? This removes its private upload and staged processed preview.${approvedWarning} It does not change any product or Nutstore image.`);
     if (!confirmed) return;
     markQueueMutation();
     setBusy(`clear:${job.id}`);
@@ -964,7 +965,7 @@ export default function ImageProcessingCentre({
                   <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void runAction(selectedJob, 'retry')}><RotateCcw size={14} /> Process again</button>
                 </>}
                 {['failed', 'error', 'rejected'].includes(selectedJob.status) && <button type="button" className="adm-btn-red" disabled={Boolean(busy)} onClick={() => void runAction(selectedJob, 'retry')}><RotateCcw size={14} /> Retry processing</button>}
-                {CLEARABLE_STATUSES.has(selectedJob.status) && <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void clearJob(selectedJob)}><Trash2 size={14} /> Clear from queue</button>}
+                {CLEARABLE_STATUSES.has(selectedJob.status) && <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void clearJob(selectedJob)}><Trash2 size={14} /> {selectedJob.status === 'approved' ? 'Discard staged image' : 'Clear from queue'}</button>}
                 {ACTIVE_STATUSES.has(selectedJob.status) && <span className="ipc-wait"><Clock3 size={14} /> {selectedJob.status === 'processing' ? 'Removing the background and preparing the catalogue image…' : 'Waiting to start; this page processes queued images automatically.'}</span>}
               </div>
               {APPROVED_STATUSES.has(selectedJob.status) && (

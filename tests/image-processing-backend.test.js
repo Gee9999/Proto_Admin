@@ -437,7 +437,8 @@ describe('Image Processing Centre backend contracts', () => {
     expect(route).toContain('destination,');
     expect(route).toContain("'clear'");
     expect(service).toContain('export async function clearUnpublishedImage');
-    expect(service).toContain("if (image.publishedUrl || image.publishedAt || image.approvedAt)");
+    expect(service).toContain("if (image.publishedUrl || image.publishedAt || image.archive?.assetId)");
+    expect(service).toContain("'approved'");
     expect(route).not.toContain("action === 'process_next'");
   });
 
