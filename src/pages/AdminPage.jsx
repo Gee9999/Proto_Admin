@@ -72,6 +72,12 @@ import {
   uploadDormantImage,
 } from '../lib/products';
 import {
+  clearPendingNutstoreHandoff,
+  IMAGE_PROCESSING_HANDOFF_KEY,
+  loadPendingNutstoreHandoff,
+  savePendingNutstoreHandoff,
+} from '../lib/imageProcessingHandoff.js';
+import {
   categoryLabelFromTree,
   countSubcategoryProducts,
   createCategory,
@@ -505,10 +511,10 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     return allowedSectionIds.includes(preferred) ? preferred : allowedSectionIds[0] || 'orders';
   });
   const [productLoaderCode, setProductLoaderCode] = useState('');
-  const [imageProcessingHandoff, setImageProcessingHandoff] = useState({
-    nutstoreSelection: [],
+  const [imageProcessingHandoff, setImageProcessingHandoff] = useState(() => ({
+    nutstoreSelection: loadPendingNutstoreHandoff(),
     uploadSelection: [],
-  });
+  }));
   const [productManagerSearch, setProductManagerSearch] = useState('');
   const [siteContentTab, setSiteContentTab] = useState('featured');
   const { data: dashStats } = useDashboardStats();
@@ -878,13 +884,31 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   }, []);
 
   const openImageProcessingCentre = useCallback((handoff = {}) => {
+    const nutstoreSelection = savePendingNutstoreHandoff(
+      Array.isArray(handoff.nutstoreSelection) ? handoff.nutstoreSelection : [],
+    );
     setImageProcessingHandoff({
-      nutstoreSelection: Array.isArray(handoff.nutstoreSelection) ? handoff.nutstoreSelection : [],
+      nutstoreSelection,
       uploadSelection: Array.isArray(handoff.uploadSelection) ? handoff.uploadSelection : [],
     });
     setActiveSection('image-processing');
     setLoadingError('');
     window.scrollTo({ top: 0, behavior: 'instant' });
+  }, []);
+
+  const consumeNutstoreHandoff = useCallback(() => {
+    clearPendingNutstoreHandoff();
+    setImageProcessingHandoff((current) => ({ ...current, nutstoreSelection: [] }));
+  }, []);
+
+  useEffect(() => {
+    const syncPendingNutstoreHandoff = (event) => {
+      if (event.key !== IMAGE_PROCESSING_HANDOFF_KEY) return;
+      const nutstoreSelection = loadPendingNutstoreHandoff();
+      setImageProcessingHandoff((current) => ({ ...current, nutstoreSelection }));
+    };
+    window.addEventListener('storage', syncPendingNutstoreHandoff);
+    return () => window.removeEventListener('storage', syncPendingNutstoreHandoff);
   }, []);
 
   const openNutstore = useCallback(() => {
@@ -2513,7 +2537,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                     onOpenNutstore={customer?.role === 'owner' ? openNutstore : undefined}
                     nutstoreSelection={imageProcessingHandoff.nutstoreSelection}
                     uploadSelection={imageProcessingHandoff.uploadSelection}
-                    onNutstoreSelectionConsumed={() => setImageProcessingHandoff((current) => ({ ...current, nutstoreSelection: [] }))}
+                    onNutstoreSelectionConsumed={consumeNutstoreHandoff}
                     onUploadSelectionConsumed={() => setImageProcessingHandoff((current) => ({ ...current, uploadSelection: [] }))}
                   />
                 </Suspense>
