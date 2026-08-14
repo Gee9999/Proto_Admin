@@ -159,6 +159,7 @@ export default function ProductLoaderPanel({
   initialTab = 'nutstore',
   onOpenProductManager,
   onOpenImageProcessing,
+  onOpenNutstore,
   nutstoreSelection = [],
   uploadSelection = [],
   onNutstoreSelectionConsumed,
@@ -918,6 +919,7 @@ export default function ProductLoaderPanel({
           onUploadSelectionConsumed={onUploadSelectionConsumed}
           onShowToast={onShowToast}
           onOpenProductManager={onOpenProductManager}
+          onOpenNutstore={onOpenNutstore}
         />
       </div>
     );
