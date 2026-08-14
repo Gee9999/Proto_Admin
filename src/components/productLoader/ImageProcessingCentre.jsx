@@ -284,6 +284,11 @@ export default function ImageProcessingCentre({
   const archivedJobs = jobs.filter((job) => ['archived', 'published', 'restored'].includes(job.status));
   const queuedJobs = jobs.filter((job) => !['archived', 'published', 'restored'].includes(job.status));
   const visibleJobs = queueView === 'archive' ? archivedJobs : queuedJobs;
+  const workflowStep = selectedJob
+    ? (['review', 'ready', 'completed'].includes(selectedJob.status)
+      ? 3
+      : (['approved', 'archived', 'published', 'restored'].includes(selectedJob.status) ? 4 : 2))
+    : 1;
   const selectedSlot = productManagerSlot(slots[selectedJob?.id] || selectedJob?.destination?.slot || selectedJob?.targetSlot);
   const destinationProduct = destination.status === 'found' ? destination.product : null;
   const currentDestinationImage = destinationProduct?.[selectedSlot.field] || '';
@@ -731,7 +736,24 @@ export default function ImageProcessingCentre({
         </button>
       </div>
 
-      <div className="ipc-readiness-note">
+      <ol className="ipc-steps" aria-label="Image processing workflow">
+        {[
+          ['Choose treatment', 'Set the safe processing lane.'],
+          ['Add images', 'Bring in Nutstore or local files.'],
+          ['Review result', 'Check the image and quality flags.'],
+          ['Archive or apply', 'Save privately, then explicitly apply.'],
+        ].map(([title, description], index) => {
+          const step = index + 1;
+          return (
+            <li key={title} className={`ipc-step${workflowStep === step ? ' ipc-step--active' : ''}${workflowStep > step ? ' ipc-step--done' : ''}`}>
+              <span>{workflowStep > step ? '✓' : step}</span>
+              <div><strong>{title}</strong><small>{description}</small></div>
+            </li>
+          );
+        })}
+      </ol>
+
+      <div className="ipc-readiness-note" role="status">
         <CheckCircle size={17} />
         <div><strong>Website-ready standard</strong><span>Approved archive versions use a clean white 1600 × 1600 canvas. The original upload and transparent cleaned master are retained privately for restoration and future adjustments. Checks flag clutter, crop and centring, canvas consistency, clarity, lighting and ambiguous labels for human review.</span></div>
       </div>
@@ -774,10 +796,10 @@ export default function ImageProcessingCentre({
             <span><strong>This is a source-preserving/manual lane.</strong> Generic automatic background removal is disabled. Add images only after the matching manual overlay or processed-asset repair workflow is available.</span>
           </div>
         )}
-        <label className="ipc-instructions">
+        <label className="ipc-instructions" htmlFor="ipc-instructions">
           Optional instructions for this intake
-          <textarea value={customInstructions} onChange={(event) => setCustomInstructions(event.target.value.slice(0, 1_500))} maxLength={1500} rows={2} placeholder="Example: preserve the hanging label and every printed measurement; remove only the damaged outer packaging." />
-          <small>{customInstructions.length}/1500 · Instructions are saved with each queued review item.</small>
+          <textarea id="ipc-instructions" aria-describedby="ipc-instructions-help" value={customInstructions} onChange={(event) => setCustomInstructions(event.target.value.slice(0, 1_500))} maxLength={1500} rows={2} placeholder="Example: preserve the hanging label and every printed measurement; remove only the damaged outer packaging." />
+          <small id="ipc-instructions-help">{customInstructions.length}/1500 · Instructions are saved with each queued review item.</small>
         </label>
       </fieldset>
 
@@ -811,7 +833,7 @@ export default function ImageProcessingCentre({
         </article>
       </div>
 
-      <div className="ipc-summary" aria-label="Processing summary">
+      <div className="ipc-summary" aria-label="Processing summary" aria-live="polite">
         <div><strong>{summary.total}</strong><span>Total images</span></div>
         <div><strong>{summary.processing}</strong><span>Processing</span></div>
         <div><strong>{summary.review}</strong><span>Needs review</span></div>
@@ -832,9 +854,10 @@ export default function ImageProcessingCentre({
         <aside className="ipc-queue" aria-label="Image asset queue and archive">
           <header><strong>Image assets</strong><span>{jobs.length}</span></header>
           <div className="ipc-queue-tabs" role="tablist" aria-label="Image asset location">
-            <button type="button" role="tab" aria-selected={queueView === 'queue'} className={`ipc-queue-tab${queueView === 'queue' ? ' ipc-queue-tab--on' : ''}`} onClick={() => setQueueView('queue')}>Processing queue <span>{queuedJobs.length}</span></button>
-            <button type="button" role="tab" aria-selected={queueView === 'archive'} className={`ipc-queue-tab${queueView === 'archive' ? ' ipc-queue-tab--on' : ''}`} onClick={() => setQueueView('archive')}><Archive size={12} /> History & archive <span>{archivedJobs.length}</span></button>
+            <button id="ipc-queue-tab" type="button" role="tab" aria-selected={queueView === 'queue'} aria-controls="ipc-queue-panel" className={`ipc-queue-tab${queueView === 'queue' ? ' ipc-queue-tab--on' : ''}`} onClick={() => setQueueView('queue')}>Processing queue <span>{queuedJobs.length}</span></button>
+            <button id="ipc-archive-tab" type="button" role="tab" aria-selected={queueView === 'archive'} aria-controls="ipc-queue-panel" className={`ipc-queue-tab${queueView === 'archive' ? ' ipc-queue-tab--on' : ''}`} onClick={() => setQueueView('archive')}><Archive size={12} /> History & archive <span>{archivedJobs.length}</span></button>
           </div>
+          <div id="ipc-queue-panel" role="tabpanel" aria-labelledby={queueView === 'archive' ? 'ipc-archive-tab' : 'ipc-queue-tab'}>
           {loading && !jobs.length ? (
             <p className="ipc-empty"><Loader2 size={16} className="spin" /> Loading queue…</p>
           ) : visibleJobs.length ? visibleJobs.map((job) => (
@@ -844,8 +867,9 @@ export default function ImageProcessingCentre({
               <span className={`ipc-status ipc-status--${job.status}`}>{statusLabel(job.status)}</span>
             </button>
           )) : (
-            <div className="ipc-empty">{queueView === 'archive' ? <Archive size={22} /> : <Sparkles size={22} />}<strong>{queueView === 'archive' ? 'No archived images yet' : 'No images queued'}</strong><span>{queueView === 'archive' ? 'Reviewed results saved here stay private and separate from processing assets.' : 'Add selected Nutstore images or upload a folder to begin.'}</span></div>
+            <div className="ipc-empty">{queueView === 'archive' ? <Archive size={22} /> : <Sparkles size={22} />}<strong>{queueView === 'archive' ? 'No archived images yet' : 'No images queued'}</strong><span>{queueView === 'archive' ? 'Reviewed results saved here stay private and separate from processing assets.' : 'Add selected Nutstore images or upload a folder to begin.'}</span><small>{queueView === 'archive' ? 'Archive is private until you explicitly apply an approved image.' : 'Choose a treatment above, then add your first image to start.'}</small></div>
           )}
+          </div>
         </aside>
 
         <div className="ipc-review">
