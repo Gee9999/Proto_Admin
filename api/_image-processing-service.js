@@ -520,7 +520,7 @@ export async function createTargetedRepairRevision(job, image, {
   };
 }
 
-const CLEARABLE_IMAGE_STATUSES = new Set(['review', 'ready', 'completed', 'failed', 'error', 'rejected']);
+const CLEARABLE_IMAGE_STATUSES = new Set(['review', 'ready', 'completed', 'approved', 'failed', 'error', 'rejected']);
 
 function safeStagingSegment(value) {
   return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '');
@@ -553,10 +553,10 @@ export async function removeExactWorkerStagingOutput(bucket, job, image, path) {
 
 export async function clearUnpublishedImage(job, image) {
   if (!CLEARABLE_IMAGE_STATUSES.has(image.status)) {
-    throw new Error('Only an unapproved image awaiting review, rejected, or failed can be cleared');
+    throw new Error('Only an unarchived image awaiting review, approved, rejected, or failed can be cleared');
   }
-  if (image.publishedUrl || image.publishedAt || image.approvedAt) {
-    throw new Error('Approved or published images cannot be cleared from this queue');
+  if (image.publishedUrl || image.publishedAt || image.archive?.assetId) {
+    throw new Error('Archived or published images cannot be cleared from this queue');
   }
 
   const outputPaths = [...new Set([

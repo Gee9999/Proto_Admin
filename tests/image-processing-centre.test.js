@@ -125,6 +125,12 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(centreSource).toContain('aria-describedby="ipc-instructions-help"');
   });
 
+  it('offers a separate discard action for approved staged images', () => {
+    expect(centreSource).toContain("'approved', 'failed'");
+    expect(centreSource).toContain('Discard staged image');
+    expect(centreSource).toContain('discards the approved staged result');
+  });
+
   it('turns a stalled queue request into a retryable error', async () => {
     vi.useFakeTimers();
     vi.spyOn(globalThis, 'fetch').mockImplementation((_url, options) => new Promise((_resolve, reject) => {
