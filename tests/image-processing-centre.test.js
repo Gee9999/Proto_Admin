@@ -18,6 +18,7 @@ const uploadSource = fs.readFileSync(new URL('../src/components/productLoader/Pr
 const adminSource = fs.readFileSync(new URL('../src/pages/AdminPage.jsx', import.meta.url), 'utf8');
 const sidebarSource = fs.readFileSync(new URL('../src/components/GroupedSidebar.jsx', import.meta.url), 'utf8');
 const centreSource = fs.readFileSync(new URL('../src/components/productLoader/ImageProcessingCentre.jsx', import.meta.url), 'utf8');
+const stylesheetSource = fs.readFileSync(new URL('../src/index.css', import.meta.url), 'utf8');
 
 afterEach(() => {
   vi.useRealTimers();
@@ -201,6 +202,11 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(nutstoreSource).toContain('Improve selected');
     expect(uploadSource).toContain('onProcessFiles(sourceFiles)');
     expect(uploadSource).toContain('Improve selected');
+  });
+
+  it('shows large, uncropped Nutstore source thumbnails for visual selection', () => {
+    expect(stylesheetSource).toContain('.pl-nutstore-thumb-slot { flex-shrink: 0; width: 88px; height: 88px;');
+    expect(stylesheetSource).toContain('.pl-nutstore-thumb { width: 88px; height: 88px; object-fit: contain;');
   });
 
   it('keeps review, explicit archive, and separate live application as deliberate steps', () => {
