@@ -18,7 +18,9 @@ export function getPortalAdminClient() {
 export async function readSiteConfigJson(file, fallback = {}) {
   try {
     const supabase = getPortalAdminClient();
-    const { data, error } = await supabase.storage.from(SITE_CONFIG_BUCKET).download(file);
+    const { data, error } = await supabase.storage
+      .from(SITE_CONFIG_BUCKET)
+      .download(file, {}, { cache: 'no-store' });
     if (error) return fallback;
     const text = await data.text();
     if (!String(text || '').trim()) return fallback;
@@ -40,6 +42,7 @@ export async function writeSiteConfigJson(file, payload) {
   const body = JSON.stringify({ ...payload, updatedAt: new Date().toISOString() });
   const { error } = await supabase.storage.from(SITE_CONFIG_BUCKET).upload(file, body, {
     contentType: 'application/json',
+    cacheControl: '0',
     upsert: true,
   });
   if (error) throw error;
