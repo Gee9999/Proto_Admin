@@ -202,6 +202,10 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(nutstoreSource).toContain('Improve selected');
     expect(uploadSource).toContain('onProcessFiles(sourceFiles)');
     expect(uploadSource).toContain('Improve selected');
+    expect(adminSource).toContain('nutstoreSelection: loadPendingNutstoreHandoff()');
+    expect(adminSource).toContain('savePendingNutstoreHandoff(');
+    expect(adminSource).toContain("window.addEventListener('storage', syncPendingNutstoreHandoff)");
+    expect(adminSource).toContain('onNutstoreSelectionConsumed={consumeNutstoreHandoff}');
   });
 
   it('shows large, uncropped Nutstore source thumbnails for visual selection', () => {
