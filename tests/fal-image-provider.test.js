@@ -106,6 +106,17 @@ describe('fal.ai image provider', () => {
       { sampleSize: 160 },
     );
     expect(clean.suspicious).toBe(false);
+
+    const opaqueWhiteCutout = new Jimp({ width: 160, height: 120, color: 0xffffffff });
+    for (let y = 20; y < 100; y += 1) for (let x = 20; x < 65; x += 1) {
+      opaqueWhiteCutout.setPixelColor(0x2050a0ff, x, y);
+    }
+    const opaqueDamaged = await detectRemovedLightContent(
+      await source.getBuffer('image/png'),
+      await opaqueWhiteCutout.getBuffer('image/png'),
+      { sampleSize: 160 },
+    );
+    expect(opaqueDamaged.suspicious).toBe(true);
   });
 
   it('routes clear packaging, beads, and multi-piece products away from destructive generic removal', () => {
