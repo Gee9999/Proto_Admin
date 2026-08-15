@@ -111,7 +111,7 @@ function qualityFlagCode(flag) {
 }
 
 function isTreatmentReviewAdvisory(flag) {
-  return /must_be_visually_verified|manual_review|manual_safe_cutout|manual_overlay|piece_count|fine_details|transparent_edges|custom_instructions/.test(qualityFlagCode(flag));
+  return /must_be_visually_verified|manual_review|manual_safe_cutout|manual_overlay|piece_count|fine_details|transparent_edges|custom_instructions|detached_label|barcode/.test(qualityFlagCode(flag));
 }
 
 function requiresTreatmentVerification(job) {
