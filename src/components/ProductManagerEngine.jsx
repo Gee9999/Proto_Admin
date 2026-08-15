@@ -434,10 +434,13 @@ function CodeEllipsis({ value, prefix = '' }) {
  * rows — which is what made the search feel laggy (each keystroke reconciled
  * the whole un-virtualised list even though the row data hadn't changed).
  */
-const PmSearchField = memo(function PmSearchField({ onDebouncedChange, delay = 200 }) {
-  const [value, setValue] = useState('');
+const PmSearchField = memo(function PmSearchField({ onDebouncedChange, initialValue = '', delay = 200 }) {
+  const [value, setValue] = useState(initialValue);
   const onChangeRef = useRef(onDebouncedChange);
   onChangeRef.current = onDebouncedChange;
+  useEffect(() => {
+    setValue(initialValue);
+  }, [initialValue]);
   useEffect(() => {
     const t = setTimeout(() => onChangeRef.current(value.trim()), delay);
     return () => clearTimeout(t);
@@ -473,6 +476,7 @@ export default function ProductManagerEngine({
   statuses = CATALOG_STATUSES,
   showCategorySidebar = true,
   initialToOrderOnly = false,
+  initialSearch = '',
   title = 'Product Manager',
   note = 'In-stock products are live on the site. Open a product to set its New Stock ribbon and To-order options.',
 }) {
@@ -540,6 +544,10 @@ export default function ProductManagerEngine({
     setPage(1);
     setCategoryPath([]);
   }, [initialToOrderOnly]);
+
+  useEffect(() => {
+    setDebouncedSearch(String(initialSearch || '').trim());
+  }, [initialSearch]);
 
   const mutations = useCatalogMutations();
   const showStockColumn = STOCK_STATUSES.has(status);
@@ -1614,7 +1622,7 @@ export default function ProductManagerEngine({
                   </div>
                 </>
               )}
-              <PmSearchField onDebouncedChange={setDebouncedSearch} />
+              <PmSearchField initialValue={initialSearch} onDebouncedChange={setDebouncedSearch} />
               {status === 'live' && (
                 <FilterMenu
                   label="Filter"

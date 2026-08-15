@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 
@@ -33,8 +34,8 @@ test('a missing or oversized PDF never cancels the alert', () => {
 
 test('no WATI/WhatsApp sends remain in the order-notify path', () => {
   assert.doesNotMatch(notifySource, /watiSend|sendTemplateMessage|whatsappNumber/, 'no WATI calls');
-  assert.ok(!fs.existsSync(new URL('../api/_wati.js', import.meta.url).pathname), '_wati.js deleted');
-  assert.ok(!fs.existsSync(new URL('../api/team-whatsapp-test.js', import.meta.url).pathname), 'team WhatsApp test deleted');
+  assert.ok(!fs.existsSync(fileURLToPath(new URL('../api/_wati.js', import.meta.url))), '_wati.js deleted');
+  assert.ok(!fs.existsSync(fileURLToPath(new URL('../api/team-whatsapp-test.js', import.meta.url))), 'team WhatsApp test deleted');
   assert.match(notifySource, /email is the notification/i);
 });
 
@@ -43,10 +44,10 @@ test('no WATI/WhatsApp sends remain in the order-notify path', () => {
 // and never to a customer — still holds, so assert the boundary rather than
 // the absence of the file.
 test('WATI is reachable only from the internal team broadcast', () => {
-  const wati = new URL('../api/_wati-notify.js', import.meta.url).pathname;
+  const wati = fileURLToPath(new URL('../api/_wati-notify.js', import.meta.url));
   assert.ok(fs.existsSync(wati), 'the team broadcast helper exists');
 
-  const importers = fs.readdirSync(new URL('../api/', import.meta.url).pathname)
+  const importers = fs.readdirSync(fileURLToPath(new URL('../api/', import.meta.url)))
     .filter((f) => f.endsWith('.js'))
     .filter((f) => /from '\.\/_wati-notify\.js'/.test(
       fs.readFileSync(new URL(`../api/${f}`, import.meta.url), 'utf8'),

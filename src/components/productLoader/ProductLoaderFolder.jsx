@@ -6,6 +6,7 @@ import {
   Loader2,
   PackagePlus,
   RefreshCw,
+  Sparkles,
   Upload,
 } from 'lucide-react';
 import { exportBatchReportCsv, isImageFile } from '../../lib/parseIntakeFilename';
@@ -57,6 +58,7 @@ export default function ProductLoaderFolder({
   batchOverwrite,
   setBatchOverwrite,
   onShowToast,
+  onProcessFiles,
 }) {
   const folderRef = useRef(null);
   const [items, setItems] = useState([]);
@@ -67,6 +69,7 @@ export default function ProductLoaderFolder({
   const [startedAt, setStartedAt] = useState(null);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [stats, setStats] = useState({ published: 0, dormant: 0, failed: 0 });
+  const [sourceFiles, setSourceFiles] = useState([]);
 
   const batchDefaultCategoryId = batchDefaultPathIds?.[0] || '';
 
@@ -93,6 +96,7 @@ export default function ProductLoaderFolder({
       return;
     }
     setScanning(true);
+    setSourceFiles(files);
     setError('');
     setItems([]);
     setStats({ published: 0, dormant: 0, failed: 0 });
@@ -318,6 +322,11 @@ export default function ProductLoaderFolder({
             <button type="button" className="adm-btn-ghost" disabled={processing || !items.some((i) => i.status === 'error')} onClick={() => void retryFailed()}>
               <RefreshCw size={14} /> Retry Failed
             </button>
+            {onProcessFiles && sourceFiles.length > 0 && (
+              <button type="button" className="adm-btn-ghost" disabled={processing || scanning} onClick={() => onProcessFiles(sourceFiles)}>
+                <Sparkles size={14} /> Improve selected ({sourceFiles.length})
+              </button>
+            )}
             <button type="button" className="adm-btn-ghost" onClick={exportReport}>
               <Download size={14} /> Export Report
             </button>
