@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isExistingExcelArchiveRow,
   matchVariantImages,
+  parseVariantRows,
   variantRowState,
 } from '../src/lib/productVariantImport.js';
 
@@ -11,6 +12,16 @@ const ROOT = resolve(import.meta.dirname, '..');
 const image = (name) => ({ name, type: 'image/jpeg' });
 
 describe('Excel + local image variant import', () => {
+  it('preserves the barcode column, including shared barcodes across SKUs', () => {
+    expect(parseVariantRows([
+      ['SKU', 'Barcode', 'Description'],
+      ['MUG514-BLK', '8626000514', 'Black mug'],
+      ['MUG514-WHT', '8626000514', 'White mug'],
+    ])).toEqual([
+      { sku: 'MUG514-BLK', barcode: '8626000514', title: 'Black mug' },
+      { sku: 'MUG514-WHT', barcode: '8626000514', title: 'White mug' },
+    ]);
+  });
   it('keeps different SKUs and titles separate when they share one barcode', () => {
     const rows = [
       { sku: 'MUG514-BLK', barcode: '8626000514', title: 'Black mug' },

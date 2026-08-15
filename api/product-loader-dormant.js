@@ -14,15 +14,19 @@ function getStockClient() {
   );
 }
 
-async function fetchLiveSkus(sb) {
+async function fetchLiveSkusForRows(sb, rows) {
   const skus = new Set();
-  let from = 0;
-  while (true) {
-    const { data, error } = await sb.from('website_stock').select('sku').range(from, from + PAGE_SIZE - 1);
+  const targets = [...new Set((rows || [])
+    .map((row) => String(row?.sku || '').trim().toUpperCase())
+    .filter(Boolean))];
+  for (let i = 0; i < targets.length; i += PAGE_SIZE) {
+    const chunk = targets.slice(i, i + PAGE_SIZE);
+    const { data, error } = await sb
+      .from('website_stock')
+      .select('sku')
+      .in('sku', chunk);
     if (error) throw error;
-    for (const row of data || []) skus.add(row.sku);
-    if ((data || []).length < PAGE_SIZE) break;
-    from += PAGE_SIZE;
+    for (const row of data || []) skus.add(String(row.sku || '').trim().toUpperCase());
   }
   return skus;
 }
@@ -169,8 +173,9 @@ export default async function handler(req, res) {
 
   if (req.method === 'GET') {
     try {
-      const [rows, liveSkus] = await Promise.all([fetchDormantRows(sb), fetchLiveSkus(sb)]);
-      const queue = rows.filter((row) => !liveSkus.has(row.sku)).map(mapRow);
+      const rows = await fetchDormantRows(sb);
+      const liveSkus = rows.length ? await fetchLiveSkusForRows(sb, rows) : new Set();
+      const queue = rows.filter((row) => !liveSkus.has(String(row.sku || '').trim().toUpperCase())).map(mapRow);
       return res.status(200).json({ rows: queue });
     } catch (err) {
       return res.status(500).json({ error: err.message || 'Failed to load dormant queue' });
