@@ -861,6 +861,17 @@ console.log('✓ Make-live keeps products visible + allocates full subcategory d
   assert.match(pmSrc2, /const PmSearchField = memo\(/, 'search input isolated into a memoized field');
   assert.doesNotMatch(pmSrc2, /value=\{searchInput\}/, 'parent no longer binds the raw search value');
 }
+
+// "Stock available" is a boolean quick toggle. It stores a tiny private marker
+// so the existing GRV trigger clears it on the next positive ERP stock move.
+{
+  const mutationSrc = readSrc('src/hooks/useCatalogMutations.js');
+  const pmSrc = readSrc('src/components/ProductManagerEngine.jsx');
+  assert.match(mutationSrc, /incomingStatus: stockAvailable \? 'landed_awaiting_grv' : 'none'/, 'toggle writes the arrived state');
+  assert.match(mutationSrc, /incomingQty: stockAvailable \? 0\.001 : 0/, 'toggle uses the GRV-clear marker quantity');
+  assert.match(pmSrc, /const stockAvailable = !item\.stockAvailable/, 'PM exposes Stock available as an on\/off toggle');
+  assert.doesNotMatch(pmSrc, /window\.prompt|How many units/, 'Stock available never prompts for a quantity');
+}
 console.log('✓ To-order admin toggle/filter + isolated search input');
 
 // Pick up in store delivery method flows through the shared formatter.
