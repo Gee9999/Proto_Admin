@@ -177,7 +177,11 @@ async function fetchAllArchivedRows(sb, { archivedBy, excludeBy, sort, search, c
     if (Array.isArray(categoryPath) && categoryPath.length && !isMotarroBrowsePath(categoryPath)) {
       q = applyCategoryFiltersToQuery(q, resolveCategoryFilters(tree, categoryPath));
     }
-    if (sort === 'updated') q = q.order('updated_at', { ascending: false });
+    if (sort === 'archived') {
+      q = q
+        .order('archived_at', { ascending: false, nullsFirst: false })
+        .order('updated_at', { ascending: false, nullsFirst: false });
+    } else if (sort === 'updated') q = q.order('updated_at', { ascending: false });
     else q = q.order('title', { ascending: true });
     q = q.range(from, from + PAGE_CHUNK - 1);
     const { data, error } = await q;
@@ -269,7 +273,11 @@ async function queryArchivedPaginated(sb, { search, categoryPath, tree, page, pa
     const quoted = excludeBy.map((v) => `"${v}"`).join(',');
     q = q.or(`archived_by.is.null,archived_by.not.in.(${quoted})`);
   }
-  if (sort === 'updated') q = q.order('updated_at', { ascending: false });
+  if (sort === 'archived') {
+    q = q
+      .order('archived_at', { ascending: false, nullsFirst: false })
+      .order('updated_at', { ascending: false, nullsFirst: false });
+  } else if (sort === 'updated') q = q.order('updated_at', { ascending: false });
   else q = q.order('title', { ascending: true });
   q = q.range(from, to);
   const { data, error, count } = await q;
@@ -303,10 +311,10 @@ export default async function handler(req, res) {
   const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 50));
   const search = String(req.query.search || '').trim();
   const categoryPath = parseCategoryPath(req.query.categoryPath);
-  // Archive is an operational review queue: the products just staged from an
-  // image/Excel intake must be visible immediately. Other catalogue surfaces
-  // retain their existing alphabetical default.
-  const sort = String(req.query.sort || (status === 'archived' ? 'updated' : 'title')).trim();
+  // Archive is an operational review queue: order by the moment a product was
+  // actually archived, not by its last edit. Category or description edits can
+  // update updated_at and must not jump an older item above a fresh intake.
+  const sort = String(req.query.sort || (status === 'archived' ? 'archived' : 'title')).trim();
   const onlyInStock = req.query.onlyInStock === 'true' || req.query.onlyInStock === '1';
   const toOrderOnly = req.query.toOrderOnly === 'true' || req.query.toOrderOnly === '1';
 

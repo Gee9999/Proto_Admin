@@ -10,12 +10,7 @@ export function buildCatalogParams({
   pageSize = 50,
   search = '',
   categoryPath = [],
-  // Default to most-recently-edited first (updated_at desc) so a product you
-  // just edited or moved to archive jumps to the top of the list. The
-  // archive_product / unarchive_product RPCs stamp updated_at = now() on
-  // move, so archived + restored rows surface too. Pass sort explicitly to
-  // override (e.g. 'title' for alphabetical).
-  sort = 'updated',
+  sort,
   stockFilter,
   archivedSource,
   onlyInStock = false,
@@ -27,7 +22,9 @@ export function buildCatalogParams({
     pageSize,
     search,
     categoryPath,
-    sort,
+    // Archive follows the true archive time. Other catalogue views keep their
+    // established most-recently-edited default.
+    sort: sort || (status === 'archived' ? 'archived' : 'updated'),
     stockFilter,
     archivedSource,
     onlyInStock,
@@ -40,7 +37,7 @@ async function fetchCatalog(params) {
     status: params.status,
     page: String(params.page),
     pageSize: String(params.pageSize),
-    sort: params.sort || 'updated',
+    sort: params.sort || (params.status === 'archived' ? 'archived' : 'updated'),
   });
   if (params.search) qs.set('search', params.search);
   if (params.categoryPath?.length) qs.set('categoryPath', JSON.stringify(params.categoryPath));

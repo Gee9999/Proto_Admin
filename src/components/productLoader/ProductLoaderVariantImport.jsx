@@ -1,10 +1,13 @@
 import { useMemo, useRef, useState } from 'react';
 import { Archive, CheckCircle, FileSpreadsheet, FolderOpen, Loader2, ShieldAlert } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { archiveVariantProduct, uploadProductImageSlot } from '../../lib/productLoaderApi';
 import { matchVariantImages, parseVariantImportSheet, variantRowState } from '../../lib/productVariantImport';
 import { readApiJson } from '../../lib/apiError';
+import { queryKeys } from '../../lib/queryKeys';
 
 export default function ProductLoaderVariantImport({ publishedBy = '', onShowToast }) {
+  const queryClient = useQueryClient();
   const sheetRef = useRef(null);
   const folderRef = useRef(null);
   const [sheetName, setSheetName] = useState('');
@@ -69,6 +72,16 @@ export default function ProductLoaderVariantImport({ publishedBy = '', onShowToa
     [rows],
   );
 
+  const refreshArchive = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] === 'catalog' && query.queryKey[1]?.status === 'archived',
+      }),
+      queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats() }),
+    ]);
+    window.dispatchEvent(new CustomEvent('proto-catalog-mutated'));
+  };
+
   const archive = async () => {
     if (!readyRows.length) return;
     const confirmed = window.confirm(
@@ -110,10 +123,12 @@ export default function ProductLoaderVariantImport({ publishedBy = '', onShowToa
         }));
         setProgress({ done: index + 1, total: readyRows.length, sku: row.sku });
       }
+      await refreshArchive();
       onShowToast?.(`Sent ${results.length} products to Archive. Choose each category there before making live.`, 'success');
       await preview(rows, files);
     } catch (err) {
       const message = `${activeSku ? `${activeSku}: ` : ''}${err.message || 'Archive failed'}`;
+      if (results.length) await refreshArchive();
       await preview(rows, files);
       setError(message);
     } finally {
