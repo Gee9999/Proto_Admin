@@ -39,7 +39,7 @@ import { partitionPlacedOnly } from '../lib/placements';
 import { formatWebsitePrice } from '../lib/pricing';
 import { childrenOfTree, fetchCategoryProductCounts, subcategoryOptionsFromTree, listHiddenMottaro, restoreMottaroNode } from '../lib/taxonomyAdmin';
 import { sellingUnitLabel } from '../../lib/selling-unit.mjs';
-import { readArchivePrioritySkus } from '../../lib/archive-priority.mjs';
+import { ARCHIVE_PRIORITY_STORAGE_KEY, readArchivePrioritySkus } from '../../lib/archive-priority.mjs';
 
 const ONLY_IN_STOCK_KEY = 'pm_only_in_stock';
 
@@ -485,7 +485,7 @@ export default function ProductManagerEngine({
   const [status, setStatus] = useState(() => clampStatus(initialStatus));
   const [archiveStockView, setArchiveStockView] = useState('archived');
   const [archiveSourceFilter, setArchiveSourceFilter] = useState('all');
-  const [archivePrioritySkus] = useState(() => (
+  const [archivePrioritySkus, setArchivePrioritySkus] = useState(() => (
     initialStatus === 'archived' ? readArchivePrioritySkus() : []
   ));
   const reorderMode = false; // Reorder mode removed — use the Reorder Grid section instead.
@@ -493,6 +493,17 @@ export default function ProductManagerEngine({
   useEffect(() => {
     setStatus(clampStatus(initialStatus));
   }, [initialStatus, clampStatus]);
+
+  useEffect(() => {
+    if (initialStatus !== 'archived') return undefined;
+    const refreshExcelPriority = (event) => {
+      if (event.key === ARCHIVE_PRIORITY_STORAGE_KEY) {
+        setArchivePrioritySkus(readArchivePrioritySkus());
+      }
+    };
+    window.addEventListener('storage', refreshExcelPriority);
+    return () => window.removeEventListener('storage', refreshExcelPriority);
+  }, [initialStatus]);
   const [page, setPage] = useState(1);
   const [pageSize] = useState(50);
   const [onlyInStock, setOnlyInStock] = useState(() => readOnlyInStockPref());
@@ -1570,7 +1581,7 @@ export default function ProductManagerEngine({
                   <p className="adm-section-note" style={{ margin: '0 0 8px', width: '100%' }}>
                     {archiveStockView === 'negative'
                       ? 'Live products with negative ERP stock. Zero-stock items are not shown here.'
-                      : `Archived products hidden from the trade website. ${archivePrioritySkus.length ? `${archivePrioritySkus.length} products from the current Excel batch are pinned first in this browser; then ` : ''}most recently archived items appear next; zero-stock items are not shown here.`}
+                      : `Archived products hidden from the trade website. ${archivePrioritySkus.length ? `${archivePrioritySkus.length} ${archivePrioritySkus.length === 1 ? 'product is' : 'products are'} pinned first from the current Excel batch across your preview tabs; then ` : ''}most recently archived items appear next; zero-stock items are not shown here.`}
                   </p>
                   <div className="pm-archive-stock-toggle" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', width: '100%', marginBottom: 8 }}>
                     <button

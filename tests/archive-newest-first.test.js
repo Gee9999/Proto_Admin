@@ -34,4 +34,14 @@ describe('Archive ordering', () => {
     expect(ordered.map((row) => row.sku)).toEqual(['MUG514-BLK', 'MUG519-GRY', 'KKC4']);
     expect(rows.map((row) => row.sku)).toEqual(['KKC4', 'MUG519-GRY', 'MUG514-BLK']);
   });
+
+  it('shares the temporary Excel batch between preview tabs', () => {
+    const priority = readFileSync(resolve(ROOT, 'lib/archive-priority.mjs'), 'utf8');
+    const screen = readFileSync(resolve(ROOT, 'src/components/ProductManagerEngine.jsx'), 'utf8');
+    expect(priority).toContain('localStorage.setItem');
+    expect(priority).not.toContain('sessionStorage.setItem');
+    expect(priority).toContain('ARCHIVE_PRIORITY_TTL_MS');
+    expect(screen).toContain("window.addEventListener('storage'");
+    expect(screen).toContain('ARCHIVE_PRIORITY_STORAGE_KEY');
+  });
 });
