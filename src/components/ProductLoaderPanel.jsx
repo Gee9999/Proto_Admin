@@ -16,6 +16,7 @@ import { isImageFile } from '../lib/parseIntakeFilename.js';
 import { readApiJson } from '../lib/apiError.js';
 import ProductLoaderNutstore from './productLoader/ProductLoaderNutstore';
 import ProductLoaderUpload from './productLoader/ProductLoaderUpload';
+import ProductLoaderVariantImport from './productLoader/ProductLoaderVariantImport';
 import ProductLoaderPublishSuccess from './productLoader/ProductLoaderPublishSuccess';
 import { ADMIN_REFRESH_EVENT } from '../lib/adminRefresh';
 import { catalogueDisplayTitle, catalogueDescription } from '../lib/productLoaderDisplay.js';
@@ -23,6 +24,7 @@ import { catalogueDisplayTitle, catalogueDescription } from '../lib/productLoade
 const LOADER_TABS = [
   { id: 'nutstore', label: 'Nutstore' },
   { id: 'upload', label: 'Upload' },
+  { id: 'variants', label: 'Excel + Images' },
 ];
 
 // Maps Gemini's category labels to taxonomy IDs
@@ -957,6 +959,15 @@ export default function ProductLoaderPanel({
           batchOverwrite={batchOverwrite}
           setBatchOverwrite={setBatchOverwrite}
           onShowToast={onShowToast}
+        />
+      )}
+
+      {activeTab === 'variants' && (
+        <ProductLoaderVariantImport
+          taxonomyTree={taxonomyTree}
+          publishedBy={publishedBy}
+          onShowToast={onShowToast}
+          onPublished={(result) => setPublishSuccess(result)}
         />
       )}
 

@@ -63,7 +63,7 @@ function fileToBase64(file) {
 }
 
 /** Upload one image file to a product's slot (1-4). Returns { url }. */
-export async function uploadProductImageSlot({ file, sku, slot }) {
+export async function uploadProductImageSlot({ file, sku, slot, requireNew = false }) {
   if (!file) throw new Error('No file');
   if (!sku) throw new Error('Enter the product code first');
   const b64 = await fileToBase64(file);
@@ -76,6 +76,7 @@ export async function uploadProductImageSlot({ file, sku, slot }) {
       base64: b64,
       sku: String(sku).trim().toUpperCase(),
       imageSlot: Math.min(4, Math.max(1, Number(slot) || 1)),
+      requireNew,
     }),
   });
   return readApiJson(res, { fallback: 'Upload failed' });
