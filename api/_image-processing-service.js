@@ -610,7 +610,8 @@ export function assertCompletedCleanQuality(image) {
     );
   }
   const qualityFlags = [...new Set(quality.flags || [])];
-  if (quality.requiresManualReview || !['excellent', 'good'].includes(grade) || score < 75 || qualityFlags.length > 0) {
+  const hardQualityFlags = qualityFlags.filter((flag) => !ACKNOWLEDGEABLE_REVIEW_WARNINGS.has(String(flag).trim().toLowerCase()));
+  if (quality.requiresManualReview || (!['excellent', 'good'].includes(grade) && hardQualityFlags.length > 0) || score < 75 || hardQualityFlags.length > 0) {
     throw imageProcessingError(
       'ipc_quality_blocked',
       'This image is not clean enough to approve. Resolve every quality warning and reprocess it first.',

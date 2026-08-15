@@ -115,6 +115,9 @@ describe('Image Processing Centre production mutation safety', () => {
       .toThrow(/not clean enough/i);
     expect(() => assertCompletedCleanQuality({ quality: { ...cleanQuality, flags: ['edge_halo'] } }))
       .toThrow(/quality warning/i);
+    expect(() => assertCompletedCleanQuality({
+      quality: { ...cleanQuality, grade: 'needs_attention', flags: ['possible_detached_label_or_barcode', 'manual_label_barcode_review_required'] },
+    })).not.toThrow();
     expect(() => markImageApproved({
       id: 'img', status: 'review', quality: cleanQuality,
       warnings: ['transparent_edges_and_print_must_be_visually_verified'],
