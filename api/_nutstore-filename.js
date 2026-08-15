@@ -1,8 +1,18 @@
-import { firstCodeToken } from '../lib/code-normalize.mjs';
+import { codeLookupCandidates, firstCodeToken } from '../lib/code-normalize.mjs';
 
 const IMAGE_EXT = /\.(jpe?g|png|webp)$/i;
+const SLOT_SUFFIX = /^(?<sku>.+)\.(?<slot>[2-4])$/i;
+const NOISE_PATTERNS = [
+  /\s+copy$/i,
+  /[_\s]+(front|back|side|detail|hero)$/i,
+];
 
-/** Nutstore PTR Photos: lookup code = stem before first hyphen; full stem kept for display. */
+/**
+ * Nutstore PTR Photos filenames use the same image-slot convention as the
+ * local Product Loader: SKU.jpg is slot 1 and SKU.2.jpg through SKU.4.jpg
+ * are the remaining slots. Keep the full code too: a real SKU ending in .2
+ * must be allowed to win an exact match before it is treated as a slot.
+ */
 export function parseNutstoreFilename(filename) {
   const raw = String(filename || '').trim();
   const slash = raw.lastIndexOf('/');
@@ -18,14 +28,37 @@ export function parseNutstoreFilename(filename) {
     return { code: '', displayCode: '', imageSlot: 1, parseError: 'unsupported_extension' };
   }
 
-  const displayCode = stem;
-  const code = firstCodeToken(stem);
+  let working = stem;
+  const duplicate = working.match(/\s*\(\d+\)$/);
+  if (duplicate) working = working.replace(/\s*\(\d+\)$/, '').trim();
+
+  let fullWorking = working;
+  for (const pattern of NOISE_PATTERNS) fullWorking = fullWorking.replace(pattern, '').trim();
+  const fullCode = fullWorking.toUpperCase();
+
+  let imageSlot = 1;
+  const slotMatch = working.match(SLOT_SUFFIX);
+  if (slotMatch?.groups?.sku) {
+    working = String(slotMatch.groups.sku || '').trim();
+    imageSlot = Math.min(4, Math.max(1, Number.parseInt(slotMatch.groups.slot || '1', 10) || 1));
+  }
+  for (const pattern of NOISE_PATTERNS) working = working.replace(pattern, '').trim();
+
+  const displayCode = working;
+  const code = firstCodeToken(working);
 
   if (code.length < 2) {
     return { code: '', displayCode: '', imageSlot: 1, parseError: 'sku_too_short' };
   }
 
-  return { code, displayCode, imageSlot: 1, parseError: null };
+  return {
+    code,
+    fullCode,
+    displayCode,
+    imageSlot,
+    parseError: null,
+    codeCandidates: codeLookupCandidates(working),
+  };
 }
 
 export function isNutstoreImageName(filename) {
