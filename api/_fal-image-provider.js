@@ -340,7 +340,17 @@ export async function detectRemovedLightContent(sourceBuffer, cutoutBuffer, { sa
 
   for (let index = 0; index < total; index += 1) {
     const offset = index * 4;
-    if (cutout.bitmap.data[offset + 3] > 24) continue;
+    const outputAlpha = cutout.bitmap.data[offset + 3];
+    const outputRed = cutout.bitmap.data[offset];
+    const outputGreen = cutout.bitmap.data[offset + 1];
+    const outputBlue = cutout.bitmap.data[offset + 2];
+    const outputLuminance = (outputRed * 0.2126) + (outputGreen * 0.7152) + (outputBlue * 0.0722);
+    const outputChroma = Math.max(outputRed, outputGreen, outputBlue) - Math.min(outputRed, outputGreen, outputBlue);
+    const outputLooksLikeWhiteBackground = outputAlpha > 24 && outputLuminance >= 245 && outputChroma <= 20;
+    // fal.ai may return an opaque white JPEG rather than a transparent PNG.
+    // In that case a removed label is indistinguishable from the new canvas
+    // unless we compare the source's interior light regions as well.
+    if (outputAlpha > 24 && !outputLooksLikeWhiteBackground) continue;
     const red = source.bitmap.data[offset];
     const green = source.bitmap.data[offset + 1];
     const blue = source.bitmap.data[offset + 2];

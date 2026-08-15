@@ -883,6 +883,12 @@ export default function ImageProcessingCentre({
             <span><strong>I inspected these source images and confirm an automatic cutout is safe.</strong><small>The processor may remove background pixels only. It must preserve every product part, transparent edge, label, word, number and pack quantity. Leave this unticked to block automatic processing.</small></span>
           </label>
         )}
+        {processingPreset === 'beads_fine_detail' && (
+          <div className="ipc-manual-lane-note" role="status">
+            <AlertTriangle size={15} />
+            <span><strong>Printed bead cards need extra care.</strong> If the source has number strips, labels or pale packaging, leave automatic cutout off and use a protected/manual treatment. The processor will block results when source content appears to disappear.</span>
+          </div>
+        )}
         {intakeIsManualOnly && (
           <div className="ipc-manual-lane-note" role="status">
             <AlertTriangle size={15} />
