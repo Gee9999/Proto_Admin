@@ -1565,7 +1565,7 @@ export default function ProductManagerEngine({
                   <p className="adm-section-note" style={{ margin: '0 0 8px', width: '100%' }}>
                     {archiveStockView === 'negative'
                       ? 'Live products with negative ERP stock. Zero-stock items are not shown here.'
-                      : 'Archived products hidden from the trade website. Zero-stock items are not shown here.'}
+                      : 'Archived products hidden from the trade website. Newest archived items appear first; zero-stock items are not shown here.'}
                   </p>
                   <div className="pm-archive-stock-toggle" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', width: '100%', marginBottom: 8 }}>
                     <button

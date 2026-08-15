@@ -303,7 +303,10 @@ export default async function handler(req, res) {
   const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 50));
   const search = String(req.query.search || '').trim();
   const categoryPath = parseCategoryPath(req.query.categoryPath);
-  const sort = String(req.query.sort || 'title').trim();
+  // Archive is an operational review queue: the products just staged from an
+  // image/Excel intake must be visible immediately. Other catalogue surfaces
+  // retain their existing alphabetical default.
+  const sort = String(req.query.sort || (status === 'archived' ? 'updated' : 'title')).trim();
   const onlyInStock = req.query.onlyInStock === 'true' || req.query.onlyInStock === '1';
   const toOrderOnly = req.query.toOrderOnly === 'true' || req.query.toOrderOnly === '1';
 
