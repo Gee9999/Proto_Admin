@@ -20,6 +20,63 @@ function getStockAdminClient() {
 }
 
 const normSku = (v) => String(v ?? '').trim().toUpperCase();
+const normBarcode = (v) => String(v ?? '').trim().toUpperCase();
+
+export function resolvePreviewRows(items, stockRows) {
+  const bySku = new Map();
+  const byBarcode = new Map();
+  for (const row of stockRows || []) {
+    const sku = normSku(row?.sku);
+    const barcode = normBarcode(row?.barcode);
+    if (sku) {
+      const rows = bySku.get(sku) || [];
+      rows.push(row);
+      bySku.set(sku, rows);
+    }
+    if (barcode) {
+      const rows = byBarcode.get(barcode) || [];
+      rows.push(row);
+      byBarcode.set(barcode, rows);
+    }
+  }
+
+  return items.map((item) => {
+    const requestedSku = normSku(item?.sku);
+    const requestedBarcode = normBarcode(item?.barcode);
+    const candidates = requestedBarcode
+      ? (byBarcode.get(requestedBarcode) || []).filter((row) => normSku(row.sku) === requestedSku)
+      : (bySku.get(requestedSku) || []);
+
+    if (candidates.length === 1) {
+      const row = candidates[0];
+      return {
+        sku: normSku(row.sku),
+        requestedSku,
+        found: true,
+        barcode: normBarcode(row.barcode),
+        currentTitle: row.title || '',
+        matchedBy: requestedBarcode ? 'barcode_and_sku' : 'sku',
+      };
+    }
+    if (candidates.length > 1) {
+      return {
+        sku: requestedSku,
+        found: false,
+        ambiguous: true,
+        barcode: requestedBarcode,
+        reason: 'ambiguous_barcode_and_sku',
+      };
+    }
+
+    const skuExists = (bySku.get(requestedSku) || []).length > 0;
+    return {
+      sku: requestedSku,
+      found: false,
+      barcode: requestedBarcode,
+      reason: requestedBarcode && skuExists ? 'barcode_mismatch' : 'not_found',
+    };
+  });
+}
 
 export default async function handler(req, res) {
   if (!(await requireAdminKey(req, res))) return;
@@ -34,8 +91,21 @@ export default async function handler(req, res) {
 
   try {
     if (mode === 'preview') {
-      const skus = [...new Set((req.body?.skus || []).map(normSku).filter(Boolean))].slice(0, MAX_ITEMS);
-      if (!skus.length) return res.status(200).json({ rows: [] });
+      const rawItems = Array.isArray(req.body?.items)
+        ? req.body.items
+        : (req.body?.skus || []).map((sku) => ({ sku, barcode: '' }));
+      const itemMap = new Map();
+      for (const item of rawItems) {
+        const sku = normSku(item?.sku);
+        if (!sku) continue;
+        itemMap.set(sku, { sku, barcode: normBarcode(item?.barcode) });
+        if (itemMap.size >= MAX_ITEMS) break;
+      }
+      const items = [...itemMap.values()];
+      if (!items.length) return res.status(200).json({ rows: [] });
+
+      const skus = [...new Set(items.map((item) => item.sku))];
+      const barcodes = [...new Set(items.map((item) => item.barcode).filter(Boolean))];
 
       const found = new Map();
       for (let i = 0; i < skus.length; i += CHUNK) {
@@ -45,16 +115,19 @@ export default async function handler(req, res) {
           .select('sku, barcode, title')
           .in('sku', chunk);
         if (error) return res.status(500).json({ error: error.message });
-        for (const r of data || []) found.set(normSku(r.sku), r);
+        for (const r of data || []) found.set(`${normSku(r.sku)}\u0000${normBarcode(r.barcode)}`, r);
+      }
+      for (let i = 0; i < barcodes.length; i += CHUNK) {
+        const chunk = barcodes.slice(i, i + CHUNK);
+        const { data, error } = await supabase
+          .from('website_stock')
+          .select('sku, barcode, title')
+          .in('barcode', chunk);
+        if (error) return res.status(500).json({ error: error.message });
+        for (const r of data || []) found.set(`${normSku(r.sku)}\u0000${normBarcode(r.barcode)}`, r);
       }
 
-      const rows = skus.map((sku) => {
-        const r = found.get(sku);
-        return r
-          ? { sku, found: true, barcode: r.barcode || '', currentTitle: r.title || '' }
-          : { sku, found: false };
-      });
-      return res.status(200).json({ rows });
+      return res.status(200).json({ rows: resolvePreviewRows(items, [...found.values()]) });
     }
 
     if (mode === 'apply') {
@@ -66,8 +139,22 @@ export default async function handler(req, res) {
 
       for (const it of items) {
         const sku = normSku(it?.sku);
+        const barcode = normBarcode(it?.barcode);
         const title = String(it?.title ?? it?.description ?? '').trim();
         if (!sku || !title) { results.push({ sku, status: 'skipped' }); continue; }
+
+        const { data: current, error: lookupError } = await supabase
+          .from('website_stock')
+          .select('sku, barcode')
+          .eq('sku', sku)
+          .maybeSingle();
+        if (lookupError) { failed += 1; results.push({ sku, status: 'error', error: lookupError.message }); continue; }
+        if (!current) { notFound += 1; results.push({ sku, status: 'notfound' }); continue; }
+        if (barcode && normBarcode(current.barcode) !== barcode) {
+          failed += 1;
+          results.push({ sku, status: 'barcode_mismatch' });
+          continue;
+        }
 
         const { data, error } = await supabase
           .from('website_stock')
