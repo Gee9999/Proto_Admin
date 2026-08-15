@@ -837,11 +837,22 @@ export async function archiveApprovedImage(job, image, { actor, stockClient = nu
   const archivePath = sourcePath;
   const destination = resolvedProductDestination(image);
   const stock = stockClient || getStockClient();
-  const product = await readExactProduct(stock, destination);
+  let product = null;
+  let destinationLookupUnavailable = false;
+  try {
+    product = await readExactProduct(stock, destination);
+  } catch (error) {
+    // Archiving is private and must remain available when the Product Manager
+    // lookup is temporarily unavailable. Applying later still re-checks the
+    // exact product and current live image before any mutation.
+    if (error?.code !== 'ipc_product_not_found') throw error;
+    destinationLookupUnavailable = true;
+  }
   const destinationSnapshot = {
     ...destination,
-    expectedLiveUrl: product[destination.field] || null,
+    expectedLiveUrl: product?.[destination.field] || null,
     capturedAt: new Date().toISOString(),
+    lookupUnavailable: destinationLookupUnavailable,
   };
   const parent = image.revision?.parentImageId
     ? (job.images || []).find((candidate) => candidate.id === image.revision.parentImageId)

@@ -146,6 +146,32 @@ describe('Image Processing Centre production mutation safety', () => {
     });
   });
 
+  it('still saves a private archive asset when the inferred Product Manager SKU is not found', async () => {
+    const stock = {
+      from() {
+        return {
+          select() {
+            const query = { eq: () => query, limit: async () => ({ data: [], error: null }) };
+            return query;
+          },
+        };
+      },
+    };
+    const approved = {
+      ...archivedImage(),
+      status: 'approved',
+      archive: null,
+      processed: { transparentPrivatePath: 'image-processing/sources/ipc_1/img_1-run-1-transparent-master.png' },
+      outputStoragePath: 'image-processing/sources/ipc_1/img_1-run-1-website-ready.jpg',
+      source: { type: 'local_upload', filename: 'ABC1.jpg', privatePath: 'image-processing/sources/ipc_1/img_1.jpg' },
+    };
+    const archived = await archiveApprovedImage({ id: 'ipc_1', images: [approved] }, approved, {
+      actor: 'owner@proto.co.za', stockClient: stock,
+    });
+    expect(archived.status).toBe('archived');
+    expect(archived.archive.destinationSnapshot.lookupUnavailable).toBe(true);
+  });
+
   it('refuses a stale archive after the live image changes and does not upload or audit', async () => {
     const { stock, calls } = stockHarness({ liveUrl: 'https://images.example/newer.jpg' });
     const image = archivedImage();
