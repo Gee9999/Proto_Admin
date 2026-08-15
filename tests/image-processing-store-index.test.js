@@ -17,7 +17,7 @@ vi.mock('../api/_site-config.js', () => ({
   writeSiteConfigJson: vi.fn(),
 }));
 
-import { readImageJobIndex } from '../api/_image-processing-store.js';
+import { readImageJob, readImageJobIndex } from '../api/_image-processing-store.js';
 
 describe('image-processing queue discovery', () => {
   beforeEach(() => {
@@ -49,9 +49,20 @@ describe('image-processing queue discovery', () => {
     await expect(readImageJobIndex()).resolves.toEqual([{ id: 'ipc_fallback' }]);
   });
 
+  it('uses a unique cache key for every mutable job-manifest read', async () => {
+    mocks.readSiteConfigJson.mockResolvedValue({ id: 'ipc_fresh' });
+
+    await expect(readImageJob('ipc_fresh')).resolves.toEqual({ id: 'ipc_fresh' });
+    expect(mocks.readSiteConfigJson).toHaveBeenCalledWith(
+      'image-processing/jobs/ipc_fresh.json',
+      null,
+      { cacheNonce: expect.any(String) },
+    );
+  });
+
   it('requires mutable private JSON reads and writes to bypass CDN caching', () => {
     const source = readFileSync(new URL('../api/_site-config.js', import.meta.url), 'utf8');
-    expect(source).toContain(".download(file, {}, { cache: 'no-store' })");
+    expect(source).toContain(".download(file, cacheNonce == null ? {} : { cacheNonce: String(cacheNonce) }, { cache: 'no-store' })");
     expect(source).toContain("cacheControl: '0'");
   });
 });

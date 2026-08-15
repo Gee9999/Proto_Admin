@@ -15,12 +15,12 @@ export function getPortalAdminClient() {
   });
 }
 
-export async function readSiteConfigJson(file, fallback = {}) {
+export async function readSiteConfigJson(file, fallback = {}, { cacheNonce = null } = {}) {
   try {
     const supabase = getPortalAdminClient();
     const { data, error } = await supabase.storage
       .from(SITE_CONFIG_BUCKET)
-      .download(file, {}, { cache: 'no-store' });
+      .download(file, cacheNonce == null ? {} : { cacheNonce: String(cacheNonce) }, { cache: 'no-store' });
     if (error) return fallback;
     const text = await data.text();
     if (!String(text || '').trim()) return fallback;

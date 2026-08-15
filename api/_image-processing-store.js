@@ -25,7 +25,12 @@ export function sourceObjectPath(jobId, imageId, filename = 'image.jpg') {
 
 export async function readImageJob(id) {
   if (!id) return null;
-  const job = await readSiteConfigJson(jobFile(id), null);
+  // Each mutation is followed by another owner action (for example approval
+  // then archive). Supabase Storage can briefly serve the previous object
+  // version even with `cache: no-store`, so give every manifest read a unique
+  // cache key. This keeps the deliberate two-step workflow without making an
+  // operator wait for CDN consistency between the steps.
+  const job = await readSiteConfigJson(jobFile(id), null, { cacheNonce: randomUUID() });
   return job?.id === id ? job : null;
 }
 
