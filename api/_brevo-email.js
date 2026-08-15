@@ -231,7 +231,7 @@ export async function fetchRecipientsByEmail(sb, emails = []) {
   return [...seen.values()];
 }
 
-export async function fetchCustomerAudience(sb, audience, { businessTypes = [], importBatch = '' } = {}) {
+export async function fetchCustomerAudience(sb, audience, { businessTypes = [], importBatch = '', groupId = '' } = {}) {
   const seen = new Map();
   const types = [...new Set((businessTypes || []).map((t) => String(t || '').trim()).filter(Boolean))];
   const matchesBusinessType = (row) => {
@@ -286,6 +286,29 @@ export async function fetchCustomerAudience(sb, audience, { businessTypes = [], 
         account_code: r.account_code || '',
         customer_code: r.account_code || '',
         business_type: r.business_type || '',
+      });
+    });
+  }
+
+  // A group is a standalone list, not a slice of the customer base: its
+  // members are not customers and carry no business_type, so the business-type
+  // filter is deliberately not applied here — it would silently empty the
+  // audience rather than narrow it.
+  if (audience === 'group') {
+    const id = String(groupId || '').trim();
+    if (!id) return [];
+    const memberRows = await fetchAllFromTable(sb, 'email_group_members', (q) => q.eq('group_id', id));
+    memberRows.forEach((r) => {
+      upsertRecipient(seen, {
+        email: r.email,
+        name: r.name || r.business_name || '',
+        first_name: r.name || '',
+        contact_name: r.name || '',
+        business_name: r.business_name || '',
+        customer_code: '',
+        account_code: '',
+        phone: '',
+        business_type: '',
       });
     });
   }

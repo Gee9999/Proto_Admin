@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState, Suspense } from 'react';
-import { BarChart2, ChevronLeft, ChevronRight, Loader2, Mail, RefreshCw, Search, Send, Users } from 'lucide-react';
+import { BarChart2, ChevronLeft, Layers, ChevronRight, Loader2, Mail, RefreshCw, Search, Send, Users } from 'lucide-react';
 import { ADMIN_REFRESH_EVENT } from '../lib/adminRefresh';
 import { lazyRetry } from '../lib/lazyRetry';
 import { BUSINESS_TYPES } from '../lib/businessTypes';
 import AdminSelect from './AdminSelect';
 
 const EmailAnalyticsPanel = lazyRetry(() => import('./EmailAnalyticsPanel'));
+const EmailGroupsPanel = lazyRetry(() => import('./EmailGroupsPanel'));
 
 const PAGE_SIZE = 50;
 
@@ -144,16 +145,26 @@ export default function CommsPanel({ onCompose, onShowToast }) {
             audience. Contacts come straight from the portal, not Brevo.
           </p>
         </div>
-        <button type="button" className="adm-btn-red" onClick={() => onCompose?.()}>
-          <Mail size={15} style={{ marginRight: 6, verticalAlign: -2 }} />
-          Send email
-        </button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <button type="button" className="adm-btn-ghost" onClick={() => setTab('groups')}>
+            <Layers size={15} style={{ marginRight: 6, verticalAlign: -2 }} />
+            Groups
+          </button>
+          <button type="button" className="adm-btn-red" onClick={() => onCompose?.()}>
+            <Mail size={15} style={{ marginRight: 6, verticalAlign: -2 }} />
+            Send email
+          </button>
+        </div>
       </div>
 
       <div className="adm-customer-tabs" style={{ marginBottom: 12 }}>
         <button type="button" onClick={() => setTab('contacts')} className={`adm-tab${tab === 'contacts' ? ' adm-tab--active' : ''}`}>
           <Users size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
           Contacts{total ? ` (${total})` : ''}
+        </button>
+        <button type="button" onClick={() => setTab('groups')} className={`adm-tab${tab === 'groups' ? ' adm-tab--active' : ''}`}>
+          <Layers size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
+          Groups
         </button>
         <button type="button" onClick={() => setTab('analytics')} className={`adm-tab${tab === 'analytics' ? ' adm-tab--active' : ''}`}>
           <BarChart2 size={14} style={{ marginRight: 6, verticalAlign: -2 }} />
@@ -188,7 +199,14 @@ export default function CommsPanel({ onCompose, onShowToast }) {
         )}
       </div>
 
-      {tab === 'analytics' ? (
+      {tab === 'groups' ? (
+        <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 4px', color: '#6b7280', fontSize: 13 }}><Loader2 size={16} className="spin" /> Loading Groups…</div>}>
+          <EmailGroupsPanel
+            onShowToast={onShowToast}
+            onEmailGroup={(group) => onCompose?.({ audience: 'group', groupId: group.id })}
+          />
+        </Suspense>
+      ) : tab === 'analytics' ? (
         <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 4px', color: '#6b7280', fontSize: 13 }}><Loader2 size={16} className="spin" /> Loading Email Analytics…</div>}>
           <EmailAnalyticsPanel onShowToast={onShowToast} onCompose={onCompose} />
         </Suspense>

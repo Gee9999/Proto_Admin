@@ -6,10 +6,8 @@ export const BULK_DESCRIPTION_MAX = 5000;
 
 const TITLE_HEADERS = ['TITLE', 'NAME', 'PRODUCT', 'DESCRIPTION'];
 const SKU_HEADERS = ['SKU', 'WEBSITE SKU', 'PRODUCT SKU', 'ITEM CODE', 'PRODUCT CODE', 'CODE'];
-const BARCODE_HEADERS = ['BARCODE', 'BAR CODE', 'EAN', 'EAN13', 'UPC'];
 
 const normalizeSku = (value) => String(value ?? '').trim().toUpperCase();
-const normalizeBarcode = (value) => String(value ?? '').trim().toUpperCase();
 
 /** Parse worksheet rows by exact SKU so shared barcodes can never merge variants. */
 export function parseDescriptionRows(table) {
@@ -18,20 +16,12 @@ export function parseDescriptionRows(table) {
   let headerIdx = -1;
   let skuCol = -1;
   let titleCol = -1;
-  let barcodeCol = -1;
   for (let i = 0; i < Math.min(table.length, 10); i += 1) {
     const rowCells = (table[i] || []).map((c) => String(c || '').trim().toUpperCase());
     const sc = rowCells.findIndex((c) => SKU_HEADERS.includes(c));
-    const bc = rowCells.findIndex((c) => BARCODE_HEADERS.includes(c));
     let tc = rowCells.findIndex((c, idx) => idx !== sc && TITLE_HEADERS.includes(c));
     if (tc === -1) tc = rowCells.findIndex((c, idx) => idx !== sc && TITLE_HEADERS.some((h) => c.includes(h)));
-    if (sc !== -1 && tc !== -1 && sc !== tc) {
-      headerIdx = i;
-      skuCol = sc;
-      titleCol = tc;
-      barcodeCol = bc;
-      break;
-    }
+    if (sc !== -1 && tc !== -1 && sc !== tc) { headerIdx = i; skuCol = sc; titleCol = tc; break; }
   }
   if (headerIdx === -1) {
     throw new Error('Could not find SKU and TITLE columns. The first rows must include a SKU header and a TITLE (or NAME/PRODUCT/DESCRIPTION) header.');
@@ -42,12 +32,11 @@ export function parseDescriptionRows(table) {
   for (let i = headerIdx + 1; i < table.length; i += 1) {
     const row = table[i] || [];
     const sku = normalizeSku(row[skuCol]);
-    const barcode = barcodeCol === -1 ? '' : normalizeBarcode(row[barcodeCol]);
     const title = String(row[titleCol] ?? '').trim();
     if (!sku || !title) continue;
-    map.set(sku, { barcode, title });
+    map.set(sku, title);
   }
-  const items = [...map.entries()].map(([sku, value]) => ({ sku, ...value }));
+  const items = [...map.entries()].map(([sku, title]) => ({ sku, title }));
   if (!items.length) throw new Error('No rows with both a SKU and a title were found.');
   if (items.length > BULK_DESCRIPTION_MAX) {
     throw new Error(`Too many rows (${items.length}). Max ${BULK_DESCRIPTION_MAX} per run.`);
@@ -70,10 +59,7 @@ export async function previewDescriptions(items) {
   const res = await fetch('/api/bulk-description-replace', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      mode: 'preview',
-      items: items.map((i) => ({ sku: i.sku, barcode: i.barcode || '' })),
-    }),
+    body: JSON.stringify({ mode: 'preview', skus: items.map((i) => i.sku) }),
   });
   const json = await res.json();
   if (!res.ok) throw new Error(json.error || 'Preview failed');
@@ -101,10 +87,7 @@ export async function applyDescriptions(items) {
 export function downloadUnmatchedCsv(rows) {
   const unmatched = (rows || []).filter((r) => !r.found);
   if (!unmatched.length) return;
-  const lines = [
-    ['SKU', 'BARCODE', 'NEW TITLE', 'REASON'],
-    ...unmatched.map((r) => [r.sku, r.barcode || '', r.newTitle || '', r.reason || 'not_found']),
-  ];
+  const lines = [['SKU', 'NEW TITLE'], ...unmatched.map((r) => [r.sku, r.newTitle || ''])];
   const csv = lines
     .map((cols) => cols.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','))
     .join('\n');

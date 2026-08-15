@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { parseDescriptionRows } from '../src/lib/bulkDescriptionReplace.js';
-import { resolvePreviewRows } from '../api/bulk-description-replace.js';
 
 describe('bulk title replacement spreadsheet', () => {
   it('keeps separate descriptions for SKUs that share a barcode', () => {
@@ -13,58 +12,10 @@ describe('bulk title replacement spreadsheet', () => {
     ]);
 
     expect(rows).toEqual([
-      { sku: 'MUG514-BLK', barcode: '8626000514', title: 'BLACK MUG' },
-      { sku: 'MUG514-WHT', barcode: '8626000514', title: 'WHITE MUG' },
-      { sku: 'MUG514-BLU', barcode: '8626000514', title: 'BLUE MUG' },
+      { sku: 'MUG514-BLK', title: 'BLACK MUG' },
+      { sku: 'MUG514-WHT', title: 'WHITE MUG' },
+      { sku: 'MUG514-BLU', title: 'BLUE MUG' },
     ]);
-  });
-
-  it('uses a shared barcode to find the group and exact SKU to select each item', () => {
-    const rows = resolvePreviewRows([
-      { sku: 'MUG514-BLK', barcode: '8626000514' },
-      { sku: 'MUG514-WHT', barcode: '8626000514' },
-      { sku: 'MUG514-BLU', barcode: '8626000514' },
-    ], [
-      { sku: 'MUG514-BLK', barcode: '8626000514', title: 'Old black' },
-      { sku: 'MUG514-WHT', barcode: '8626000514', title: 'Old white' },
-      { sku: 'MUG514-BLU', barcode: '8626000514', title: 'Old blue' },
-    ]);
-
-    expect(rows).toEqual([
-      expect.objectContaining({ sku: 'MUG514-BLK', barcode: '8626000514', found: true, matchedBy: 'barcode_and_sku' }),
-      expect.objectContaining({ sku: 'MUG514-WHT', barcode: '8626000514', found: true, matchedBy: 'barcode_and_sku' }),
-      expect.objectContaining({ sku: 'MUG514-BLU', barcode: '8626000514', found: true, matchedBy: 'barcode_and_sku' }),
-    ]);
-  });
-
-  it('does not guess when the barcode group has no matching SKU', () => {
-    const [row] = resolvePreviewRows(
-      [{ sku: 'MUG514-RED', barcode: '8626000514' }],
-      [{ sku: 'MUG514-BLK', barcode: '8626000514', title: 'Black' }],
-    );
-
-    expect(row).toEqual(expect.objectContaining({
-      sku: 'MUG514-RED',
-      barcode: '8626000514',
-      found: false,
-      reason: 'not_found',
-    }));
-  });
-
-  it('blocks an ambiguous duplicate instead of updating both records', () => {
-    const [row] = resolvePreviewRows(
-      [{ sku: 'MUG514-BLK', barcode: '8626000514' }],
-      [
-        { sku: 'MUG514-BLK', barcode: '8626000514', title: 'First' },
-        { sku: 'mug514-blk', barcode: '8626000514', title: 'Duplicate' },
-      ],
-    );
-
-    expect(row).toEqual(expect.objectContaining({
-      found: false,
-      ambiguous: true,
-      reason: 'ambiguous_barcode_and_sku',
-    }));
   });
 
   it('normalizes SKU case and lets only a repeated exact SKU correct itself', () => {
@@ -76,8 +27,8 @@ describe('bulk title replacement spreadsheet', () => {
     ]);
 
     expect(rows).toEqual([
-      { sku: 'MUG514-BLK', barcode: '', title: 'Corrected black title' },
-      { sku: 'MUG514-WHT', barcode: '', title: 'White title' },
+      { sku: 'MUG514-BLK', title: 'Corrected black title' },
+      { sku: 'MUG514-WHT', title: 'White title' },
     ]);
   });
 
@@ -88,13 +39,11 @@ describe('bulk title replacement spreadsheet', () => {
     ])).toThrow(/SKU and TITLE columns/);
   });
 
-  it('updates only by SKU and never overwrites barcode or images', () => {
+  it('updates website_stock by SKU and never by barcode', () => {
     const api = readFileSync(new URL('../api/bulk-description-replace.js', import.meta.url), 'utf8');
 
     expect(api).toContain(".in('sku', chunk)");
-    expect(api).toContain(".in('barcode', chunk)");
     expect(api).toContain(".eq('sku', sku)");
-    expect(api).not.toMatch(/\.update\(\{[^}]*barcode/s);
-    expect(api).not.toMatch(/\.update\(\{[^}]*image_url/s);
+    expect(api).not.toContain(".eq('barcode'");
   });
 });

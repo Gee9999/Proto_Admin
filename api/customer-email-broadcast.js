@@ -27,6 +27,7 @@ export default async function handler(req, res) {
     businessTypes,
     recipients,
     importBatch,
+    groupId,
   } = req.body || {};
 
   // "Specific people" send — an explicit email list instead of an audience.
@@ -37,7 +38,10 @@ export default async function handler(req, res) {
 
   const aud = isSelected ? 'selected' : String(audience || '').trim();
   if (!isSelected && !VALID_EMAIL_AUDIENCE.has(aud)) {
-    return res.status(400).json({ error: 'Invalid audience. Use requests, regular, proto-active, all-approved, or all-portal.' });
+    return res.status(400).json({ error: 'Invalid audience. Use approved trade customers or a group.' });
+  }
+  if (aud === 'group' && !String(groupId || '').trim()) {
+    return res.status(400).json({ error: 'Choose a group to send to.' });
   }
   if (isSelected && !testEmail && !selectedEmails.length) {
     return res.status(400).json({ error: 'Enter at least one valid email address to send to specific people.' });
@@ -74,6 +78,7 @@ export default async function handler(req, res) {
       htmlBlock: html,
       businessTypes: Array.isArray(businessTypes) ? businessTypes : [],
       importBatch: String(importBatch || '').trim(),
+      groupId: String(groupId || '').trim(),
       recipients: isSelected ? selectedEmails : null,
     });
     if (outcome.error && !outcome.total) {

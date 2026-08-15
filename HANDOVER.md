@@ -20,7 +20,7 @@ both local branches sit on clean merged `main`.
 
 |              | Admin                                   | Portal                                  |
 |--------------|-----------------------------------------|-----------------------------------------|
-| Repo         | `danieljoffeinfo-web/protoportal-admin` | `danieljoffeinfo-web/Proto-Website-`    |
+| Repo         | `ProtoTrading1/Proto_Admin`             | `ProtoTrading1/ProtoMainSite`           |
 | Prod         | admin.proto.co.za (Vercel)              | proto.co.za / register.proto.co.za      |
 | Work branch  | `claude/admin-dashboard-features-uo74sl`| `claude/live-mirror-fixes`              |
 | Local path   | `/home/user/protoportal-admin`          | `/workspace/proto-website-` (added via `add_repo`) |

@@ -49,11 +49,7 @@ export default function DescriptionReplacePanel({ onShowToast }) {
     if (!window.confirm(`Replace titles for ${applicable.length} product(s)?`)) return;
     setApplying(true);
     try {
-      const res = await applyDescriptions(applicable.map((r) => ({
-        sku: r.sku,
-        barcode: r.barcode || '',
-        title: r.newTitle,
-      })));
+      const res = await applyDescriptions(applicable.map((r) => ({ sku: r.sku, title: r.newTitle })));
       setResults(res);
       onShowToast?.(
         `Updated ${res.updated}${res.notFound ? `, ${res.notFound} not found` : ''}${res.failed ? `, ${res.failed} failed` : ''}`,
@@ -73,10 +69,10 @@ export default function DescriptionReplacePanel({ onShowToast }) {
   return (
     <div>
       <p className="adm-section-note">
-        Upload a spreadsheet with <strong>SKU</strong>, <strong>BARCODE</strong>, and <strong>TITLE</strong> columns
-        (a NAME/PRODUCT/DESCRIPTION header also works). A barcode finds the shared live-product group,
-        then the exact SKU selects one item inside that group. Only that item&apos;s <strong>title</strong>
-        is replaced; its barcode, SKU, images, and other product data are never overwritten.
+        Upload a spreadsheet with <strong>SKU</strong> and <strong>TITLE</strong> columns
+        (a NAME/PRODUCT/DESCRIPTION header also works). Each exact SKU is matched to one live
+        product and only that product&apos;s <strong>title</strong> is replaced. Barcodes are shown
+        for reference but are never used to match or update products.
       </p>
 
       <div className="adm-toolbar" style={{ gap: 10, marginBottom: 12 }}>
@@ -122,12 +118,12 @@ export default function DescriptionReplacePanel({ onShowToast }) {
                 {rows.slice(0, 500).map((r, i) => (
                   <tr key={`${r.sku}-${i}`} className={!r.found ? 'drp-row--missing' : r.unchanged ? 'drp-row--same' : ''}>
                     <td><code style={{ fontSize: 11 }}>{r.sku}</code></td>
-                    <td>{r.barcode || <span className="adm-muted">—</span>}</td>
+                    <td>{r.found ? (r.barcode || <span className="adm-muted">—</span>) : <span className="adm-muted">—</span>}</td>
                     <td className="drp-desc">{r.found ? (r.currentTitle || <span className="adm-muted">(empty)</span>) : <span className="adm-muted">—</span>}</td>
                     <td className="drp-desc">{r.newTitle}</td>
                     <td>
                       {!r.found
-                        ? <span style={{ color: '#b91c1c', fontSize: 12, fontWeight: 700 }}><X size={12} /> {r.ambiguous ? 'Ambiguous' : r.reason === 'barcode_mismatch' ? 'Barcode mismatch' : 'Not found'}</span>
+                        ? <span style={{ color: '#b91c1c', fontSize: 12, fontWeight: 700 }}><X size={12} /> Not found</span>
                         : r.unchanged
                           ? <span className="adm-muted" style={{ fontSize: 12 }}>No change</span>
                           : <span style={{ color: '#15803d', fontSize: 12, fontWeight: 700 }}>Will update</span>}

@@ -156,6 +156,7 @@ const CommsPanel = lazyRetry(() => import('../components/CommsPanel'));
 import AddCustomerModal from '../components/AddCustomerModal';
 import ActionMenu from '../components/ActionMenu';
 import BridgeStatusDot from '../components/BridgeStatusDot';
+import LiveShoppersDot from '../components/LiveShoppersDot';
 const FulfillmentSettingsModal = lazyRetry(() => import('../components/FulfillmentSettingsModal'));
 import categories from '../data/categories.json';
 
@@ -187,6 +188,9 @@ const ORDER_TAB_DEFS = [
 const ORDER_TAB_LABELS = Object.fromEntries(ORDER_TAB_DEFS.map((t) => [t.key, t.label]));
 
 const ADMIN_PAGE_SIZE = 50;
+/** Order Requests pages small by default — the tabs are a working queue, not an archive. */
+const ORDER_PAGE_SIZES = [10, 25, 50, 100];
+const ORDER_PAGE_SIZE_DEFAULT = 10;
 const CUSTOMER_SERVICE_SECTIONS = ['orders', 'customers', 'comms'];
 
 function sectionsForAdminRole(role) {
@@ -623,7 +627,19 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   });
   const [orderTab, setOrderTab] = useState('new');
   const [orderPage, setOrderPage] = useState(1);
+  const [orderPageSize, setOrderPageSize] = useState(() => {
+    const stored = Number(localStorage.getItem('adm-orders-page-size'));
+    return ORDER_PAGE_SIZES.includes(stored) ? stored : ORDER_PAGE_SIZE_DEFAULT;
+  });
   const [orderTotal, setOrderTotal] = useState(0);
+  /**
+   * Which request the rows on screen belong to. The `loading` flag below is
+   * shared by every section, so another section finishing its own load used to
+   * flip it false while orders were still in flight — and "No orders in this
+   * tab" would win for a few seconds. Comparing keys instead makes the
+   * pending state a property of the orders request itself.
+   */
+  const [ordersLoadedKey, setOrdersLoadedKey] = useState('');
   const [orderTabCounts, setOrderTabCounts] = useState(null);
   const [orderTrashEnabled, setOrderTrashEnabled] = useState(false);
   const [orderSearchDebounced, setOrderSearchDebounced] = useState('');
@@ -671,7 +687,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     const timer = setTimeout(() => setOrderSearchDebounced(orderSearch.trim()), 300);
     return () => clearTimeout(timer);
   }, [orderSearch]);
-  useEffect(() => { setOrderPage(1); }, [orderTab, orderSearchDebounced]);
+  useEffect(() => { setOrderPage(1); }, [orderTab, orderPageSize, orderSearchDebounced]);
   // Banner + Specials own their own load effects — see BannerPanel and SpecialsPanel.
 
 
@@ -892,7 +908,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     // flight at once; a slow response landing after a newer one used to
     // repaint the list with stale rows — the "order flickers away" bug. Only
     // the latest request may touch state.
-    const key = `${orderTab}|${orderPage}|${orderSearchDebounced}`;
+    const key = `${orderTab}|${orderPage}|${orderPageSize}|${orderSearchDebounced}`;
     const seq = (ordersReqSeqRef.current += 1);
     // Paint a previously seen tab instantly from cache while revalidating, so
     // switching tabs never blanks the list or shows another tab's orders.
@@ -901,6 +917,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
       setOrders(cached.rows);
       paintedOrdersRef.current = cached.rows;
       setOrderTotal(cached.total);
+      setOrdersLoadedKey(key);
     } else if (ordersCacheKeyRef.current !== key) {
       // Unseen tab: clear rather than leave the previous tab's rows on screen.
       setOrders([]);
@@ -911,7 +928,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     try {
       const data = await fetchOrdersPage({
         page: orderPage,
-        pageSize: ADMIN_PAGE_SIZE,
+        pageSize: orderPageSize,
         search: orderSearchDebounced,
         tab: orderTab,
       });
@@ -942,6 +959,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         paintedOrdersRef.current = data.rows;
         setOrderTotal(data.total);
       }
+      // Marks the rows on screen as belonging to this request, whether or not
+      // the paint was skipped as unchanged.
+      setOrdersLoadedKey(key);
       if (data.tabCounts) {
         const countsSig = JSON.stringify(data.tabCounts);
         if (orderTabCountsSigRef.current !== countsSig) {
@@ -952,7 +972,14 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
         if (badge != null) setNewOrdersCount(badge);
       }
     } catch (err) {
-      if (seq === ordersReqSeqRef.current) showToast(err.message || 'Failed to load orders', 'error');
+      if (seq === ordersReqSeqRef.current) {
+        showToast(err.message || 'Failed to load orders', 'error');
+        // Settle the key even on failure. Without this the list is stuck
+        // "Loading orders…" for good after one failed fetch, because nothing
+        // else ever marks the request finished — the toast would be the only
+        // hint anything went wrong.
+        setOrdersLoadedKey(key);
+      }
     } finally {
       if (seq === ordersReqSeqRef.current) setLoading(false);
     }
@@ -964,9 +991,14 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   );
   const victorCanSend = isVictorSender(activeFulfillmentUser);
 
+  // "Mark as completed" only makes sense before the order reaches Payment, and
+  // only for someone allowed to record payment — so the actions column widens
+  // to fit the label exactly on the tabs where the button is shown.
+  const showMarkCompleted = orderTab !== 'paid' && victorCanSend;
+
   const orderListGridCols = orderTab === 'sent' || orderTab === 'paid'
-    ? '1.3fr 1.1fr 0.9fr 0.8fr 2fr 120px 56px'
-    : '1.4fr 1.3fr 1.1fr 0.8fr 1fr 160px 80px';
+    ? `1.3fr 1.1fr 0.9fr 0.8fr 2fr ${showMarkCompleted ? '272px' : '120px'} 56px`
+    : `1.4fr 1.3fr 1.1fr 0.8fr 1fr ${showMarkCompleted ? '312px' : '160px'} 80px`;
 
   const confirmationSentIds = useMemo(() => {
     const ids = new Set(Object.keys(confirmationSent).filter((id) => confirmationSent[id]?.sentAt));
@@ -1304,7 +1336,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     }, 300);
     return () => clearTimeout(timer);
   }, [focusOrderId, activeSection, orders]);
-  useEffect(() => { if (activeSection === 'orders') void loadOrders(); }, [activeSection, orderPage, orderTab, orderSearchDebounced]);
+  useEffect(() => { if (activeSection === 'orders') void loadOrders(); }, [activeSection, orderPage, orderTab, orderPageSize, orderSearchDebounced]);
   useEffect(() => {
     if (activeSection !== 'orders') return;
     setOrdersBadgeSeen(newOrdersCount);
@@ -2131,6 +2163,32 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     } finally { setSaving(''); }
   };
 
+  /**
+   * One click from any stage to the Payment tab, so finished orders stop
+   * cluttering the working tabs. "Payment received" is the only status the
+   * Payment tab holds outright, so that is the target; the server walks the
+   * intermediate stages itself (advanceOrderStatusToTarget).
+   *
+   * It is confirmed because the move cannot be undone — no route passes
+   * `force`, and canAdvanceTo only ever steps forward, so a stray click on a
+   * list row would otherwise strand an unpaid order as paid.
+   */
+  const markOrderCompleted = async (order) => {
+    if (!victorCanSend) {
+      showToast(PAYMENT_RECEIVED_FORBIDDEN, 'error');
+      return;
+    }
+    const label = order.order_number || order.id;
+    const confirmed = window.confirm(
+      `Mark order ${label} as completed?\n\n`
+      + 'This moves it to the Payment tab by setting its status to "payment received", '
+      + 'which records the payment date.\n\n'
+      + 'Orders only move forward, so this cannot be undone.',
+    );
+    if (!confirmed) return;
+    await advanceOrderStatus(order, 'payment received');
+  };
+
   const openFulfillment = (order) => {
     const items = (order.original_items || order.items || []).map((item) => ({
       ...item,
@@ -2202,7 +2260,9 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     } finally { setFulfillmentSaving(false); }
   };
 
-  const orderPages = Math.max(1, Math.ceil(orderTotal / ADMIN_PAGE_SIZE));
+  const orderPages = Math.max(1, Math.ceil(orderTotal / orderPageSize));
+  // True whenever the rows on screen are not the ones this tab/page asked for.
+  const ordersPending = ordersLoadedKey !== `${orderTab}|${orderPage}|${orderPageSize}|${orderSearchDebounced}`;
 
   const customerPages = Math.max(1, Math.ceil(customerTotal / ADMIN_PAGE_SIZE));
   // Compact view: first rows only, with an explicit Show all / Minimise
@@ -2241,6 +2301,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
           </div>
           <div className="adm-header-actions">
             <BridgeStatusDot />
+            <LiveShoppersDot />
             <button type="button" onClick={goHome} className="adm-btn-ghost"><Home size={15} /><span className="adm-btn-text">Home</span></button>
             <button onClick={() => void refreshCurrentSection()} className="adm-btn-ghost"><RefreshCw size={15} /><span className="adm-btn-text">Refresh</span></button>
             <button onClick={onViewPortal} className="adm-btn-ghost"><ArrowLeftRight size={15} /><span className="adm-btn-text">Portal</span></button>
@@ -2916,6 +2977,20 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                                 {saving === `wa-${order.id}` ? <Loader2 size={14} className="spin" /> : <MessageCircle size={14} />}
                               </button>
                             )}
+                            {showMarkCompleted && normalizeOrderStatus(order.status) !== 'payment received' && (
+                              <button
+                                type="button"
+                                onClick={() => void markOrderCompleted(order)}
+                                disabled={saving === `advance-${order.id}`}
+                                className="adm-btn-ghost adm-mark-complete"
+                                title="Move this order to the Payment tab"
+                              >
+                                {saving === `advance-${order.id}`
+                                  ? <Loader2 size={14} className="spin" />
+                                  : <CheckCircle size={14} />}
+                                Mark as completed
+                              </button>
+                            )}
                             <button onClick={() => window.open(`/fulfillment?id=${order.id}`, '_blank')} className="adm-icon-btn" title="Fulfil order (opens in new tab)" style={{ color: '#15803d' }}><ClipboardList size={14} /></button>
                             <button onClick={() => void downloadOrderFile(order)} disabled={saving === `download-${order.id}`} className="adm-icon-btn" title="Download order PDF">{saving === `download-${order.id}` ? <Loader2 size={14} className="spin" /> : <FileDown size={14} />}</button>
                             {orderTrashEnabled && (
@@ -2975,20 +3050,44 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                       </div>
                     );
                   })}
-                  {loading && orders.length === 0 && (
+                  {ordersPending && orderRows.length === 0 && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '20px 16px', color: '#6b7280', fontSize: 13 }}>
                       <Loader2 size={16} className="spin" /> Loading orders…
                     </div>
                   )}
-                  {!loading && orderRows.length === 0 && (
+                  {!ordersPending && orderRows.length === 0 && (
                     <div style={{ padding: '20px 16px', color: '#6b7280', fontSize: 13 }}>
                       {orderSearch ? 'No orders match your search.' : orderTab === 'all' ? 'No orders yet.' : `No orders in this tab.`}
                     </div>
                   )}
                 </div>
-                {orderPages > 1 && (
-                  <Pager page={orderPage} totalPages={orderPages} onChange={setOrderPage} />
-                )}
+                <div className="adm-orders-pagebar">
+                  <label className="oa-select-wrap">
+                    Show
+                    <select
+                      value={orderPageSize}
+                      onChange={(e) => {
+                        const next = Number(e.target.value);
+                        setOrderPageSize(next);
+                        try { localStorage.setItem('adm-orders-page-size', String(next)); } catch { /* ignore */ }
+                      }}
+                    >
+                      {ORDER_PAGE_SIZES.map((size) => (
+                        <option key={size} value={size}>{size} orders</option>
+                      ))}
+                    </select>
+                  </label>
+                  <span className="adm-orders-pagebar__count">
+                    {orderTotal > 0 && (
+                      <>
+                        {(orderPage - 1) * orderPageSize + 1}–{Math.min(orderPage * orderPageSize, orderTotal)} of {orderTotal}
+                      </>
+                    )}
+                  </span>
+                  {orderPages > 1 && (
+                    <Pager page={orderPage} totalPages={orderPages} onChange={setOrderPage} />
+                  )}
+                </div>
                 </>
                 )}
               </div>
@@ -3210,6 +3309,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
             initialAudience={composeTarget?.audience || null}
             initialBusinessTypes={composeTarget?.businessTypes || null}
             initialRecipients={composeTarget?.recipients || null}
+            initialGroupId={composeTarget?.groupId || null}
           />
         </Suspense>
       )}

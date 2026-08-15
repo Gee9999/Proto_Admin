@@ -2475,6 +2475,17 @@ input, select, textarea { font-family: inherit; outline: none; }
 .adm-btn-ghost:hover { border-color: #0f172a; color: #0f172a; }
 .adm-btn-ghost:disabled { opacity: 0.5; cursor: default; }
 .adm-btn-ghost.adm-btn-sm { padding: 7px 12px; font-size: 13px; border-radius: 10px; }
+/* Sits inside an order row's action strip, next to the icon buttons. Green on
+   hover because it advances the order rather than destroying anything. */
+.adm-btn-ghost.adm-mark-complete {
+  padding: 6px 10px;
+  gap: 6px;
+  font-size: 12px;
+  border-radius: 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.adm-btn-ghost.adm-mark-complete:hover:not(:disabled) { border-color: #15803d; color: #15803d; }
 
 .adm-icon-btn {
   display: inline-flex;
@@ -2645,6 +2656,10 @@ input, select, textarea { font-family: inherit; outline: none; }
   display: flex;
   gap: 10px;
   align-items: center;
+  /* The header caps at 1500px, so this row competes for width. Without this
+     the nowrap status pills shrink their box but not their text, and the
+     overflow lands on top of the next button. */
+  flex-shrink: 0;
 }
 
 /* Bridge (Positill SQL tunnel) live-status indicator in the header. */
@@ -2655,6 +2670,8 @@ input, select, textarea { font-family: inherit; outline: none; }
   padding: 5px 10px;
   border: 1px solid #e5e7eb;
   border-radius: 999px;
+  /* Its content is nowrap, so shrinking can only ever cause overflow. */
+  flex-shrink: 0;
   font-size: 12px;
   font-weight: 700;
   color: #6b7280;
@@ -2668,6 +2685,39 @@ input, select, textarea { font-family: inherit; outline: none; }
 }
 .adm-bridge-dot__led--pulse { animation: adm-bridge-pulse 1.2s ease-in-out infinite; }
 @keyframes adm-bridge-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+/* Live shopper count — same pill as the bridge status so the two read as a
+   pair. The count carries the weight, the word beside it is the caption. */
+.adm-shoppers-pill__count {
+  font-size: 13px;
+  font-weight: 900;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+  min-width: 10px;
+  text-align: right;
+}
+.adm-shoppers-pill { gap: 6px; }
+
+/* Order Requests page-size control + range, sharing a row with the pager. */
+.adm-orders-pagebar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 4px 4px;
+}
+.adm-orders-pagebar__count { font-size: 12px; font-weight: 600; color: #64748b; }
+.adm-orders-pagebar > :last-child:not(.adm-orders-pagebar__count) { margin-left: auto; }
+
+/* Two status pills plus five buttons is a lot for one row. Shed the captions
+   before the row runs out of width — the dot and the number still say
+   everything, and the title attribute carries the rest. */
+@media (max-width: 1280px) {
+  .adm-shoppers-pill .adm-bridge-dot__label { display: none; }
+}
+@media (max-width: 1120px) {
+  .adm-bridge-dot__label { display: none; }
+}
+
 @media (max-width: 640px) {
   .adm-bridge-dot__label { display: none; }
   .adm-bridge-dot { padding: 5px 7px; }
@@ -6038,8 +6088,119 @@ html, body { background: #f5f5f5; color: #111827; }
 .oa-table { width: 100%; border-collapse: collapse; font-size: 13px; }
 .oa-table th, .oa-table td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #f1f5f9; }
 .oa-table th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; }
-.oa-hub { display: grid; gap: 16px; }
+.oa-hub { display: grid; gap: 16px; align-content: start; }
 .oa-hub-tabs { margin-bottom: 0; }
+/* Holds the page height steady while a tab's chunk and data load, so the
+   tab strip stays put instead of the content collapsing underneath it. */
+.oa-hub-view { min-height: 70vh; }
+.oa-loading--reserved { align-items: center; min-height: 60vh; gap: 10px; }
+
+/* --- Abandoned Baskets ------------------------------------------------- */
+/* Type, cards and badges come from the shared analytics + admin scales
+   (.oa-panel h3, .oa-subhead, .oa-stat-*, .adm-product-thumb) — only the
+   basket-specific structure is defined here. */
+.ab-stat-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.ab-subtitle { margin: 6px 0 0; max-width: 68ch; line-height: 1.5; }
+
+.ab-search {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 260px;
+  padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 8px;
+  background: #fff; color: #64748b;
+}
+.ab-search input {
+  border: 0; outline: none; flex: 1; background: transparent;
+  font-family: inherit; font-size: 12px; font-weight: 600; color: #0f172a;
+}
+
+.ab-table tbody tr.ab-row { cursor: pointer; }
+.ab-table tbody tr.ab-row:hover { background: #f8fafc; }
+.ab-row--open { background: #f1f5f9; }
+.ab-chevron { width: 28px; color: #94a3b8; }
+.ab-num { text-align: right; font-variant-numeric: tabular-nums; }
+.ab-strong { font-weight: 800; color: #0f172a; }
+.ab-name { display: block; font-weight: 800; font-size: 13px; color: #0f172a; }
+.ab-business { display: block; font-size: 12px; font-weight: 600; color: #64748b; }
+.ab-contact { font-size: 12px; font-weight: 600; color: #475569; }
+.ab-contact span { display: block; }
+.ab-sku {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px; color: #475569;
+}
+
+/* Matches the badge scale used across Product Manager rows. */
+.ab-badge {
+  display: inline-block; padding: 1px 5px; border-radius: 4px;
+  font-size: 10px; font-weight: 700; white-space: nowrap;
+}
+.ab-badge--active { background: #dcfce7; color: #166534; }
+.ab-badge--cooling { background: #fef3c7; color: #92400e; }
+.ab-badge--stale { background: #fee2e2; color: #991b1b; }
+.ab-badge--unknown { background: #f1f5f9; color: #475569; }
+.ab-badge--warn { background: #fee2e2; color: #991b1b; }
+.ab-badge--order { background: #b45309; color: #fff; }
+
+/* Basket-line size for the shared product thumbnail. */
+.ab-thumb { width: 44px; height: 44px; border-radius: 4px; }
+.ab-preview { display: flex; align-items: center; gap: 4px; }
+.ab-preview .ab-thumb { width: 36px; height: 36px; }
+.ab-preview-more {
+  font-size: 11px; font-weight: 800; color: #64748b;
+  padding: 0 4px; white-space: nowrap;
+}
+
+.ab-detail-row-wrap > td { background: #f8fafc; padding: 0; }
+.ab-detail {
+  display: grid; grid-template-columns: minmax(240px, 1fr) 1.6fr;
+  gap: 24px; padding: 16px 12px; border-bottom: 2px solid #e2e8f0;
+}
+.ab-detail-list { margin: 0; display: grid; gap: 6px; }
+.ab-detail-row { display: grid; grid-template-columns: 108px 1fr; gap: 8px; font-size: 12px; }
+.ab-detail-row dt { color: #64748b; font-weight: 600; }
+.ab-detail-row dd { margin: 0; color: #0f172a; font-weight: 700; overflow-wrap: anywhere; }
+.ab-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.ab-tag {
+  background: #e0e7ff; color: #3730a3; padding: 1px 6px;
+  border-radius: 4px; font-size: 10px; font-weight: 700;
+}
+
+.ab-lines { display: grid; gap: 6px; }
+.ab-line {
+  display: grid; grid-template-columns: auto 1fr auto auto;
+  gap: 12px; align-items: center;
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 6px 10px;
+}
+.ab-line-name { font-size: 13px; font-weight: 700; color: #0f172a; line-height: 1.3; }
+.ab-line-meta { display: flex; align-items: center; gap: 6px; margin-top: 3px; flex-wrap: wrap; }
+.ab-line-qty { text-align: center; min-width: 34px; }
+.ab-line-qty-val { display: block; font-size: 15px; font-weight: 900; color: #0f172a; }
+.ab-line-qty-label {
+  display: block; font-size: 10px; font-weight: 700; color: #94a3b8;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.ab-line-money { text-align: right; min-width: 108px; }
+.ab-line-total { font-size: 13px; font-weight: 800; color: #0f172a; font-variant-numeric: tabular-nums; }
+.ab-line-unit { font-size: 11px; font-weight: 600; color: #64748b; font-variant-numeric: tabular-nums; }
+.ab-lines-total {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-top: 10px; padding-top: 10px; border-top: 2px solid #e2e8f0;
+  font-size: 12px; font-weight: 700; color: #64748b;
+}
+.ab-lines-total strong { font-size: 15px; font-weight: 900; color: #0f172a; font-variant-numeric: tabular-nums; }
+.ab-more-note { margin-top: 12px; }
+.ab-linkish {
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; font-weight: 800; color: #15803d; text-decoration: underline;
+}
+
+@media (max-width: 1200px) {
+  .ab-stat-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 900px) {
+  .ab-detail { grid-template-columns: 1fr; }
+  .ab-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ab-search { min-width: 0; width: 100%; }
+}
+
 .sa-stat-grid--5 { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 .sa-stat-grid--4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .sa-badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; }
@@ -9739,3 +9900,81 @@ html, body { max-width: 100%; overflow-x: hidden; }
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
+
+/* ── Email Groups ─────────────────────────────────────────────────────────── */
+.eg-panel { display: grid; gap: 16px; }
+.eg-subtitle { margin: 6px 0 0; max-width: 76ch; line-height: 1.5; }
+.eg-muted { color: #94a3b8; font-weight: 600; }
+.eg-warn { color: #b45309; font-weight: 700; }
+
+.eg-drop {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 28px 20px; border: 2px dashed #cbd5e1; border-radius: 12px;
+  background: #f8fafc; cursor: pointer; text-align: center; color: #64748b;
+}
+.eg-drop:hover { border-color: #15803d; background: #f0fdf4; color: #15803d; }
+.eg-drop input { display: none; }
+.eg-drop__title { font-size: 14px; font-weight: 800; color: #0f172a; }
+.eg-drop__hint { font-size: 12px; max-width: 56ch; line-height: 1.5; }
+
+.eg-parsed { display: grid; gap: 14px; }
+.eg-parsed__summary {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 10px 12px; border-radius: 10px;
+  background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534;
+  font-size: 13px; font-weight: 600;
+}
+.eg-clear { margin-left: auto; background: none; border: 0; cursor: pointer; color: #166534; display: flex; }
+.eg-skipped { font-size: 12px; color: #64748b; }
+.eg-skipped summary { cursor: pointer; font-weight: 700; color: #b45309; }
+.eg-skipped ul { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 3px; }
+
+.eg-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.eg-field { display: grid; gap: 5px; font-size: 12px; font-weight: 700; color: #64748b; }
+.eg-field--wide { grid-column: 1 / -1; }
+.eg-field em { font-weight: 600; font-style: normal; color: #94a3b8; }
+.eg-field input, .eg-field select {
+  padding: 9px 11px; border: 1px solid #d1d5db; border-radius: 8px;
+  font-family: inherit; font-size: 13px; font-weight: 600; color: #0f172a; background: #fff;
+}
+.eg-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+.eg-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.eg-card { border: 1px solid #e5e7eb; border-radius: 12px; padding: 14px; background: #fff; display: grid; gap: 6px; }
+.eg-card__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.eg-card__name { font-size: 14px; font-weight: 800; color: #0f172a; }
+.eg-card__count {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 12px; font-weight: 800; color: #15803d;
+  background: #dcfce7; border-radius: 999px; padding: 2px 8px; white-space: nowrap;
+}
+.eg-card__desc { margin: 0; font-size: 12px; color: #475569; line-height: 1.45; }
+.eg-card__meta { margin: 0; font-size: 11px; color: #94a3b8; font-weight: 600; }
+.eg-card__actions { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+.eg-members { max-height: 50vh; overflow-y: auto; }
+
+/* Business-type multi-select in the email composer. */
+.ce-types {
+  display: flex; flex-wrap: wrap; gap: 6px;
+  padding: 10px; border: 1px solid #d1d5db; border-radius: 8px;
+  background: #fff; max-height: 190px; overflow-y: auto;
+}
+.ce-type {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border: 1px solid #e2e8f0; border-radius: 999px;
+  background: #f8fafc; cursor: pointer;
+  font-size: 12px; font-weight: 700; color: #475569; white-space: nowrap;
+}
+.ce-type:hover { border-color: #94a3b8; }
+.ce-type--on { background: #dcfce7; border-color: #bbf7d0; color: #166534; }
+.ce-type input { accent-color: #15803d; cursor: pointer; margin: 0; }
+.ce-types__clear {
+  margin-left: 8px; background: none; border: 0; cursor: pointer;
+  font: inherit; font-size: 11px; font-weight: 800; color: #15803d; text-decoration: underline;
+}
+
+/* Engagement panel */
+.oa-panel h3 { display: inline-flex; align-items: center; gap: 7px; }
+.eng-email-row { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.eng-email-row .oa-insight-label { display: inline-flex; align-items: center; gap: 4px; }
+@media (max-width: 900px) { .eng-email-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }

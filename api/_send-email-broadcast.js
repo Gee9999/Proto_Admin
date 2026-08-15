@@ -3,7 +3,7 @@ import { fetchCustomerAudience, fetchRecipientsByEmail, sendBroadcastBatch } fro
 import { appendEmailCampaign } from './_email-campaigns.js';
 import { markCustomersEmailed } from './_customer-email-status.js';
 
-export const VALID_EMAIL_AUDIENCE = new Set(['requests', 'regular', 'proto-active', 'all-portal', 'all-approved', 'selected']);
+export const VALID_EMAIL_AUDIENCE = new Set(['requests', 'regular', 'proto-active', 'all-portal', 'all-approved', 'selected', 'group']);
 
 export function getPortalDbClient() {
   return createClient(
@@ -17,7 +17,7 @@ export function getPortalDbClient() {
  * Resolve the audience, send the personalized broadcast, and log the
  * campaign. Shared by the live send endpoint and the scheduled-send cron.
  */
-export async function runEmailBroadcast({ audience, subject, introText = '', htmlBlock = '', businessTypes = [], importBatch = '', recipients: recipientEmails = null }) {
+export async function runEmailBroadcast({ audience, subject, introText = '', htmlBlock = '', businessTypes = [], importBatch = '', groupId = '', recipients: recipientEmails = null }) {
   const sb = getPortalDbClient();
   // Explicit recipient list ("Specific people") bypasses audience resolution.
   const useSelected = Array.isArray(recipientEmails) && recipientEmails.length > 0;
@@ -26,6 +26,7 @@ export async function runEmailBroadcast({ audience, subject, introText = '', htm
     : await fetchCustomerAudience(sb, audience, {
       businessTypes: Array.isArray(businessTypes) ? businessTypes : [],
       importBatch,
+      groupId,
     });
   if (!recipients.length) {
     return {
