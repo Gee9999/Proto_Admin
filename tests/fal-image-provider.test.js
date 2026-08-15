@@ -1,6 +1,7 @@
 import { Jimp } from 'jimp';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  detectRemovedLightContent,
   downloadFalOutput,
   FAL_BACKGROUND_MODEL,
   FAL_TARGETED_REPAIR_MODEL,
@@ -74,6 +75,37 @@ describe('fal.ai image provider', () => {
     expect((corner >>> 16) & 0xff).toBeGreaterThan(245);
     expect((corner >>> 8) & 0xff).toBeGreaterThan(245);
     expect((transparentMaster.getPixelColor(0, 0) >>> 24) & 0xff).toBe(0);
+  });
+
+  it('blocks a cut-out that removes an interior light label while ignoring a normal white background', async () => {
+    const source = new Jimp({ width: 160, height: 120, color: 0x303030ff });
+    const cutout = new Jimp({ width: 160, height: 120, color: 0x00000000 });
+    for (let y = 20; y < 100; y += 1) {
+      for (let x = 20; x < 65; x += 1) {
+        source.setPixelColor(0x2050a0ff, x, y);
+        cutout.setPixelColor(0x2050a0ff, x, y);
+      }
+      for (let x = 90; x < 125; x += 1) source.setPixelColor(0xf6f3edff, x, y);
+    }
+    const damaged = await detectRemovedLightContent(
+      await source.getBuffer('image/png'),
+      await cutout.getBuffer('image/png'),
+      { sampleSize: 160 },
+    );
+    expect(damaged.suspicious).toBe(true);
+    expect(damaged.regions[0]).toMatchObject({ width: 35, height: 80 });
+
+    const whiteSource = new Jimp({ width: 160, height: 120, color: 0xffffffff });
+    for (let y = 30; y < 90; y += 1) for (let x = 50; x < 110; x += 1) {
+      whiteSource.setPixelColor(0x2050a0ff, x, y);
+      cutout.setPixelColor(0x2050a0ff, x, y);
+    }
+    const clean = await detectRemovedLightContent(
+      await whiteSource.getBuffer('image/png'),
+      await cutout.getBuffer('image/png'),
+      { sampleSize: 160 },
+    );
+    expect(clean.suspicious).toBe(false);
   });
 
   it('routes clear packaging, beads, and multi-piece products away from destructive generic removal', () => {

@@ -1,5 +1,23 @@
 export const IMAGE_PROCESSING_HANDOFF_KEY = 'proto:image-processing:nutstore-handoff';
 export const IMAGE_PROCESSING_HANDOFF_TTL_MS = 30 * 60_000;
+export const IMAGE_PROCESSING_INTAKE_KEY = 'proto:image-processing:intake-options';
+
+const DEFAULT_INTAKE_OPTIONS = Object.freeze({ treatment: 'standard_opaque', instructions: '' });
+const ALLOWED_INTAKE_TREATMENTS = new Set([
+  'standard_opaque', 'shadow', 'transparent_clear', 'beads_fine_detail',
+  'multi_piece', 'measurements', 'custom',
+]);
+
+function cleanIntakeOptions(value) {
+  const requestedTreatment = String(value?.treatment || DEFAULT_INTAKE_OPTIONS.treatment).trim().toLowerCase();
+  const treatment = ALLOWED_INTAKE_TREATMENTS.has(requestedTreatment)
+    ? requestedTreatment
+    : DEFAULT_INTAKE_OPTIONS.treatment;
+  return {
+    treatment,
+    instructions: String(value?.instructions || '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, 1_000),
+  };
+}
 
 function cleanSelection(selection) {
   if (!Array.isArray(selection)) return [];
@@ -66,4 +84,20 @@ export function savePendingNutstoreHandoff(selection, {
 
 export function clearPendingNutstoreHandoff({ storage = browserStorage() } = {}) {
   try { storage?.removeItem(IMAGE_PROCESSING_HANDOFF_KEY); } catch { /* storage unavailable */ }
+}
+
+export function loadImageProcessingIntake({ storage = browserStorage() } = {}) {
+  if (!storage) return { ...DEFAULT_INTAKE_OPTIONS };
+  try {
+    return cleanIntakeOptions(JSON.parse(storage.getItem(IMAGE_PROCESSING_INTAKE_KEY) || 'null'));
+  } catch {
+    try { storage.removeItem(IMAGE_PROCESSING_INTAKE_KEY); } catch { /* storage unavailable */ }
+    return { ...DEFAULT_INTAKE_OPTIONS };
+  }
+}
+
+export function saveImageProcessingIntake(options, { storage = browserStorage() } = {}) {
+  const clean = cleanIntakeOptions(options);
+  try { storage?.setItem(IMAGE_PROCESSING_INTAKE_KEY, JSON.stringify(clean)); } catch { /* in-memory state still works */ }
+  return clean;
 }

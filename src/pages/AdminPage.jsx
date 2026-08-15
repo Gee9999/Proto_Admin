@@ -74,7 +74,9 @@ import {
 import {
   clearPendingNutstoreHandoff,
   IMAGE_PROCESSING_HANDOFF_KEY,
+  loadImageProcessingIntake,
   loadPendingNutstoreHandoff,
+  saveImageProcessingIntake,
   savePendingNutstoreHandoff,
 } from '../lib/imageProcessingHandoff.js';
 import {
@@ -515,6 +517,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     nutstoreSelection: loadPendingNutstoreHandoff(),
     uploadSelection: [],
   }));
+  const [imageProcessingIntake, setImageProcessingIntake] = useState(() => loadImageProcessingIntake());
   const [productManagerSearch, setProductManagerSearch] = useState('');
   const [siteContentTab, setSiteContentTab] = useState('featured');
   const { data: dashStats } = useDashboardStats();
@@ -915,6 +918,10 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
     setActiveSection('product-loader');
     setLoadingError('');
     window.scrollTo({ top: 0, behavior: 'instant' });
+  }, []);
+
+  const rememberImageProcessingIntake = useCallback((options) => {
+    setImageProcessingIntake(saveImageProcessingIntake(options));
   }, []);
 
   // `fresh` bypasses the counts endpoint's edge cache. Pass it after a write:
@@ -2537,6 +2544,8 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
                     onOpenNutstore={customer?.role === 'owner' ? openNutstore : undefined}
                     nutstoreSelection={imageProcessingHandoff.nutstoreSelection}
                     uploadSelection={imageProcessingHandoff.uploadSelection}
+                    intakeOptions={imageProcessingIntake}
+                    onIntakeOptionsChange={rememberImageProcessingIntake}
                     onNutstoreSelectionConsumed={consumeNutstoreHandoff}
                     onUploadSelectionConsumed={() => setImageProcessingHandoff((current) => ({ ...current, uploadSelection: [] }))}
                   />

@@ -14,6 +14,7 @@ import {
 } from './_image-processing-store.js';
 import {
   createTargetedRepairMask,
+  detectRemovedLightContent,
   downloadFalOutput,
   FAL_BACKGROUND_COST_USD,
   FAL_BACKGROUND_MODEL,
@@ -326,11 +327,26 @@ export async function processImageWithFal(job, image, providerOptions = {}) {
   const runId = randomUUID();
   const removed = await removeBackgroundWithFal(sourceUrl, providerOptions);
   const transparent = await downloadFalOutput(removed.outputUrl, providerOptions);
+  const sourceBuffer = await downloadPrivateSource(materialized.source.privatePath);
+  const preservation = await detectRemovedLightContent(sourceBuffer, transparent);
   const standardized = await standardizeFalOutput(transparent, { treatment });
   const transparentPrivatePath = await storeTransparentMaster(job, materialized, standardized.buffer, runId);
   const websiteReady = await createWebsiteReadyDerivative(standardized.buffer);
   const websiteReadyStorage = await uploadWebsiteReadyDerivative(job, materialized, websiteReady.buffer, runId);
-  const quality = await analyzeImageQuality(websiteReady.buffer);
+  const measuredQuality = await analyzeImageQuality(websiteReady.buffer);
+  const preservationWarning = preservation.suspicious
+    ? ['possible_removed_label_or_light_product_part']
+    : [];
+  const quality = preservation.suspicious
+    ? {
+      ...measuredQuality,
+      score: Math.min(74, measuredQuality.score),
+      grade: 'needs_attention',
+      requiresManualReview: true,
+      flags: preservationWarning,
+      preservation,
+    }
+    : { ...measuredQuality, preservation };
 
   const previousUsd = Number(image.cost?.usd) || 0;
   const previousZar = Number(image.cost?.zar) || 0;
@@ -345,7 +361,7 @@ export async function processImageWithFal(job, image, providerOptions = {}) {
       websiteReady: { ...websiteReadyStorage, ...websiteReady },
     },
     quality: { ...quality, provider: 'fal.ai' },
-    warnings: [...new Set([...(image.warnings || []), ...standardized.warnings])],
+    warnings: [...new Set([...(image.warnings || []), ...standardized.warnings, ...preservationWarning])],
     cost: {
       usd: Number((previousUsd + FAL_BACKGROUND_COST_USD).toFixed(4)),
       zar: Number((previousZar + latestZar).toFixed(2)),
