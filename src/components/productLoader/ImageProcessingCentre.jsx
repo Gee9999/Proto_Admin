@@ -342,7 +342,10 @@ export default function ImageProcessingCentre({
   const intakeIsManualOnly = selectedProcessingPreset.manualOnly === true;
   const intakeCanStart = !intakeIsManualOnly && (!intakeRequiresSafeCutout || manualSafeCutout);
   const selectedReviewChecklist = reviewChecklists[selectedJob?.id] || EMPTY_REVIEW_CHECKLIST;
-  const blockingQualityFlags = (selectedJob?.qualityFlags || []).filter((flag) => !isTreatmentReviewAdvisory(flag));
+  const blockingQualityFlags = (selectedJob?.qualityFlags || []).filter((flag) => (
+    qualityFlagCode(flag) !== 'quality_needs_attention'
+    && !isTreatmentReviewAdvisory(flag)
+  ));
   const treatmentVerificationRequired = requiresTreatmentVerification(selectedJob);
   const reviewChecklistComplete = Boolean(
     selectedReviewChecklist.correctSku
