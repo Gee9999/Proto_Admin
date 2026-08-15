@@ -316,6 +316,89 @@ export async function downloadFalOutput(outputUrl, { fetchImpl = fetch } = {}) {
   return buffer;
 }
 
+/**
+ * Catch a common destructive cut-out failure before it can be approved: a
+ * light label, number strip or pale product part inside a darker photograph
+ * is mistaken for background and becomes transparent. Ordinary white
+ * backgrounds are ignored because their light region reaches the image edge.
+ */
+export async function detectRemovedLightContent(sourceBuffer, cutoutBuffer, { sampleSize = 256 } = {}) {
+  const cutout = await Jimp.read(cutoutBuffer);
+  const source = await Jimp.read(sourceBuffer);
+  const scale = Math.min(1, Math.max(64, Number(sampleSize) || 256) / Math.max(cutout.bitmap.width, cutout.bitmap.height));
+  const width = Math.max(1, Math.round(cutout.bitmap.width * scale));
+  const height = Math.max(1, Math.round(cutout.bitmap.height * scale));
+  cutout.resize({ w: width, h: height });
+  source.resize({ w: width, h: height });
+
+  const total = width * height;
+  const candidate = new Uint8Array(total);
+  const visited = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  const margin = Math.max(1, Math.round(Math.min(width, height) * 0.015));
+  const minimumArea = Math.max(28, Math.round(total * 0.0015));
+
+  for (let index = 0; index < total; index += 1) {
+    const offset = index * 4;
+    if (cutout.bitmap.data[offset + 3] > 24) continue;
+    const red = source.bitmap.data[offset];
+    const green = source.bitmap.data[offset + 1];
+    const blue = source.bitmap.data[offset + 2];
+    const luminance = (red * 0.2126) + (green * 0.7152) + (blue * 0.0722);
+    const chroma = Math.max(red, green, blue) - Math.min(red, green, blue);
+    if (luminance >= 208 && chroma <= 48) candidate[index] = 1;
+  }
+
+  const regions = [];
+  for (let start = 0; start < total; start += 1) {
+    if (!candidate[start] || visited[start]) continue;
+    let head = 0;
+    let tail = 0;
+    let area = 0;
+    let minX = width;
+    let minY = height;
+    let maxX = -1;
+    let maxY = -1;
+    let touchesEdge = false;
+    queue[tail++] = start;
+    visited[start] = 1;
+    while (head < tail) {
+      const current = queue[head++];
+      const x = current % width;
+      const y = Math.floor(current / width);
+      area += 1;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+      if (x <= margin || y <= margin || x >= width - margin - 1 || y >= height - margin - 1) touchesEdge = true;
+      const neighbours = [
+        x > 0 ? current - 1 : -1,
+        x + 1 < width ? current + 1 : -1,
+        y > 0 ? current - width : -1,
+        y + 1 < height ? current + width : -1,
+      ];
+      for (const next of neighbours) {
+        if (next < 0 || visited[next] || !candidate[next]) continue;
+        visited[next] = 1;
+        queue[tail++] = next;
+      }
+    }
+    const boxArea = Math.max(1, (maxX - minX + 1) * (maxY - minY + 1));
+    if (!touchesEdge && area >= minimumArea && area / boxArea >= 0.32) {
+      regions.push({ area, x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 });
+    }
+  }
+
+  const removedLightPixels = regions.reduce((sum, region) => sum + region.area, 0);
+  return {
+    suspicious: regions.length > 0,
+    removedLightAreaRatio: removedLightPixels / Math.max(1, total),
+    regions: regions.sort((a, b) => b.area - a.area).slice(0, 12),
+    sample: { width, height },
+  };
+}
+
 function alphaBounds(image, threshold = 16) {
   const { width, height, data } = image.bitmap;
   let minX = width;

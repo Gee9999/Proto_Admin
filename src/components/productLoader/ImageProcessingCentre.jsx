@@ -283,6 +283,8 @@ function RepairablePreviewPane({ label, url, emptyText, repairEnabled, selection
 export default function ImageProcessingCentre({
   nutstoreSelection = [],
   uploadSelection = [],
+  intakeOptions,
+  onIntakeOptionsChange,
   onNutstoreSelectionConsumed,
   onUploadSelectionConsumed,
   onShowToast,
@@ -311,8 +313,8 @@ export default function ImageProcessingCentre({
   const [queueView, setQueueView] = useState('queue');
   const [applyConfirmation, setApplyConfirmation] = useState(null);
   const [revisionAdjustments, setRevisionAdjustments] = useState({});
-  const [processingPreset, setProcessingPreset] = useState('standard_opaque');
-  const [customInstructions, setCustomInstructions] = useState('');
+  const [processingPreset, setProcessingPreset] = useState(() => intakeOptions?.treatment || 'standard_opaque');
+  const [customInstructions, setCustomInstructions] = useState(() => intakeOptions?.instructions || '');
   const [manualSafeCutout, setManualSafeCutout] = useState(false);
   const [nutstoreConnection, setNutstoreConnection] = useState({ status: 'checking', error: '' });
   const [reviewChecklists, setReviewChecklists] = useState({});
@@ -370,6 +372,10 @@ export default function ImageProcessingCentre({
     manualSafeCutout,
     instructions: customInstructions.trim(),
   }), [customInstructions, manualSafeCutout, processingPreset]);
+
+  useEffect(() => {
+    onIntakeOptionsChange?.({ treatment: processingPreset, instructions: customInstructions });
+  }, [customInstructions, onIntakeOptionsChange, processingPreset]);
 
   useEffect(() => {
     setRepairModeJobId('');

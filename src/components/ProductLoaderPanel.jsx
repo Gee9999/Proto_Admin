@@ -162,6 +162,8 @@ export default function ProductLoaderPanel({
   onOpenNutstore,
   nutstoreSelection = [],
   uploadSelection = [],
+  intakeOptions,
+  onIntakeOptionsChange,
   onNutstoreSelectionConsumed,
   onUploadSelectionConsumed,
 }) {
@@ -915,6 +917,8 @@ export default function ProductLoaderPanel({
         <ImageProcessingCentre
           nutstoreSelection={nutstoreSelection}
           uploadSelection={uploadSelection}
+          intakeOptions={intakeOptions}
+          onIntakeOptionsChange={onIntakeOptionsChange}
           onNutstoreSelectionConsumed={onNutstoreSelectionConsumed}
           onUploadSelectionConsumed={onUploadSelectionConsumed}
           onShowToast={onShowToast}

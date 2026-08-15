@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest';
 import {
   clearPendingNutstoreHandoff,
   IMAGE_PROCESSING_HANDOFF_KEY,
+  loadImageProcessingIntake,
   loadPendingNutstoreHandoff,
+  saveImageProcessingIntake,
   savePendingNutstoreHandoff,
 } from '../src/lib/imageProcessingHandoff.js';
 
@@ -46,5 +48,18 @@ describe('Image Processing Centre Nutstore handoff persistence', () => {
     clearPendingNutstoreHandoff({ storage });
 
     expect(loadPendingNutstoreHandoff({ storage, now: 2_000 })).toEqual([]);
+  });
+
+  it('retains the selected treatment and instructions across the Nutstore round-trip', () => {
+    const storage = memoryStorage();
+    saveImageProcessingIntake({
+      treatment: 'beads_fine_detail',
+      instructions: 'Preserve every label and number.',
+    }, { storage });
+
+    expect(loadImageProcessingIntake({ storage })).toEqual({
+      treatment: 'beads_fine_detail',
+      instructions: 'Preserve every label and number.',
+    });
   });
 });
