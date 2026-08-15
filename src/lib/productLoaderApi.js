@@ -136,6 +136,30 @@ export async function publishNewProduct({
   return { sku, action: json.action || 'create' };
 }
 
+/** Stage an Excel/local-image variant in Product Manager → Archive. */
+export async function archiveVariantProduct({
+  code, barcode, title, description, price, stockQty, availableStock,
+  unitsOfIssue = 'EACH', images = [], publishedBy = '',
+}) {
+  const res = await fetch('/api/product-loader-variant-archive', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code,
+      barcode,
+      title,
+      description,
+      price,
+      stockQty,
+      availableStock,
+      unitsOfIssue,
+      images,
+      publishedBy,
+    }),
+  });
+  return readApiJson(res, { fallback: 'Could not send product to Archive' });
+}
+
 async function uploadLoaderImage(item) {
   const b64 = await fileToBase64(item.file);
   const uploadRes = await fetch('/api/upload-product-image', {

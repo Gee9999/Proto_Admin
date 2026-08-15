@@ -73,7 +73,7 @@ export function matchVariantImages(rows, files) {
 }
 
 export function variantRowState(row) {
-  if (row.existing) return { ready: false, reason: 'SKU already exists — blocked to protect its images' };
+  if (row.existing) return { ready: false, reason: `SKU already exists ${row.existingLocation === 'archive' ? 'in Archive' : 'on the website'} — blocked to protect its images` };
   if (!row.sourceFound) return { ready: false, reason: 'Barcode not found in the product source' };
   if (!row.price || Number(row.price) <= 0) return { ready: false, reason: 'No valid website price found' };
   if (row.duplicateSlots?.length) return { ready: false, reason: 'More than one file targets the same image slot' };

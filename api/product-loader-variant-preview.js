@@ -29,12 +29,15 @@ export default async function handler(req, res) {
     const sb = getStockClient();
     const skus = [...new Set(items.map((item) => item.sku))];
     const barcodes = [...new Set(items.map((item) => item.barcode))];
-    const { data: existing, error: existingError } = await sb
-      .from('website_stock')
-      .select('sku, title, barcode')
-      .in('sku', skus);
-    if (existingError) throw existingError;
-    const existingBySku = new Map((existing || []).map((row) => [clean(row.sku), row]));
+    const [{ data: existing, error: existingError }, { data: archived, error: archivedError }] = await Promise.all([
+      sb.from('website_stock').select('sku, title, barcode').in('sku', skus),
+      sb.from('archived_products').select('sku, title, barcode').in('sku', skus),
+    ]);
+    if (existingError || archivedError) throw existingError || archivedError;
+    const existingBySku = new Map((existing || []).map((row) => [clean(row.sku), { ...row, location: 'website' }]));
+    for (const row of archived || []) {
+      if (!existingBySku.has(clean(row.sku))) existingBySku.set(clean(row.sku), { ...row, location: 'archive' });
+    }
 
     const productMap = await fetchProductLookupMap(
       sb,
@@ -57,6 +60,7 @@ export default async function handler(req, res) {
         sku: item.sku,
         barcode: item.barcode,
         existing: Boolean(existingRow),
+        existingLocation: existingRow?.location || null,
         existingTitle: existingRow?.title || '',
         sourceFound: Boolean(canonical),
         sourceStatus: source.positill?.dataSource || (canonical ? 'catalogue' : null),

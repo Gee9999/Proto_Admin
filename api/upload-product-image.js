@@ -27,15 +27,14 @@ export default async function handler(req, res) {
 
   const safeSku = String(sku || '').trim().toUpperCase().replace(/[^A-Z0-9_-]/g, '');
   if (requireNew && safeSku) {
-    const { data: existing, error: lookupError } = await supabase
-      .from('website_stock')
-      .select('sku')
-      .eq('sku', safeSku)
-      .maybeSingle();
-    if (lookupError) return res.status(500).json({ error: lookupError.message });
-    if (existing) {
+    const [{ data: existing, error: lookupError }, { data: archived, error: archiveLookupError }] = await Promise.all([
+      supabase.from('website_stock').select('sku').eq('sku', safeSku).maybeSingle(),
+      supabase.from('archived_products').select('sku').eq('sku', safeSku).maybeSingle(),
+    ]);
+    if (lookupError || archiveLookupError) return res.status(500).json({ error: lookupError?.message || archiveLookupError?.message });
+    if (existing || archived) {
       return res.status(409).json({
-        error: 'This SKU already exists. Its images were not changed.',
+        error: `This SKU already exists ${existing ? 'on the website' : 'in Archive'}. Its images were not changed.`,
         code: 'exists',
       });
     }

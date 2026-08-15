@@ -410,7 +410,7 @@ export default async function handler(req, res) {
         // admins can edit their code and re-link them.
         rows = rows.filter((r) => {
           if (r.stockLinked === false) return true;
-          if (r.archived_by === 'nutstore') return true;
+          if (r.archived_by === 'nutstore' || r.archived_by === 'excel-images') return true;
           return !isExactlyZeroStock(r);
         });
         if (isMotarroBrowsePath(categoryPath)) {

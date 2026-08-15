@@ -169,6 +169,7 @@ function MovedBadge({ item }) {
 }
 
 const ARCHIVE_TAGS = {
+  'excel-images': { label: 'Excel import', title: 'Staged from an Excel file and local image folder', color: '#1d4ed8', background: '#dbeafe' },
   nutstore: { label: 'Nutstore', title: 'Archived from Nutstore Product Loader', color: '#5b21b6', background: '#ede9fe' },
   floater: { label: 'Floater', title: 'Archived by the floater sweep — had no category (or an unknown category)', color: '#9a3412', background: '#ffedd5' },
   'category-deleted': { label: 'Category deleted', title: 'Archived because its category was deleted', color: '#9a3412', background: '#ffedd5' },

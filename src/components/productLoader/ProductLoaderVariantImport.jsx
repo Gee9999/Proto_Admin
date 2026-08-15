@@ -1,18 +1,16 @@
 import { useMemo, useRef, useState } from 'react';
-import { CheckCircle, FileSpreadsheet, FolderOpen, Loader2, PackagePlus, ShieldAlert } from 'lucide-react';
-import CategoryPathSelect from './CategoryPathSelect';
-import { publishNewProduct, uploadProductImageSlot } from '../../lib/productLoaderApi';
+import { Archive, CheckCircle, FileSpreadsheet, FolderOpen, Loader2, ShieldAlert } from 'lucide-react';
+import { archiveVariantProduct, uploadProductImageSlot } from '../../lib/productLoaderApi';
 import { matchVariantImages, parseVariantImportSheet, variantRowState } from '../../lib/productVariantImport';
 import { readApiJson } from '../../lib/apiError';
 
-export default function ProductLoaderVariantImport({ taxonomyTree = [], publishedBy = '', onShowToast, onPublished }) {
+export default function ProductLoaderVariantImport({ publishedBy = '', onShowToast }) {
   const sheetRef = useRef(null);
   const folderRef = useRef(null);
   const [sheetName, setSheetName] = useState('');
   const [rows, setRows] = useState([]);
   const [files, setFiles] = useState([]);
   const [unmatchedCount, setUnmatchedCount] = useState(0);
-  const [categoryPathIds, setCategoryPathIds] = useState([]);
   const [loading, setLoading] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, sku: '' });
@@ -71,10 +69,10 @@ export default function ProductLoaderVariantImport({ taxonomyTree = [], publishe
     [rows],
   );
 
-  const publish = async () => {
-    if (!readyRows.length || !categoryPathIds.length) return;
+  const archive = async () => {
+    if (!readyRows.length) return;
     const confirmed = window.confirm(
-      `Create ${readyRows.length} new website product${readyRows.length === 1 ? '' : 's'}? Existing SKUs will remain blocked and Positill will not be changed.`,
+      `Send ${readyRows.length} new product${readyRows.length === 1 ? '' : 's'} to Archive? They will stay off the website until each product's category is selected and Make live is confirmed.`,
     );
     if (!confirmed) return;
 
@@ -82,9 +80,11 @@ export default function ProductLoaderVariantImport({ taxonomyTree = [], publishe
     setError('');
     setProgress({ done: 0, total: readyRows.length, sku: '' });
     const results = [];
+    let activeSku = '';
     try {
       for (let index = 0; index < readyRows.length; index += 1) {
         const row = readyRows[index];
+        activeSku = row.sku;
         setProgress({ done: index, total: readyRows.length, sku: row.sku });
         const images = [];
         for (const image of row.images) {
@@ -96,7 +96,7 @@ export default function ProductLoaderVariantImport({ taxonomyTree = [], publishe
           });
           images.push({ slot: image.slot, url: uploaded.url });
         }
-        results.push(await publishNewProduct({
+        results.push(await archiveVariantProduct({
           code: row.sku,
           barcode: row.barcode,
           title: row.title,
@@ -106,17 +106,16 @@ export default function ProductLoaderVariantImport({ taxonomyTree = [], publishe
           availableStock: row.availableStock,
           unitsOfIssue: row.unitsOfIssue || 'EACH',
           images,
-          categoryPathIds,
-          taxonomyTree,
           publishedBy,
         }));
         setProgress({ done: index + 1, total: readyRows.length, sku: row.sku });
       }
-      onShowToast?.(`Created ${results.length} new products. Existing products were not changed.`, 'success');
-      onPublished?.({ sku: results[0]?.sku, count: results.length, imageCount: readyRows.reduce((n, row) => n + row.images.length, 0) });
+      onShowToast?.(`Sent ${results.length} products to Archive. Choose each category there before making live.`, 'success');
       await preview(rows, files);
     } catch (err) {
-      setError(`${progress.sku ? `${progress.sku}: ` : ''}${err.message || 'Publish failed'}`);
+      const message = `${activeSku ? `${activeSku}: ` : ''}${err.message || 'Archive failed'}`;
+      await preview(rows, files);
+      setError(message);
     } finally {
       setPublishing(false);
     }
@@ -127,7 +126,7 @@ export default function ProductLoaderVariantImport({ taxonomyTree = [], publishe
   return (
     <div>
       <div style={{ padding: 12, marginBottom: 16, border: '1px solid #bfdbfe', borderRadius: 10, background: '#eff6ff', color: '#1e3a8a', fontSize: 13 }}>
-        Upload the SKU/barcode/title Excel, then choose the local image folder. Several SKUs may share one barcode; each SKU keeps its own title and images. This flow only creates new website products.
+        Upload the SKU/barcode/title Excel, then choose the local image folder. Several SKUs may share one barcode; each SKU keeps its own title and images. Ready rows go to Archive, not the live website.
       </div>
 
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
@@ -146,13 +145,6 @@ export default function ProductLoaderVariantImport({ taxonomyTree = [], publishe
 
       {rows.length > 0 && (
         <>
-          <div className="adm-field" style={{ marginBottom: 16 }}>
-            <span className="adm-field-label">Category for these new products *</span>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))', gap: 10 }}>
-              <CategoryPathSelect taxonomyTree={taxonomyTree} value={categoryPathIds} onChange={setCategoryPathIds} mainLabel="Category" mainPlaceholder="— Select category —" />
-            </div>
-          </div>
-
           <div style={{ display: 'flex', gap: 16, marginBottom: 10, fontSize: 13 }}>
             <span style={{ color: '#15803d', fontWeight: 700 }}><CheckCircle size={14} /> {readyRows.length} ready</span>
             <span style={{ color: blocked ? '#b91c1c' : '#64748b', fontWeight: 700 }}><ShieldAlert size={14} /> {blocked} blocked</span>
@@ -177,10 +169,10 @@ export default function ProductLoaderVariantImport({ taxonomyTree = [], publishe
             </table>
           </div>
 
-          <button type="button" className="adm-btn-red" onClick={publish} disabled={!readyRows.length || !categoryPathIds.length || publishing || loading}>
-            {publishing ? <><Loader2 size={15} className="spin" /> {progress.done}/{progress.total} · {progress.sku}</> : <><PackagePlus size={15} /> Create {readyRows.length} new products</>}
+          <button type="button" className="adm-btn-red" onClick={archive} disabled={!readyRows.length || publishing || loading}>
+            {publishing ? <><Loader2 size={15} className="spin" /> {progress.done}/{progress.total} · {progress.sku}</> : <><Archive size={15} /> Send {readyRows.length} to Archive</>}
           </button>
-          <p className="adm-section-note" style={{ marginTop: 8 }}>Nothing is written until this button is confirmed. The Excel title is stored per SKU; the shared barcode is used only for Positill price and stock lookup.</p>
+          <p className="adm-section-note" style={{ marginTop: 8 }}>Nothing goes live from this screen. In Product Manager → Archive, open Make live and choose the correct category and full subcategory path for each SKU.</p>
         </>
       )}
     </div>

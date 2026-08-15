@@ -37,12 +37,26 @@ describe('Excel + local image variant import', () => {
     expect(variantRowState({ sourceFound: true, price: 10, hasPrimaryImage: true, duplicateSlots: [] })).toEqual({ ready: true, reason: 'Ready' });
   });
 
-  it('protects existing website SKUs before storage upload', () => {
+  it('protects existing website and Archive SKUs before storage upload', () => {
     const client = readFileSync(resolve(ROOT, 'src/lib/productLoaderApi.js'), 'utf8');
     const endpoint = readFileSync(resolve(ROOT, 'api/upload-product-image.js'), 'utf8');
     expect(client).toContain('requireNew = false');
     expect(endpoint).toContain(".from('website_stock')");
+    expect(endpoint).toContain(".from('archived_products')");
     expect(endpoint).toContain("code: 'exists'");
     expect(endpoint).toContain('upsert: Boolean(safeSku) && !requireNew');
+  });
+
+  it('stages the batch in Archive with category selection removed from intake', () => {
+    const component = readFileSync(resolve(ROOT, 'src/components/productLoader/ProductLoaderVariantImport.jsx'), 'utf8');
+    const archiveEndpoint = readFileSync(resolve(ROOT, 'api/product-loader-variant-archive.js'), 'utf8');
+    const catalogueEndpoint = readFileSync(resolve(ROOT, 'api/catalog.js'), 'utf8');
+    expect(component).toContain('Send {readyRows.length} to Archive');
+    expect(component).not.toContain('CategoryPathSelect');
+    expect(component).not.toContain('Create {readyRows.length} new products');
+    expect(archiveEndpoint).toContain("const ARCHIVED_BY = 'excel-images'");
+    expect(archiveEndpoint).toContain("category: 'Uncategorised'");
+    expect(archiveEndpoint).toContain("subcategory_one: 'General'");
+    expect(catalogueEndpoint).toContain("r.archived_by === 'excel-images'");
   });
 });

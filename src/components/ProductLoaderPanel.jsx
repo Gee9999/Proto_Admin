@@ -964,10 +964,8 @@ export default function ProductLoaderPanel({
 
       {activeTab === 'variants' && (
         <ProductLoaderVariantImport
-          taxonomyTree={taxonomyTree}
           publishedBy={publishedBy}
           onShowToast={onShowToast}
-          onPublished={(result) => setPublishSuccess(result)}
         />
       )}
 
