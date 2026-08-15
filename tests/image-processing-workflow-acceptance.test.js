@@ -61,6 +61,7 @@ describe('Image Processing Centre owner-safety acceptance contract', () => {
 
   it('does not turn the advisory quality summary into an invisible approval blocker', () => {
     expect(centreSource).toContain("qualityFlagCode(flag) !== 'quality_needs_attention'");
+    expect(centreSource).toContain('detached_label|barcode');
     expect(centreSource).toContain('blockingQualityFlags.length > 0');
   });
 
