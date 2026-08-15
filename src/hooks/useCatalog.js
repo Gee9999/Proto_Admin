@@ -111,6 +111,7 @@ export function useCatalogQuery(params, { enabled = true } = {}) {
     placeholderData: isArchive ? undefined : keepPreviousData,
     staleTime: isArchive ? 0 : 30_000,
     refetchOnMount: isArchive ? 'always' : true,
+    refetchOnWindowFocus: isArchive,
     enabled,
   });
 }

@@ -2,7 +2,12 @@ import { useMemo, useRef, useState } from 'react';
 import { Archive, CheckCircle, FileSpreadsheet, FolderOpen, Loader2, ShieldAlert } from 'lucide-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { archiveVariantProduct, uploadProductImageSlot } from '../../lib/productLoaderApi';
-import { matchVariantImages, parseVariantImportSheet, variantRowState } from '../../lib/productVariantImport';
+import {
+  isExistingExcelArchiveRow,
+  matchVariantImages,
+  parseVariantImportSheet,
+  variantRowState,
+} from '../../lib/productVariantImport';
 import { readApiJson } from '../../lib/apiError';
 import { queryKeys } from '../../lib/queryKeys';
 import { saveArchivePrioritySkus } from '../../../lib/archive-priority.mjs';
@@ -19,6 +24,10 @@ export default function ProductLoaderVariantImport({ publishedBy = '', onShowToa
   const [publishing, setPublishing] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, sku: '' });
   const [error, setError] = useState('');
+  const [batchSummary, setBatchSummary] = useState('');
+  const [rowResults, setRowResults] = useState({});
+  const uploadedImagesRef = useRef(new Map());
+  const batchIdRef = useRef('');
 
   const combine = (sheetRows, localFiles, previewRows = null) => {
     const matched = matchVariantImages(sheetRows, localFiles);
@@ -30,6 +39,10 @@ export default function ProductLoaderVariantImport({ publishedBy = '', onShowToa
   const preview = async (sheetRows, localFiles) => {
     setLoading(true);
     setError('');
+    setBatchSummary('');
+    setRowResults({});
+    uploadedImagesRef.current.clear();
+    batchIdRef.current = '';
     try {
       const res = await fetch('/api/product-loader-variant-preview', {
         method: 'POST',
@@ -75,45 +88,69 @@ export default function ProductLoaderVariantImport({ publishedBy = '', onShowToa
     () => rows.filter((row) => variantRowState(row).ready),
     [rows],
   );
+  const pendingRows = useMemo(
+    () => readyRows.filter((row) => rowResults[row.sku]?.status !== 'success'),
+    [readyRows, rowResults],
+  );
 
   const refreshArchive = async () => {
-    await Promise.all([
+    await Promise.allSettled([
       queryClient.invalidateQueries({
         predicate: (query) => query.queryKey[0] === 'catalog' && query.queryKey[1]?.status === 'archived',
       }),
       queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats() }),
     ]);
+    try {
+      localStorage.setItem('proto-catalog-mutated-at', String(Date.now()));
+    } catch { /* another tab can still refresh on focus */ }
     window.dispatchEvent(new CustomEvent('proto-catalog-mutated'));
   };
 
   const archive = async () => {
-    if (!readyRows.length) return;
+    if (!pendingRows.length) return;
     const confirmed = window.confirm(
-      `Send ${readyRows.length} new product${readyRows.length === 1 ? '' : 's'} to Archive? They will stay off the website until each product's category is selected and Make live is confirmed.`,
+      `Send ${pendingRows.length} product${pendingRows.length === 1 ? '' : 's'} to Archive? They will stay off the website until each product's category is selected and Make live is confirmed.`,
     );
     if (!confirmed) return;
 
     setPublishing(true);
     setError('');
-    setProgress({ done: 0, total: readyRows.length, sku: '' });
-    const results = [];
-    let activeSku = '';
-    try {
-      for (let index = 0; index < readyRows.length; index += 1) {
-        const row = readyRows[index];
-        activeSku = row.sku;
-        setProgress({ done: index, total: readyRows.length, sku: row.sku });
-        const images = [];
-        for (const image of row.images) {
-          const uploaded = await uploadProductImageSlot({
-            file: image.file,
-            sku: row.sku,
-            slot: image.slot,
-            requireNew: true,
-          });
-          images.push({ slot: image.slot, url: uploaded.url });
+    setBatchSummary('');
+    setProgress({ done: 0, total: pendingRows.length, sku: '' });
+    if (!batchIdRef.current) {
+      batchIdRef.current = globalThis.crypto?.randomUUID?.()
+        || `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    }
+    // Keep one batch marker across retries so all successful rows stay grouped
+    // together at the beginning of Archive.
+    const batchId = batchIdRef.current;
+    let succeededCount = 0;
+    let failedCount = 0;
+
+    for (let index = 0; index < pendingRows.length; index += 1) {
+      const row = pendingRows[index];
+      setProgress({ done: index, total: pendingRows.length, sku: row.sku });
+      setRowResults((current) => ({
+        ...current,
+        [row.sku]: { status: 'processing', message: 'Uploading images…' },
+      }));
+      try {
+        const includeExistingInBatch = isExistingExcelArchiveRow(row);
+        const cachedImages = uploadedImagesRef.current.get(row.sku) || new Map();
+        if (!includeExistingInBatch) {
+          for (const image of row.images) {
+            if (cachedImages.has(image.slot)) continue;
+            const uploaded = await uploadProductImageSlot({
+              file: image.file,
+              sku: row.sku,
+              slot: image.slot,
+              requireNew: true,
+            });
+            cachedImages.set(image.slot, uploaded.url);
+            uploadedImagesRef.current.set(row.sku, cachedImages);
+          }
         }
-        results.push(await archiveVariantProduct({
+        const result = await archiveVariantProduct({
           code: row.sku,
           barcode: row.barcode,
           title: row.title,
@@ -122,25 +159,46 @@ export default function ProductLoaderVariantImport({ publishedBy = '', onShowToa
           stockQty: row.stockQty,
           availableStock: row.availableStock,
           unitsOfIssue: row.unitsOfIssue || 'EACH',
-          images,
+          images: [...cachedImages.entries()].map(([slot, url]) => ({ slot, url })),
           publishedBy,
+          batchId,
+          includeExistingInBatch,
+        });
+        succeededCount += 1;
+        setRowResults((current) => ({
+          ...current,
+          [row.sku]: {
+            status: 'success',
+            message: result.action === 'included'
+              ? 'Included in this batch; existing images unchanged'
+              : 'Sent to Archive',
+          },
         }));
-        setProgress({ done: index + 1, total: readyRows.length, sku: row.sku });
+      } catch (err) {
+        failedCount += 1;
+        setRowResults((current) => ({
+          ...current,
+          [row.sku]: {
+            status: 'failed',
+            message: err.message || 'Could not send this row to Archive',
+          },
+        }));
       }
-      await refreshArchive();
-      onShowToast?.(`Sent ${results.length} products to Archive. Choose each category there before making live.`, 'success');
-      await preview(rows, files);
-    } catch (err) {
-      const message = `${activeSku ? `${activeSku}: ` : ''}${err.message || 'Archive failed'}`;
-      if (results.length) await refreshArchive();
-      await preview(rows, files);
-      setError(message);
-    } finally {
-      setPublishing(false);
+      setProgress({ done: index + 1, total: pendingRows.length, sku: row.sku });
     }
+
+    if (succeededCount) {
+      await refreshArchive();
+    }
+    const summary = `${succeededCount} sent to Archive${failedCount ? `, ${failedCount} failed and can be retried` : ''}.`;
+    setBatchSummary(summary);
+    onShowToast?.(summary, failedCount ? 'warning' : 'success');
+    setPublishing(false);
   };
 
   const blocked = rows.length - readyRows.length;
+  const succeeded = Object.values(rowResults).filter((result) => result.status === 'success').length;
+  const failed = Object.values(rowResults).filter((result) => result.status === 'failed').length;
 
   return (
     <div>
@@ -161,11 +219,14 @@ export default function ProductLoaderVariantImport({ publishedBy = '', onShowToa
 
       {loading && <p className="adm-muted"><Loader2 size={14} className="spin" /> Checking exact SKUs and Positill barcodes…</p>}
       {error && <div style={{ padding: 10, marginBottom: 14, border: '1px solid #fecaca', borderRadius: 8, background: '#fef2f2', color: '#b91c1c', fontSize: 13 }}>{error}</div>}
+      {batchSummary && <div style={{ padding: 10, marginBottom: 14, border: `1px solid ${failed ? '#fed7aa' : '#bbf7d0'}`, borderRadius: 8, background: failed ? '#fff7ed' : '#f0fdf4', color: failed ? '#9a3412' : '#166534', fontSize: 13, fontWeight: 700 }}>{batchSummary}</div>}
 
       {rows.length > 0 && (
         <>
           <div style={{ display: 'flex', gap: 16, marginBottom: 10, fontSize: 13 }}>
-            <span style={{ color: '#15803d', fontWeight: 700 }}><CheckCircle size={14} /> {readyRows.length} ready</span>
+            <span style={{ color: '#15803d', fontWeight: 700 }}><CheckCircle size={14} /> {Math.max(0, pendingRows.length - failed)} ready</span>
+            {succeeded > 0 && <span style={{ color: '#166534', fontWeight: 700 }}><CheckCircle size={14} /> {succeeded} sent</span>}
+            {failed > 0 && <span style={{ color: '#b91c1c', fontWeight: 700 }}><ShieldAlert size={14} /> {failed} failed</span>}
             <span style={{ color: blocked ? '#b91c1c' : '#64748b', fontWeight: 700 }}><ShieldAlert size={14} /> {blocked} blocked</span>
             {unmatchedCount > 0 && <span className="adm-muted">{unmatchedCount} folder files unmatched</span>}
           </div>
@@ -175,21 +236,25 @@ export default function ProductLoaderVariantImport({ publishedBy = '', onShowToa
               <thead><tr><th>SKU</th><th>Barcode</th><th>Website title</th><th>Images</th><th>Status</th></tr></thead>
               <tbody>{rows.map((row) => {
                 const state = variantRowState(row);
+                const result = rowResults[row.sku];
+                const resultFailed = result?.status === 'failed';
                 return (
-                  <tr key={row.sku} style={{ background: state.ready ? '#f0fdf4' : '#fef2f2' }}>
+                  <tr key={row.sku} style={{ background: resultFailed ? '#fef2f2' : (state.ready ? '#f0fdf4' : '#fef2f2') }}>
                     <td style={{ fontWeight: 700 }}>{row.sku}</td>
                     <td>{row.barcode}</td>
                     <td>{row.title}</td>
                     <td>{row.images?.map((image) => `#${image.slot} ${image.filename}`).join(', ') || '—'}</td>
-                    <td style={{ color: state.ready ? '#15803d' : '#b91c1c', fontWeight: 700 }}>{state.reason}</td>
+                    <td style={{ color: resultFailed || !state.ready ? '#b91c1c' : '#15803d', fontWeight: 700 }}>
+                      {resultFailed ? `Failed — ${result.message}. Retry will continue with this row.` : (result?.message || state.reason)}
+                    </td>
                   </tr>
                 );
               })}</tbody>
             </table>
           </div>
 
-          <button type="button" className="adm-btn-red" onClick={archive} disabled={!readyRows.length || publishing || loading}>
-            {publishing ? <><Loader2 size={15} className="spin" /> {progress.done}/{progress.total} · {progress.sku}</> : <><Archive size={15} /> Send {readyRows.length} to Archive</>}
+          <button type="button" className="adm-btn-red" onClick={archive} disabled={!pendingRows.length || publishing || loading}>
+            {publishing ? <><Loader2 size={15} className="spin" /> {progress.done}/{progress.total} · {progress.sku}</> : <><Archive size={15} /> {failed ? `Retry ${pendingRows.length} unsent` : `Send ${pendingRows.length} to Archive`}</>}
           </button>
           <p className="adm-section-note" style={{ marginTop: 8 }}>Nothing goes live from this screen. In Product Manager → Archive, open Make live and choose the correct category and full subcategory path for each SKU.</p>
         </>

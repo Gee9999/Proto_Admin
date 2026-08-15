@@ -42,6 +42,7 @@ import { sellingUnitLabel } from '../../lib/selling-unit.mjs';
 import { ARCHIVE_PRIORITY_STORAGE_KEY, readArchivePrioritySkus } from '../../lib/archive-priority.mjs';
 
 const ONLY_IN_STOCK_KEY = 'pm_only_in_stock';
+const CATALOG_MUTATED_STORAGE_KEY = 'proto-catalog-mutated-at';
 
 function readOnlyInStockPref() {
   try {
@@ -178,7 +179,9 @@ const ARCHIVE_TAGS = {
 };
 
 function NutstoreArchiveBadge({ archivedBy }) {
-  const tag = ARCHIVE_TAGS[archivedBy];
+  const source = String(archivedBy || '');
+  const tag = ARCHIVE_TAGS[source]
+    || (source.startsWith('excel-images:') ? ARCHIVE_TAGS['excel-images'] : null);
   if (!tag) return null;
   return (
     <span
@@ -499,6 +502,12 @@ export default function ProductManagerEngine({
     const refreshExcelPriority = (event) => {
       if (event.key === ARCHIVE_PRIORITY_STORAGE_KEY) {
         setArchivePrioritySkus(readArchivePrioritySkus());
+      }
+      if (event.key === CATALOG_MUTATED_STORAGE_KEY) {
+        queryClient.invalidateQueries({
+          predicate: (query) => query.queryKey[0] === 'catalog' && query.queryKey[1]?.status === 'archived',
+        });
+        queryClient.invalidateQueries({ queryKey: queryKeys.dashboardStats() });
       }
     };
     window.addEventListener('storage', refreshExcelPriority);
@@ -1581,7 +1590,7 @@ export default function ProductManagerEngine({
                   <p className="adm-section-note" style={{ margin: '0 0 8px', width: '100%' }}>
                     {archiveStockView === 'negative'
                       ? 'Live products with negative ERP stock. Zero-stock items are not shown here.'
-                      : `Archived products hidden from the trade website. ${archivePrioritySkus.length ? `${archivePrioritySkus.length} ${archivePrioritySkus.length === 1 ? 'product is' : 'products are'} pinned first from the current Excel batch across your preview tabs; then ` : ''}most recently archived items appear next; zero-stock items are not shown here.`}
+                      : `Archived products hidden from the trade website. ${data?.pinnedBatchCount ? `${data.pinnedBatchCount} ${data.pinnedBatchCount === 1 ? 'product is' : 'products are'} pinned first from the latest Excel batch; then ` : ''}most recently archived items appear next; zero-stock items are not shown here.`}
                   </p>
                   <div className="pm-archive-stock-toggle" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', width: '100%', marginBottom: 8 }}>
                     <button

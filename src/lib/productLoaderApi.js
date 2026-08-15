@@ -139,7 +139,8 @@ export async function publishNewProduct({
 /** Stage an Excel/local-image variant in Product Manager → Archive. */
 export async function archiveVariantProduct({
   code, barcode, title, description, price, stockQty, availableStock,
-  unitsOfIssue = 'EACH', images = [], publishedBy = '',
+  unitsOfIssue = 'EACH', images = [], publishedBy = '', batchId = '',
+  includeExistingInBatch = false,
 }) {
   const res = await fetch('/api/product-loader-variant-archive', {
     method: 'POST',
@@ -155,6 +156,8 @@ export async function archiveVariantProduct({
       unitsOfIssue,
       images,
       publishedBy,
+      batchId,
+      includeExistingInBatch,
     }),
   });
   return readApiJson(res, { fallback: 'Could not send product to Archive' });

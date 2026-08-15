@@ -51,7 +51,11 @@ export default async function handler(req, res) {
 
   const { error } = await supabase.storage
     .from(BUCKET)
-    .upload(objectPath, buffer, { contentType, upsert: Boolean(safeSku) && !requireNew });
+    // requireNew already performed the authoritative live + Archive lookup
+    // above. If no product row exists, an object at this path is an orphan
+    // left by a permanently deleted/failed intake and is safe to replace.
+    // Existing product images remain protected by the 409 guard.
+    .upload(objectPath, buffer, { contentType, upsert: Boolean(safeSku) });
 
   if (error) return res.status(400).json({ error: error.message });
 

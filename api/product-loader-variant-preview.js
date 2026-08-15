@@ -31,7 +31,7 @@ export default async function handler(req, res) {
     const barcodes = [...new Set(items.map((item) => item.barcode))];
     const [{ data: existing, error: existingError }, { data: archived, error: archivedError }] = await Promise.all([
       sb.from('website_stock').select('sku, title, barcode').in('sku', skus),
-      sb.from('archived_products').select('sku, title, barcode').in('sku', skus),
+      sb.from('archived_products').select('sku, title, barcode, archived_by').in('sku', skus),
     ]);
     if (existingError || archivedError) throw existingError || archivedError;
     const existingBySku = new Map((existing || []).map((row) => [clean(row.sku), { ...row, location: 'website' }]));
@@ -62,6 +62,7 @@ export default async function handler(req, res) {
         existing: Boolean(existingRow),
         existingLocation: existingRow?.location || null,
         existingTitle: existingRow?.title || '',
+        archivedBy: existingRow?.location === 'archive' ? (existingRow.archived_by || '') : '',
         sourceFound: Boolean(canonical),
         sourceStatus: source.positill?.dataSource || (canonical ? 'catalogue' : null),
         price: Number(canonical?.sell_price) || 0,

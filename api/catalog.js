@@ -17,7 +17,13 @@ import { isMotarroBrowsePath, isMotarroProduct } from './_mottaro-category.js';
 import { loadPlacementMapIfEnabled, skusMatchingBrowsePath } from './_placements.js';
 import { loadGroupContextIfEnabled } from './_groups.js';
 import { normalizeMemberSku } from '../lib/product-groups.mjs';
-import { normalizeArchivePrioritySkus, prioritizeRowsBySku } from '../lib/archive-priority.mjs';
+import {
+  isExcelImageArchiveSource,
+  latestExcelImageBatchSource,
+  normalizeArchivePrioritySkus,
+  prioritizeLatestExcelImageBatch,
+  prioritizeRowsBySku,
+} from '../lib/archive-priority.mjs';
 
 // maxDuration for this route is set in vercel.json (functions."api/catalog.js").
 
@@ -432,18 +438,24 @@ export default async function handler(req, res) {
         // admins can edit their code and re-link them.
         rows = rows.filter((r) => {
           if (r.stockLinked === false) return true;
-          if (r.archived_by === 'nutstore' || r.archived_by === 'excel-images') return true;
+          if (r.archived_by === 'nutstore' || isExcelImageArchiveSource(r.archived_by)) return true;
           return !isExactlyZeroStock(r);
         });
         if (isMotarroBrowsePath(categoryPath)) {
           rows = filterByCategoryPath(rows, categoryPath, tree);
         }
         rows = applySearchFilter(rows, search);
-        // The active Excel/image batch is a browser-only review aid. Pin those
-        // SKUs before pagination without changing any archived product record.
-        rows = prioritizeRowsBySku(rows, prioritySkus);
+        // The server-recorded batch is authoritative across independent tabs.
+        // Keep the browser hint only as a fallback for older unmarked imports.
+        const pinnedBatchSource = latestExcelImageBatchSource(rows);
+        rows = pinnedBatchSource
+          ? prioritizeLatestExcelImageBatch(rows)
+          : prioritizeRowsBySku(rows, prioritySkus);
+        const pinnedBatchCount = pinnedBatchSource
+          ? rows.filter((row) => String(row?.archived_by || '').trim() === pinnedBatchSource).length
+          : 0;
         const pageSlice = paginateRows(rows, page, pageSize);
-        result = { ...pageSlice, archived: true, archiveView: 'archived' };
+        result = { ...pageSlice, archived: true, archiveView: 'archived', pinnedBatchCount };
         stockAlreadyEnriched = true;
       }
     } else if (status === 'new-items') {
@@ -494,6 +506,7 @@ export default async function handler(req, res) {
       hasMore: result.hasMore,
       status,
       archiveView: result.archiveView || (status === 'archived' ? 'archived' : null),
+      pinnedBatchCount: result.pinnedBatchCount || 0,
     });
   } catch (err) {
     console.error('catalog:', err?.message || err);
