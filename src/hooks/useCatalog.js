@@ -98,11 +98,16 @@ export async function fetchAllCatalogRows(params) {
 }
 
 export function useCatalogQuery(params, { enabled = true } = {}) {
+  const isArchive = params.status === 'archived';
   return useQuery({
     queryKey: queryKeys.catalog(params),
     queryFn: () => fetchCatalog(params),
-    placeholderData: keepPreviousData,
-    staleTime: 30_000,
+    // Archive is an operational intake queue. Never paint an older cached page
+    // while the newly archived products are being fetched, and always refresh
+    // when the screen is opened so a separate loader tab cannot leave it stale.
+    placeholderData: isArchive ? undefined : keepPreviousData,
+    staleTime: isArchive ? 0 : 30_000,
+    refetchOnMount: isArchive ? 'always' : true,
     enabled,
   });
 }

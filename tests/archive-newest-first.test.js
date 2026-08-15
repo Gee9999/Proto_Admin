@@ -19,4 +19,11 @@ describe('Archive ordering', () => {
     expect(importer).toContain("query.queryKey[1]?.status === 'archived'");
     expect(importer).toContain('await refreshArchive()');
   });
+
+  it('does not show a stale cached Archive page on first open', () => {
+    const hook = readFileSync(resolve(ROOT, 'src/hooks/useCatalog.js'), 'utf8');
+    expect(hook).toContain("const isArchive = params.status === 'archived'");
+    expect(hook).toContain('placeholderData: isArchive ? undefined : keepPreviousData');
+    expect(hook).toContain("refetchOnMount: isArchive ? 'always' : true");
+  });
 });
