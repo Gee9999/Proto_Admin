@@ -17,6 +17,7 @@ import { isMotarroBrowsePath, isMotarroProduct } from './_mottaro-category.js';
 import { loadPlacementMapIfEnabled, skusMatchingBrowsePath } from './_placements.js';
 import { loadGroupContextIfEnabled } from './_groups.js';
 import { normalizeMemberSku } from '../lib/product-groups.mjs';
+import { normalizeArchivePrioritySkus, prioritizeRowsBySku } from '../lib/archive-priority.mjs';
 
 // maxDuration for this route is set in vercel.json (functions."api/catalog.js").
 
@@ -210,6 +211,15 @@ function parseCategoryPath(raw) {
   }
 }
 
+function parsePrioritySkus(raw) {
+  if (!raw) return [];
+  try {
+    return normalizeArchivePrioritySkus(JSON.parse(raw));
+  } catch {
+    return normalizeArchivePrioritySkus(String(raw).split(','));
+  }
+}
+
 function safeSearchTerm(search) {
   return String(search || '').replace(/[%',()\\]/g, ' ').trim();
 }
@@ -311,6 +321,7 @@ export default async function handler(req, res) {
   const pageSize = Math.min(200, Math.max(1, parseInt(req.query.pageSize, 10) || 50));
   const search = String(req.query.search || '').trim();
   const categoryPath = parseCategoryPath(req.query.categoryPath);
+  const prioritySkus = parsePrioritySkus(req.query.prioritySkus);
   // Archive is an operational review queue: order by the moment a product was
   // actually archived, not by its last edit. Category or description edits can
   // update updated_at and must not jump an older item above a fresh intake.
@@ -428,6 +439,9 @@ export default async function handler(req, res) {
           rows = filterByCategoryPath(rows, categoryPath, tree);
         }
         rows = applySearchFilter(rows, search);
+        // The active Excel/image batch is a browser-only review aid. Pin those
+        // SKUs before pagination without changing any archived product record.
+        rows = prioritizeRowsBySku(rows, prioritySkus);
         const pageSlice = paginateRows(rows, page, pageSize);
         result = { ...pageSlice, archived: true, archiveView: 'archived' };
         stockAlreadyEnriched = true;

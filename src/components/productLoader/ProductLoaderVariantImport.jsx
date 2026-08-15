@@ -5,6 +5,7 @@ import { archiveVariantProduct, uploadProductImageSlot } from '../../lib/product
 import { matchVariantImages, parseVariantImportSheet, variantRowState } from '../../lib/productVariantImport';
 import { readApiJson } from '../../lib/apiError';
 import { queryKeys } from '../../lib/queryKeys';
+import { saveArchivePrioritySkus } from '../../../lib/archive-priority.mjs';
 
 export default function ProductLoaderVariantImport({ publishedBy = '', onShowToast }) {
   const queryClient = useQueryClient();
@@ -52,6 +53,9 @@ export default function ProductLoaderVariantImport({ publishedBy = '', onShowToa
     setError('');
     try {
       const parsed = await parseVariantImportSheet(file);
+      // Keep this Excel batch at the beginning of Archive for the rest of this
+      // browser session. This is display-only and does not touch stored rows.
+      saveArchivePrioritySkus(parsed.map((row) => row.sku));
       setSheetName(file.name);
       await preview(parsed, files);
     } catch (err) {
