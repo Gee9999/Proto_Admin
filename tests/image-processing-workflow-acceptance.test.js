@@ -65,6 +65,12 @@ describe('Image Processing Centre owner-safety acceptance contract', () => {
     expect(centreSource).toContain('blockingQualityFlags.length > 0');
   });
 
+  it('switches to the archive view after a successful archive action', () => {
+    expect(centreSource).toContain("if (action === 'archive') {");
+    expect(centreSource).toContain("setQueueView('archive');");
+    expect(centreSource).toContain('setSelectedJobId(updated.id);');
+  });
+
   it('records manual approval without publishing or changing Product Manager', () => {
     const approvalBranch = sourceSection(jobsRouteSource, "} else if (action === 'approve')", "} else if (action === 'assign_destination')");
     const approvalService = sourceSection(serviceSource, 'export function markImageApproved', 'export async function archiveApprovedImage');

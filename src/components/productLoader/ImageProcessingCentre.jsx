@@ -577,6 +577,10 @@ export default function ImageProcessingCentre({
       markQueueMutation();
       if (action === 'retry') authorizeExecution([updated]);
       mergeJobs([updated]);
+      if (action === 'archive') {
+        setQueueView('archive');
+        setSelectedJobId(updated.id);
+      }
       setWorkerUnavailable(false);
       onShowToast?.(
         action === 'apply' ? `Applied ${job.filename} to Product Manager — ${productManagerSlot(details.imageSlot).label}` : `${statusLabel(action)}: ${job.filename}`,
