@@ -133,6 +133,9 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(centreSource).toContain("setQueueView('queue');");
     expect(centreSource).toContain('setSelectedJobId(created[0].id);');
     expect(centreSource).toContain('await loadJobs({ quiet: true });');
+    expect(centreSource).toContain('Do not let a briefly stale index erase work that this tab just');
+    expect(centreSource).toContain('const byId = new Map(current.map((job) => [job.id, job]));');
+    expect(centreSource).toContain('for (const job of rows) byId.set(job.id, { ...byId.get(job.id), ...job });');
   });
 
   it('offers a separate discard action for approved staged images', () => {

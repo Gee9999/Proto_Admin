@@ -494,10 +494,15 @@ export default function ImageProcessingCentre({
       setJobs((current) => {
         const hasLocallyActiveJob = current.some((job) => ACTIVE_STATUSES.has(job.status));
         const mutationIsRecent = Date.now() - lastQueueMutationAtRef.current < 30_000;
-        // Do not let a briefly stale empty index erase work that this tab just
+        // Do not let a briefly stale index erase work that this tab just
         // created. The durable backend listing remains authoritative after the
         // short consistency window.
         if (!rows.length && hasLocallyActiveJob && mutationIsRecent) return current;
+        if (mutationIsRecent && hasLocallyActiveJob) {
+          const byId = new Map(current.map((job) => [job.id, job]));
+          for (const job of rows) byId.set(job.id, { ...byId.get(job.id), ...job });
+          return [...byId.values()].sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+        }
         return rows;
       });
       setWorkerUnavailable(false);
