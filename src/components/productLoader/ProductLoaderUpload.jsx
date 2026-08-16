@@ -175,6 +175,12 @@ export default function ProductLoaderUpload({
     setError('');
   };
 
+  const clearDraftAfterCompleteAction = () => {
+    clearProductLoaderUploadDraft();
+    setSourceFiles([]);
+    setDraftRecovery(null);
+  };
+
   const publishItems = async (targetItems) => {
     const ready = targetItems.filter((i) => (i.group === 'ready' || i.group === 'needs_review') && i.file && i.code);
     if (!ready.length) return;
@@ -280,6 +286,7 @@ export default function ProductLoaderUpload({
     setProgress({ done: workUnits.length, total: workUnits.length, current: '' });
     setElapsedMs(Date.now() - start);
     setProcessing(false);
+    if (!failed && !groupingErrors.length) clearDraftAfterCompleteAction();
     onShowToast?.(
       `Published ${published} product variant${published === 1 ? '' : 's'} from ${publishedImages} image${publishedImages === 1 ? '' : 's'}${failed ? `, ${failed} failed` : ''}${groupingErrors.length ? `; ${groupingErrors.length} family group needs review` : ''}`,
       failed || groupingErrors.length ? 'warning' : 'success',
@@ -323,6 +330,7 @@ export default function ProductLoaderUpload({
     setElapsedMs(Date.now() - start);
     setProcessing(false);
     setStats((s) => ({ ...s, dormant: s.dormant + archived, failed: s.failed + failed }));
+    if (!failed) clearDraftAfterCompleteAction();
     onShowToast?.(`Archived ${archived}${failed ? `, ${failed} failed` : ''}`, failed ? 'warning' : 'success');
   };
 

@@ -16,4 +16,10 @@ describe('Product Loader upload draft retention', () => {
     expect(upload).toContain('it was never published');
     expect(upload).toContain('Discard draft');
   });
+
+  it('clears the draft after completed publish or archive actions', () => {
+    expect(upload).toContain('clearDraftAfterCompleteAction');
+    expect(upload).toContain('if (!failed && !groupingErrors.length) clearDraftAfterCompleteAction();');
+    expect(upload).toContain('if (!failed) clearDraftAfterCompleteAction();');
+  });
 });
