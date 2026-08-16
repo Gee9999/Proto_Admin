@@ -555,13 +555,18 @@ export default function ImageProcessingCentre({
       const created = await createNutstoreImageJobs(nutstoreSelection, processingOptions);
       if (!created.length) throw new Error('Nutstore returned no image queue items. Please try Add selected again.');
       markQueueMutation();
-      authorizeExecution(created);
+      if (intakeCanStart) authorizeExecution(created);
       mergeJobs(created);
       setQueueView('queue');
       setSelectedJobId(created[0].id);
       setWorkerUnavailable(false);
       onNutstoreSelectionConsumed?.();
-      onShowToast?.(`Added ${created.length} exact SKU review item${created.length === 1 ? '' : 's'} from Nutstore`, 'success');
+      onShowToast?.(
+        intakeCanStart
+          ? `Added ${created.length} exact SKU review item${created.length === 1 ? '' : 's'} from Nutstore`
+          : `Added ${created.length} Nutstore image${created.length === 1 ? '' : 's'} to the queue. Processing is paused until the safety confirmation is complete.`,
+        'success',
+      );
       await loadJobs({ quiet: true });
     } catch (err) {
       setWorkerUnavailable(true);
@@ -582,12 +587,21 @@ export default function ImageProcessingCentre({
     setError('');
     try {
       const created = await createUploadedImageJobs(files, processingOptions);
+      if (!created.length) throw new Error('No image queue items were created. Please try adding the images again.');
       markQueueMutation();
-      authorizeExecution(created);
+      if (intakeCanStart) authorizeExecution(created);
       mergeJobs(created);
+      setQueueView('queue');
+      setSelectedJobId(created[0].id);
       setWorkerUnavailable(false);
       if (consumeHandoff) onUploadSelectionConsumed?.();
-      onShowToast?.(`Added ${created.length} exact SKU review item${created.length === 1 ? '' : 's'} from ${files.length} image${files.length === 1 ? '' : 's'}`, 'success');
+      onShowToast?.(
+        intakeCanStart
+          ? `Added ${created.length} exact SKU review item${created.length === 1 ? '' : 's'} from ${files.length} image${files.length === 1 ? '' : 's'}`
+          : `Added ${created.length} image${created.length === 1 ? '' : 's'} to the queue. Processing is paused until the safety confirmation is complete.`,
+        'success',
+      );
+      await loadJobs({ quiet: true });
     } catch (err) {
       setWorkerUnavailable(true);
       setError(err.message || 'Could not upload these images');
@@ -948,7 +962,7 @@ export default function ImageProcessingCentre({
           <div><strong>Selected from Nutstore</strong><span>{nutstoreSelection.length ? `${nutstoreSelection.length} image(s) waiting to be added` : 'Choose source images in PTR Photos, then return here to process them.'}</span></div>
           <div className="ipc-source-actions">
             {onOpenNutstore && <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={onOpenNutstore}><FolderOpen size={14} /> Open Nutstore</button>}
-            <button type="button" className="adm-btn-red" disabled={!nutstoreSelection.length || Boolean(busy) || nutstoreConnection.status === 'missing' || !intakeCanStart} onClick={() => void queueNutstore()}>
+            <button type="button" className="adm-btn-red" disabled={!nutstoreSelection.length || Boolean(busy) || nutstoreConnection.status === 'missing'} onClick={() => void queueNutstore()}>
               {busy === 'nutstore' ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />} Add selected
             </button>
           </div>
@@ -957,9 +971,9 @@ export default function ImageProcessingCentre({
           <div className="ipc-source-icon"><Upload size={19} /></div>
           <div><strong>Upload from this computer</strong><span>{uploadSelection.length ? `${uploadSelection.length} image(s) handed over from Product Loader Upload.` : 'Choose loose images or an entire supplier folder. Original filenames are preserved.'}</span></div>
           <div className="ipc-source-actions">
-            {uploadSelection.length > 0 && <button type="button" className="adm-btn-red" disabled={Boolean(busy) || !intakeCanStart} onClick={() => void queueUploads(uploadSelection, { consumeHandoff: true })}>{busy === 'upload' ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />} Add handed-over images</button>}
-            <button type="button" className="adm-btn-red" disabled={Boolean(busy) || !intakeCanStart} onClick={() => folderRef.current?.click()}><FolderOpen size={14} /> Folder</button>
-            <button type="button" className="adm-btn-ghost" disabled={Boolean(busy) || !intakeCanStart} onClick={() => fileRef.current?.click()}>Images</button>
+            {uploadSelection.length > 0 && <button type="button" className="adm-btn-red" disabled={Boolean(busy)} onClick={() => void queueUploads(uploadSelection, { consumeHandoff: true })}>{busy === 'upload' ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />} Add handed-over images</button>}
+            <button type="button" className="adm-btn-red" disabled={Boolean(busy)} onClick={() => folderRef.current?.click()}><FolderOpen size={14} /> Folder</button>
+            <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => fileRef.current?.click()}>Images</button>
           </div>
           <input ref={folderRef} className="ipc-file-input" type="file" accept="image/*" multiple webkitdirectory="" onChange={(event) => void queueUploads(event.target.files)} />
           <input ref={fileRef} className="ipc-file-input" type="file" accept="image/*" multiple onChange={(event) => void queueUploads(event.target.files)} />

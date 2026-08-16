@@ -309,7 +309,9 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(centre).toContain('manualSafeCutout');
     expect(centre).toContain('I inspected these source images and confirm an automatic cutout is safe.');
     expect(centre).toContain('This is a source-preserving/manual lane.');
-    expect(centre).toContain('!intakeCanStart');
+    expect(centre).toContain('if (intakeCanStart) authorizeExecution(created);');
+    expect(centre).toContain('Processing is paused until the safety confirmation is complete.');
+    expect(centre).not.toContain("nutstoreConnection.status === 'missing' || !intakeCanStart");
   });
 
   it('draws targeted repairs against the exact rendered processed asset and creates a new review revision', () => {
