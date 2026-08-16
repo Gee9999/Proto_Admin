@@ -209,6 +209,8 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(adminSource).toContain('intakeOptions={imageProcessingIntake}');
     expect(adminSource).toContain('onIntakeOptionsChange={rememberImageProcessingIntake}');
     expect(centreSource).toContain("useState(() => intakeOptions?.treatment || 'standard_opaque')");
+    expect(centreSource).toContain('rememberIntakeChange({ treatment: preset.id, instructions: customInstructions })');
+    expect(centreSource).toContain('rememberIntakeChange({ treatment: processingPreset, instructions })');
   });
 
   it('shows large, uncropped Nutstore source thumbnails for visual selection', () => {
@@ -235,6 +237,12 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(centre).toContain('Targeted background repair');
     expect(centre).not.toContain("id: 'targeted_reconstruction'");
     expect(centre).toContain('History & archive');
+  });
+
+  it('returns signed original and website-ready preview URLs immediately after a mutation', () => {
+    const jobsRoute = fs.readFileSync(new URL('../api/image-processing-jobs.js', import.meta.url), 'utf8');
+    expect(jobsRoute).toContain('const [publicUpdated] = await publicJobItemsWithSource(saved, [saved.images[runningIndex]])');
+    expect(jobsRoute).toContain('const [publicUpdated] = await publicJobItemsWithSource(saved, [saved.images[index]])');
   });
 
   it('requires a complete human checklist and treatment acknowledgement before approval', () => {
@@ -289,8 +297,9 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(centre).toContain('Confirm Product Manager image replacement');
     expect(centre).toContain('Current Product Manager ${selectedSlot.label}');
     expect(centre).toContain('Proposed archive asset');
-    expect(centre).toContain('SKU {destinationProduct.sku} · {destinationProduct.title || \'Untitled product\'} · {selectedSlot.label}');
+    expect(centre).toContain('SKU {destinationProduct.sku} Â· {destinationProduct.title || \'Untitled product\'} Â· {selectedSlot.label}');
     expect(centre).toContain('url={currentDestinationImage}');
     expect(centre).toContain('url={selectedJob.afterUrl}');
   });
 });
+
