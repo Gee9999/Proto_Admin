@@ -114,6 +114,24 @@ function isTreatmentReviewAdvisory(flag) {
   return /must_be_visually_verified|manual_review|manual_safe_cutout|manual_overlay|piece_count|fine_details|transparent_edges|custom_instructions|detached_label|barcode/.test(qualityFlagCode(flag));
 }
 
+function confirmQueueMutation(job, action) {
+  const filename = job?.filename || 'this image';
+  const messages = {
+    reject: `Reject ${filename}? This keeps Product Manager unchanged, but moves this private review result out of the active queue.`,
+    retry: `Process ${filename} again? This keeps the current asset private and creates a fresh processing result for review.`,
+    restore: `Restore the original image for ${filename}? This changes the Product Manager image back only after this confirmation.`,
+    create_revision: `Create a new archive revision for ${filename}? This keeps the current archive item intact and creates a separate private review item.`,
+  };
+  const message = messages[action];
+  return !message || window.confirm(message);
+}
+
+function confirmBulkReviewMutation(candidates, action) {
+  if (action !== 'reject') return false;
+  const count = candidates.length;
+  return window.confirm(`Reject ${count} reviewed image${count === 1 ? '' : 's'}? This keeps Product Manager and the live website unchanged, but moves these private review results out of the active queue.`);
+}
+
 function requiresTreatmentVerification(job) {
   if (!job) return false;
   if (TREATMENT_REVIEW_IDS.has(String(job.treatment || '').toLowerCase())) return true;
@@ -711,12 +729,18 @@ export default function ImageProcessingCentre({
   };
 
   const createArchiveRevision = async (job) => {
+    if (!confirmQueueMutation(job, 'create_revision')) return;
     const adjustments = revisionAdjustments[job.id] || { paddingRatio: 0.08, background: '#FFFFFF', shadow: 'none' };
     const updated = await runAction(job, 'create_revision', { adjustments });
     if (!updated) return;
     setSelectedJobId(updated.id);
     setQueueView('queue');
     onShowToast?.(`Created revision ${updated.revision?.number || 'new'} from the retained transparent master. The archive original remains unchanged.`, 'success');
+  };
+
+  const runConfirmedQueueAction = async (job, action, extra = {}) => {
+    if (!confirmQueueMutation(job, action)) return null;
+    return runAction(job, action, extra);
   };
 
   const clearJob = async (job) => {
@@ -794,21 +818,19 @@ export default function ImageProcessingCentre({
   const runBulkReviewAction = async (action) => {
     const candidates = jobs.filter((job) => REVIEW_STATUSES.has(job.status));
     if (!candidates.length) return;
+    if (!confirmBulkReviewMutation(candidates, action)) return;
     markQueueMutation();
     setBusy(`bulk:${action}`);
     setError('');
     try {
       const updated = [];
       for (const job of candidates) {
-        if (action === 'archive') {
-          throw new Error('Bulk archive is disabled. Approve each result after human review, then save the approved result to the Image Archive.');
-        }
         updated.push(await updateImageProcessingJob(job.id, action));
       }
       markQueueMutation();
       mergeJobs(updated);
       setWorkerUnavailable(false);
-      onShowToast?.(`${action === 'archive' ? 'Saved to the Image Archive' : 'Rejected'} ${updated.length} reviewed image${updated.length === 1 ? '' : 's'}`, 'success');
+      onShowToast?.(`Rejected ${updated.length} reviewed image${updated.length === 1 ? '' : 's'}`, 'success');
     } catch (err) {
       setError(err.message || `Could not ${action} the reviewed batch`);
     } finally {
@@ -946,8 +968,7 @@ export default function ImageProcessingCentre({
 
       {summary.review > 0 && (
         <div className="ipc-bulk-review" role="group" aria-label="Bulk review actions">
-          <div><strong>{summary.review} processed image{summary.review === 1 ? '' : 's'} awaiting review</strong><span>Saving to the archive never changes Product Manager or the live website. Each asset can be adjusted, assigned and applied later.</span></div>
-          <button type="button" className="adm-btn-red" disabled={Boolean(busy)} onClick={() => void runBulkReviewAction('archive')}><Archive size={14} /> Save all reviewed to archive</button>
+          <div><strong>{summary.review} processed image{summary.review === 1 ? '' : 's'} awaiting review</strong><span>Archive saving is deliberately individual: open each result, inspect the enlarged before/after image, approve it, then save that approved asset.</span></div>
           <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void runBulkReviewAction('reject')}><X size={14} /> Reject all reviewed</button>
         </div>
       )}
@@ -969,7 +990,7 @@ export default function ImageProcessingCentre({
           ) : visibleJobs.length ? visibleJobs.map((job) => (
             <button key={job.id} type="button" className={`ipc-queue-row${selectedJob?.id === job.id ? ' ipc-queue-row--on' : ''}`} onClick={() => setSelectedJobId(job.id)}>
               <span className={`ipc-status-dot ipc-status-dot--${job.status}`} />
-              <span className="ipc-queue-copy"><strong>{job.filename}</strong><small>{job.sku || (job.source === 'nutstore' ? 'Nutstore' : 'Local upload')}</small></span>
+              <span className="ipc-queue-copy"><strong title={job.filename}>{job.filename}</strong><small>{job.sku || (job.source === 'nutstore' ? 'Nutstore' : 'Local upload')}</small></span>
               <span className={`ipc-status ipc-status--${job.status}`}>{statusLabel(job.status)}</span>
             </button>
           )) : (
@@ -982,7 +1003,7 @@ export default function ImageProcessingCentre({
           {selectedJob ? (
             <>
               <header className="ipc-review-head">
-                <div><span className={`ipc-status ipc-status--${selectedJob.status}`}>{statusLabel(selectedJob.status)}</span><h4>{selectedJob.filename}</h4><p>{selectedJob.sku ? `Product ${selectedJob.sku}` : 'Product code will be matched from the filename'} · {selectedJob.source === 'nutstore' ? 'Nutstore' : 'Local upload'}</p></div>
+                <div><span className={`ipc-status ipc-status--${selectedJob.status}`}>{statusLabel(selectedJob.status)}</span><h4 title={selectedJob.filename}>{selectedJob.filename}</h4><p>{selectedJob.sku ? `Product ${selectedJob.sku}` : 'Product code will be matched from the filename'} · {selectedJob.source === 'nutstore' ? 'Nutstore' : 'Local upload'}</p></div>
                 <div className="ipc-cost"><span>Processing cost</span><strong>R {selectedJob.estimatedCost.toFixed(2)}</strong></div>
               </header>
               {selectedJob.multiSkuSource && (
@@ -1069,10 +1090,10 @@ export default function ImageProcessingCentre({
               <div className="ipc-review-actions">
                 {REVIEW_STATUSES.has(selectedJob.status) && <>
                   <button type="button" className="adm-btn-red" disabled={Boolean(busy) || selectedJob.qualityScore == null || blockingQualityFlags.length > 0 || !reviewChecklistComplete} onClick={() => void approveSelectedJob()}><Check size={14} /> Approve result</button>
-                  <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void runAction(selectedJob, 'reject')}><X size={14} /> Reject</button>
-                  <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void runAction(selectedJob, 'retry')}><RotateCcw size={14} /> Process again</button>
+                  <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void runConfirmedQueueAction(selectedJob, 'reject')}><X size={14} /> Reject</button>
+                  <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void runConfirmedQueueAction(selectedJob, 'retry')}><RotateCcw size={14} /> Process again</button>
                 </>}
-                {['failed', 'error', 'rejected'].includes(selectedJob.status) && <button type="button" className="adm-btn-red" disabled={Boolean(busy)} onClick={() => void runAction(selectedJob, 'retry')}><RotateCcw size={14} /> Retry processing</button>}
+                {['failed', 'error', 'rejected'].includes(selectedJob.status) && <button type="button" className="adm-btn-red" disabled={Boolean(busy)} onClick={() => void runConfirmedQueueAction(selectedJob, 'retry')}><RotateCcw size={14} /> Retry processing</button>}
                 {CLEARABLE_STATUSES.has(selectedJob.status) && <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void clearJob(selectedJob)}><Trash2 size={14} /> {selectedJob.status === 'approved' ? 'Discard staged image' : 'Clear from queue'}</button>}
                 {ACTIVE_STATUSES.has(selectedJob.status) && !selectedJobExecutionAuthorized && <button type="button" className="adm-btn-red" disabled={Boolean(busy)} onClick={() => authorizeExecution([selectedJob])}><Sparkles size={14} /> {selectedJob.status === 'queued' ? 'Start processing' : 'Resume processing'}</button>}
                 {ACTIVE_STATUSES.has(selectedJob.status) && <span className="ipc-wait"><Clock3 size={14} /> {selectedJobExecutionAuthorized ? (selectedJob.status === 'processing' ? 'Removing the background and preparing the catalogue image…' : 'Waiting to start; this page will process this explicitly authorized image.') : 'Recovered safely. Processing will not start until you click the button.'}</span>}
@@ -1140,7 +1161,7 @@ export default function ImageProcessingCentre({
                       <button type="button" className="adm-btn-ghost adm-btn--sm" disabled={Boolean(busy)} onClick={() => setApplyConfirmation(null)}>Cancel</button>
                     </div>
                    ) : <div className="ipc-intent-note"><ArrowRight size={15} /><span><strong>Archive asset is ready for a deliberate live application.</strong> Compare it with the chosen Product Manager position first; this remains a separate action from processing and approval.</span><button type="button" className="adm-btn-ghost adm-btn--sm" disabled={Boolean(busy)} onClick={() => requestProductManagerApply(selectedJob)}>Apply to Product Manager</button></div>)}
-                  {selectedJob.status === 'published' && <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void runAction(selectedJob, 'restore')}><RotateCcw size={14} /> Restore original</button>}
+                  {selectedJob.status === 'published' && <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={() => void runConfirmedQueueAction(selectedJob, 'restore')}><RotateCcw size={14} /> Restore original</button>}
                 </div>
               )}
               {(ARCHIVED_STATUSES.has(selectedJob.status) || selectedJob.status === 'published' || selectedJob.status === 'restored') && (

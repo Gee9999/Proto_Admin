@@ -72,6 +72,10 @@ function rowStatusLabel(row) {
   return [row.status || row.group, ...warnings].filter(Boolean).join(' — ');
 }
 
+function isDraftRowFinished(row) {
+  return row.status === 'done' || row.status === 'archived';
+}
+
 // Regular products are independent work units. All images for one recognised
 // colour are one work unit so their four image slots publish atomically.
 // Kept modest so a large folder doesn't overwhelm the serverless upload route.
@@ -181,6 +185,11 @@ export default function ProductLoaderUpload({
     setDraftRecovery(null);
   };
 
+  const clearDraftIfEveryRowFinished = (completedFilenames) => {
+    if (!items.every((row) => completedFilenames.has(row.filename) || isDraftRowFinished(row))) return;
+    clearDraftAfterCompleteAction();
+  };
+
   const publishItems = async (targetItems) => {
     const ready = targetItems.filter((i) => (i.group === 'ready' || i.group === 'needs_review') && i.file && i.code);
     if (!ready.length) return;
@@ -286,7 +295,9 @@ export default function ProductLoaderUpload({
     setProgress({ done: workUnits.length, total: workUnits.length, current: '' });
     setElapsedMs(Date.now() - start);
     setProcessing(false);
-    if (!failed && !groupingErrors.length) clearDraftAfterCompleteAction();
+    if (!failed && !groupingErrors.length) {
+      clearDraftIfEveryRowFinished(new Set(ready.map((row) => row.filename)));
+    }
     onShowToast?.(
       `Published ${published} product variant${published === 1 ? '' : 's'} from ${publishedImages} image${publishedImages === 1 ? '' : 's'}${failed ? `, ${failed} failed` : ''}${groupingErrors.length ? `; ${groupingErrors.length} family group needs review` : ''}`,
       failed || groupingErrors.length ? 'warning' : 'success',
@@ -330,7 +341,7 @@ export default function ProductLoaderUpload({
     setElapsedMs(Date.now() - start);
     setProcessing(false);
     setStats((s) => ({ ...s, dormant: s.dormant + archived, failed: s.failed + failed }));
-    if (!failed) clearDraftAfterCompleteAction();
+    if (!failed) clearDraftIfEveryRowFinished(new Set(rows.map((row) => row.filename)));
     onShowToast?.(`Archived ${archived}${failed ? `, ${failed} failed` : ''}`, failed ? 'warning' : 'success');
   };
 
@@ -498,7 +509,7 @@ export default function ProductLoaderUpload({
             <button
               type="button"
               className="adm-btn-ghost"
-              disabled={processing || scanning || !items.some((i) => i.file && i.code && !i.parseError)}
+              disabled={processing || scanning || !items.some((i) => !isDraftRowFinished(i) && i.file && i.code && !i.parseError)}
               onClick={() => void archiveItems(items.filter((i) => i.status !== 'done' && i.status !== 'archived'))}
             >
               <Archive size={14} /> Send All to Archive (incl. not found)

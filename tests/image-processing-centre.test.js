@@ -242,16 +242,41 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(centre).toContain('Save approved result to Image Archive');
     expect(centre).toContain('Confirm and apply to Product Manager');
     expect(centre).not.toContain("runAction(job, 'publish'");
-    expect(centre).toContain("runBulkReviewAction('archive')");
+    expect(centre).toContain('Archive saving is deliberately individual');
+    expect(centre).toContain("runBulkReviewAction('reject')");
     expect(centre).toContain("runAction(selectedJob, 'approve',");
     expect(centre).not.toContain("updateImageProcessingJob(job.id, 'approve')");
     expect(centre).toContain("runAction(selectedJob, 'archive')");
-    expect(centre).toContain("runAction(selectedJob, 'restore')");
+    expect(centre).toContain('confirmQueueMutation(job, action)');
+    expect(centre).toContain("runConfirmedQueueAction(selectedJob, 'restore')");
     expect(centre).toContain('Clear from queue');
     expect(centre).toContain('manual human review');
     expect(centre).toContain('Targeted background repair');
     expect(centre).not.toContain("id: 'targeted_reconstruction'");
     expect(centre).toContain('History & archive');
+  });
+
+  it('confirms private queue mutations and prevents bulk archive bypass', () => {
+    const centre = fs.readFileSync(new URL('../src/components/productLoader/ImageProcessingCentre.jsx', import.meta.url), 'utf8');
+    expect(centre).toContain('function confirmQueueMutation(job, action)');
+    expect(centre).toContain('if (!confirmQueueMutation(job, action)) return null;');
+    expect(centre).not.toContain("runAction(selectedJob, 'restore')");
+    expect(centre).toContain('function confirmBulkReviewMutation(candidates, action)');
+    expect(centre).toContain("if (action !== 'reject') return false");
+    expect(centre).toContain('Product Manager and the live website unchanged');
+    expect(centre).toContain('Archive saving is deliberately individual');
+    expect(centre).not.toContain('Save all reviewed to archive');
+  });
+
+  it('contains long filenames in the queue and selected review header', () => {
+    const centre = fs.readFileSync(new URL('../src/components/productLoader/ImageProcessingCentre.jsx', import.meta.url), 'utf8');
+    expect(centre).toContain('<strong title={job.filename}>{job.filename}</strong>');
+    expect(centre).toContain('<h4 title={selectedJob.filename}>{selectedJob.filename}</h4>');
+    expect(stylesheetSource).toContain('.ipc-queue-copy { min-width: 0; overflow: hidden; }');
+    expect(stylesheetSource).toContain('.ipc-review-head > div:first-child { min-width: 0; }');
+    expect(stylesheetSource).toContain('.ipc-review-head h4 { max-width: 100%;');
+    expect(stylesheetSource).toContain('.ipc-asset-line > div { min-width: 0; }');
+    expect(stylesheetSource).toContain('.ipc-asset-line span { margin-top: 2px; overflow-wrap: anywhere;');
   });
 
   it('requires a complete human checklist and treatment acknowledgement before approval', () => {

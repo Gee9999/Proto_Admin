@@ -125,7 +125,7 @@ describe('Image Processing Centre owner-safety acceptance contract', () => {
     const restoreService = sourceSection(serviceSource, 'export async function restorePublishedOriginal', 'export async function rejectImage');
 
     expect(centreSource).toContain("selectedJob.status === 'published' && <button");
-    expect(centreSource).toContain("runAction(selectedJob, 'restore')");
+    expect(centreSource).toContain("runConfirmedQueueAction(selectedJob, 'restore')");
     expect(restoreService).toContain("image.status !== 'published'");
     expect(restoreService).toContain('Only a published processed image can be restored');
     expect(restoreService).toContain("publishMode: 'restore_original'");
