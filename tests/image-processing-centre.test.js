@@ -275,6 +275,14 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(centre).toContain('!intakeCanStart');
   });
 
+  it('blocks generic clean-up when sticker or printed-label preservation is requested', () => {
+    const centre = fs.readFileSync(new URL('../src/components/productLoader/ImageProcessingCentre.jsx', import.meta.url), 'utf8');
+    expect(centre).toContain('PRESERVATION_CONTENT_HINT');
+    expect(centre).toContain('genericTreatmentWithPreservationContent');
+    expect(centre).toContain('Sticker/label preservation requires a protected treatment.');
+    expect(centre).toContain('Generic clean-up is blocked');
+  });
+
   it('draws targeted repairs against the exact rendered processed asset and creates a new review revision', () => {
     const centre = fs.readFileSync(new URL('../src/components/productLoader/ImageProcessingCentre.jsx', import.meta.url), 'utf8');
     expect(centre).toContain('event.currentTarget.getBoundingClientRect()');
@@ -309,3 +317,4 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(centre).toContain('url={selectedJob.afterUrl}');
   });
 });
+

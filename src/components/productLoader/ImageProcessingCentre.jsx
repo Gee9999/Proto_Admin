@@ -63,6 +63,7 @@ const TREATMENT_REVIEW_IDS = new Set([
   'custom',
   'targeted_reconstruction',
 ]);
+const PRESERVATION_CONTENT_HINT = /\b(stickers?|labels?|barcodes?|printed\s+(?:words?|numbers?|text)|hangtags?|hang\s+tags?)\b/i;
 
 function normalizedSku(value) {
   return String(value || '').trim().toUpperCase();
@@ -351,7 +352,11 @@ export default function ImageProcessingCentre({
   const selectedProcessingPreset = PROCESSING_PRESETS.find((preset) => preset.id === processingPreset) || PROCESSING_PRESETS[0];
   const intakeRequiresSafeCutout = selectedProcessingPreset.requiresSafeCutout === true;
   const intakeIsManualOnly = selectedProcessingPreset.manualOnly === true;
-  const intakeCanStart = !intakeIsManualOnly && (!intakeRequiresSafeCutout || manualSafeCutout);
+  const preservationContentRequested = PRESERVATION_CONTENT_HINT.test(customInstructions);
+  const genericTreatmentWithPreservationContent = preservationContentRequested && processingPreset === 'standard_opaque';
+  const intakeCanStart = !intakeIsManualOnly
+    && !genericTreatmentWithPreservationContent
+    && (!intakeRequiresSafeCutout || manualSafeCutout);
   const selectedReviewChecklist = reviewChecklists[selectedJob?.id] || EMPTY_REVIEW_CHECKLIST;
   const blockingQualityFlags = (selectedJob?.qualityFlags || []).filter((flag) => (
     qualityFlagCode(flag) !== 'quality_needs_attention'
@@ -910,6 +915,12 @@ export default function ImageProcessingCentre({
             <span><strong>Printed bead cards need extra care.</strong> If the source has number strips, labels or pale packaging, leave automatic cutout off and use a protected/manual treatment. The processor will block results when source content appears to disappear.</span>
           </div>
         )}
+        {genericTreatmentWithPreservationContent && (
+          <div className="ipc-manual-lane-note" role="alert">
+            <AlertTriangle size={15} />
+            <span><strong>Sticker/label preservation requires a protected treatment.</strong> Select â€œBeads &amp; fine detailâ€ before adding these images. Generic clean-up is blocked so printed product content cannot be removed.</span>
+          </div>
+        )}
         {intakeIsManualOnly && (
           <div className="ipc-manual-lane-note" role="status">
             <AlertTriangle size={15} />
@@ -940,6 +951,12 @@ export default function ImageProcessingCentre({
         <article className="ipc-source-card">
           <div className="ipc-source-icon"><FolderOpen size={19} /></div>
           <div><strong>Selected from Nutstore</strong><span>{nutstoreSelection.length ? `${nutstoreSelection.length} image(s) waiting to be added` : 'Choose source images in PTR Photos, then return here to process them.'}</span></div>
+          {nutstoreSelection.length > 0 && intakeRequiresSafeCutout && !manualSafeCutout && (
+            <div className="ipc-manual-lane-note ipc-handoff-safety-note" role="status">
+              <AlertTriangle size={14} />
+              <span>Treatment and instructions were restored from your Nutstore handoff. Re-confirm the safety checkbox before adding these images.</span>
+            </div>
+          )}
           <div className="ipc-source-actions">
             {onOpenNutstore && <button type="button" className="adm-btn-ghost" disabled={Boolean(busy)} onClick={onOpenNutstore}><FolderOpen size={14} /> Open Nutstore</button>}
             <button type="button" className="adm-btn-red" disabled={!nutstoreSelection.length || Boolean(busy) || nutstoreConnection.status === 'missing' || !intakeCanStart} onClick={() => void queueNutstore()}>
@@ -1196,3 +1213,4 @@ export default function ImageProcessingCentre({
     </section>
   );
 }
+
