@@ -52,12 +52,14 @@ export function buildRecipientVars(recipient = {}) {
   const business = recipient.business_name || recipient.name || '';
   const contact = recipient.contact_name || recipient.name || recipient.first_name || '';
   const code = recipient.customer_code || recipient.account_code || '';
+  const email = recipient.email || '';
   return {
     name: contact || business || recipient.email?.split('@')[0] || '',
     first_name: recipient.first_name || '',
     contact_name: contact,
     business_name: business,
-    email: recipient.email || '',
+    email,
+    unsubscribe_url: buildUnsubscribeUrl(email),
     customer_code: code,
     account_code: recipient.account_code || recipient.customer_code || code,
     phone: recipient.phone || '',
@@ -70,6 +72,7 @@ export const TEST_MERGE_VARS = {
   contact_name: 'Jane Smith',
   business_name: 'ABC Stationers',
   email: 'jane@abcstationers.co.za',
+  unsubscribe_url: buildUnsubscribeUrl('jane@abcstationers.co.za'),
   customer_code: 'ABC123',
   account_code: 'ABC123',
   phone: '082 555 1234',
@@ -83,7 +86,12 @@ export function buildComposedEmail({ subject, introText = '', htmlBlock = '' }, 
   const htmlPart = html ? stripDangerousHtml(applyMergeTags(html, vars)) : '';
   const bodyHtml = [introHtml, htmlPart].filter(Boolean).join('\n') || '<p></p>';
   const textContent = buildComposedText({ introText, htmlBlock }, vars);
-  const htmlContent = wrapBroadcastHtml({ subject: personalizedSubject, bodyHtml });
+  const htmlContent = wrapBroadcastHtml({
+    subject: personalizedSubject,
+    bodyHtml,
+    vars,
+    includeUnsubscribe: true,
+  });
   return { subject: personalizedSubject, htmlContent, textContent, bodyHtml };
 }
 
@@ -91,14 +99,34 @@ export function buildComposedText({ introText = '', htmlBlock = '' }, vars = {})
   const parts = [];
   if (introText.trim()) parts.push(applyMergeTags(introText, vars));
   if (htmlBlock.trim()) parts.push(htmlToText(applyMergeTags(htmlBlock, vars)));
-  return parts.join('\n\n').trim();
+  const body = parts.join('\n\n').trim();
+  const footer = buildUnsubscribeText(vars);
+  return [body, footer].filter(Boolean).join('\n\n');
 }
 
-export function wrapBroadcastHtml({ subject, bodyHtml }) {
+function buildUnsubscribeUrl(email) {
+  const address = String(email || '').trim().toLowerCase();
+  const base = `${PROTO_URLS.admin}/api/unsubscribe`;
+  return address ? `${base}?email=${encodeURIComponent(address)}` : base;
+}
+
+function buildUnsubscribeText(vars = {}) {
+  const url = vars.unsubscribe_url || buildUnsubscribeUrl(vars.email);
+  return `You are receiving this because you are a Proto customer/contact. To stop receiving marketing emails from Proto, unsubscribe here: ${url}`;
+}
+
+export function wrapBroadcastHtml({ subject, bodyHtml, vars = {}, includeUnsubscribe = false }) {
   const safeBody = bodyHtml || '<p>Hello from Proto Trading.</p>';
-  // No footer/button — the email ends with the composed body.
+  const unsubscribeUrl = vars.unsubscribe_url || buildUnsubscribeUrl(vars.email);
+  const unsubscribeFooter = includeUnsubscribe ? `
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:28px 0 16px;" />
+  <p style="margin:0;color:#6b7280;font-size:12px;line-height:1.5;">
+    You are receiving this because you are a Proto customer/contact.<br />
+    <a href="${escapeHtml(unsubscribeUrl)}" style="color:#2563eb;">Unsubscribe from Proto marketing emails</a>
+  </p>` : '';
   return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>${escapeHtml(subject)}</title></head><body style="font-family:Arial,sans-serif;line-height:1.5;color:#111827;max-width:640px;margin:0 auto;padding:24px;">
   ${safeBody}
+  ${unsubscribeFooter}
 </body></html>`;
 }
 
