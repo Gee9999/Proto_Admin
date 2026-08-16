@@ -108,6 +108,11 @@ import { isVictorSender, CUSTOMER_SEND_FORBIDDEN, PAYMENT_RECEIVED_FORBIDDEN } f
 import { errorFromJson } from '../lib/apiError';
 import { formatWebsitePrice } from '../lib/pricing';
 import { fetchSpecials, saveSpecials } from '../lib/specials';
+import {
+  adminSectionUrl,
+  initialAdminSectionFromSearch,
+  normalizeRequestedAdminSection,
+} from '../lib/adminSectionRoute';
 import TaxonomyModals from '../components/TaxonomyModals';
 import SectionErrorBoundary from '../components/SectionErrorBoundary';
 import PlacementsEditor from '../components/PlacementsEditor';
@@ -201,6 +206,17 @@ const ORDER_PAGE_SIZES = [10, 25, 50, 100];
 const ORDER_PAGE_SIZE_DEFAULT = 10;
 const CUSTOMER_SERVICE_SECTIONS = ['orders', 'customers', 'comms'];
 const OWNER_ONLY_SECTIONS = new Set(['image-processing', 'title-replace']);
+
+function replaceAdminSectionUrl(section) {
+  const nextUrl = adminSectionUrl({
+    pathname: window.location.pathname,
+    search: window.location.search,
+    hash: window.location.hash,
+    section,
+  });
+  const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  if (nextUrl !== currentUrl) window.history.replaceState({}, '', nextUrl);
+}
 
 function sectionsForAdminRole(role) {
   if (role === 'customer_service') return CUSTOMER_SERVICE_SECTIONS;
@@ -509,8 +525,11 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
   const initialOrderWorkspaceId = useMemo(() => orderWorkspaceIdFromPath(), []);
   const allowedSectionIds = useMemo(() => sectionsForAdminRole(customer?.role), [customer?.role]);
   const [activeSection, setActiveSection] = useState(() => {
-    const preferred = initialOrderWorkspaceId ? 'orders' : 'catalogue';
-    return allowedSectionIds.includes(preferred) ? preferred : allowedSectionIds[0] || 'orders';
+    return initialAdminSectionFromSearch({
+      search: window.location.search,
+      allowedSectionIds,
+      hasOrderWorkspace: Boolean(initialOrderWorkspaceId),
+    });
   });
   const [productLoaderCode, setProductLoaderCode] = useState('');
   const [imageProcessingHandoff, setImageProcessingHandoff] = useState(() => ({
@@ -1376,22 +1395,20 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const section = params.get('section');
+    const section = normalizeRequestedAdminSection(params.get('section') || params.get('view'));
     const tab = params.get('orderTab');
     const focus = params.get('focusOrder');
     // Deep links must respect the same role allowlist as the visible sidebar.
     // Without this check, a restricted user could open a hidden section with
     // `?section=...` even though the navigation correctly omitted it.
-    if (section === 'image-replace' && allowedSectionIds.includes('image-processing')) {
-      // Retired legacy deep links now enter the reviewed Image Processing Centre.
-      setActiveSection('image-processing');
-    } else if (section && allowedSectionIds.includes(section)) setActiveSection(section);
+    if (section && allowedSectionIds.includes(section)) setActiveSection(section);
     if (tab) setOrderTab(tab);
     if (focus) setFocusOrderId(focus);
-    if (section || tab || focus) {
-      window.history.replaceState({}, '', window.location.pathname);
-    }
   }, [allowedSectionIds]);
+
+  useEffect(() => {
+    replaceAdminSectionUrl(activeSection);
+  }, [activeSection]);
 
   useEffect(() => {
     if (!focusOrderId || activeSection !== 'orders' || !orders.length) return;
@@ -2533,7 +2550,7 @@ export default function AdminPage({ customer, onViewPortal, onSignOut }) {
 
             {activeSection === 'image-processing' && (
               <SectionErrorBoundary name="image-processing" title="Image Processing Centre crashed" resetKey={activeSection}>
-                <Suspense fallback={<LazySectionFallback label="Loading Image Processing Centre…" />}>
+                <Suspense fallback={<LazySectionFallback label="Loading Image Processing Centre queue and image tools…" />}>
                   <ProductLoaderPanel
                     taxonomyTree={taxonomyTree}
                     onShowToast={showToast}

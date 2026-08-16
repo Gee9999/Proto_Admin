@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   Download,
@@ -22,6 +22,12 @@ import { catalogueDisplayTitle, loaderCodeLabel } from '../../lib/productLoaderD
 import LoaderCodeEllipsis from './LoaderCodeEllipsis.jsx';
 import CategoryPathSelect from './CategoryPathSelect';
 import { loaderPriceSourceLabel } from '../../../lib/catalogue-price.mjs';
+import {
+  clearProductLoaderUploadDraft,
+  getProductLoaderUploadDraft,
+  getProductLoaderUploadDraftRecovery,
+  saveProductLoaderUploadDraft,
+} from '../../lib/productLoaderUploadDraft.js';
 
 /**
  * Upload tab — one place for both a single image and a whole folder. Each
@@ -96,7 +102,7 @@ export default function ProductLoaderUpload({
 }) {
   const folderRef = useRef(null);
   const filesRef = useRef(null);
-  const [items, setItems] = useState([]);
+  const [items, setItems] = useState(() => getProductLoaderUploadDraft() || []);
   const [scanning, setScanning] = useState(false);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0, current: '' });
@@ -105,7 +111,10 @@ export default function ProductLoaderUpload({
   const [elapsedMs, setElapsedMs] = useState(0);
   const [stats, setStats] = useState({ published: 0, dormant: 0, failed: 0 });
   const [groupColourVariants, setGroupColourVariants] = useState(true);
-  const [sourceFiles, setSourceFiles] = useState([]);
+  const [sourceFiles, setSourceFiles] = useState(() => (
+    (getProductLoaderUploadDraft() || []).map((item) => item.file).filter(Boolean)
+  ));
+  const [draftRecovery, setDraftRecovery] = useState(() => getProductLoaderUploadDraftRecovery());
 
   const batchDefaultCategoryId = batchDefaultPathIds?.[0] || '';
 
@@ -142,12 +151,28 @@ export default function ProductLoaderUpload({
         if (row.file) row.previewUrl = URL.createObjectURL(row.file);
       }
       setItems(merged);
+      saveProductLoaderUploadDraft(merged);
+      setDraftRecovery(getProductLoaderUploadDraftRecovery());
       onShowToast?.(`Scanned ${merged.length} image${merged.length === 1 ? '' : 's'} — ${merged.filter((i) => i.group === 'ready').length} ready`, 'success');
     } catch (err) {
       setError(err.message || 'Image scan failed');
     } finally {
       setScanning(false);
     }
+  };
+
+  useEffect(() => {
+    saveProductLoaderUploadDraft(items);
+    setDraftRecovery(getProductLoaderUploadDraftRecovery());
+  }, [items]);
+
+  const discardDraft = () => {
+    clearProductLoaderUploadDraft();
+    setItems([]);
+    setSourceFiles([]);
+    setDraftRecovery(null);
+    setStats({ published: 0, dormant: 0, failed: 0 });
+    setError('');
   };
 
   const publishItems = async (targetItems) => {
@@ -402,6 +427,14 @@ export default function ProductLoaderUpload({
       </div>
 
       {error && <p className="pl-error">{error}</p>}
+
+      {!items.length && draftRecovery?.count > 0 && (
+        <div className="pl-draft-notice">
+          <strong>Upload draft saved in this browser</strong>
+          <span>{draftRecovery.count} image{draftRecovery.count === 1 ? '' : 's'} were selected before refresh; it was never published. Choose the file again to continue.</span>
+          <button type="button" className="adm-btn-ghost" onClick={discardDraft}>Discard draft</button>
+        </div>
+      )}
 
       {items.length > 0 && (
         <>

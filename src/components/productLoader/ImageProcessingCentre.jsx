@@ -961,7 +961,11 @@ export default function ImageProcessingCentre({
           </div>
           <div id="ipc-queue-panel" role="tabpanel" aria-labelledby={queueView === 'archive' ? 'ipc-archive-tab' : 'ipc-queue-tab'}>
           {loading && !jobs.length ? (
-            <p className="ipc-empty"><Loader2 size={16} className="spin" /> Loading queue…</p>
+            <div className="ipc-empty" role="status">
+              <Loader2 size={16} className="spin" />
+              <strong>Loading private image queue</strong>
+              <span>Checking staged uploads, review items and archive records. Nothing is applied to Product Manager during this load.</span>
+            </div>
           ) : visibleJobs.length ? visibleJobs.map((job) => (
             <button key={job.id} type="button" className={`ipc-queue-row${selectedJob?.id === job.id ? ' ipc-queue-row--on' : ''}`} onClick={() => setSelectedJobId(job.id)}>
               <span className={`ipc-status-dot ipc-status-dot--${job.status}`} />

@@ -5,7 +5,7 @@ import {
   looksLikeExVatPrice,
   resolveLoaderCustomerPrice,
 } from '../lib/catalogue-price.mjs';
-import { resolveProductByCode } from './_sql-provider.js';
+import { getProductByCode, resolveProductByCode } from './_sql-provider.js';
 import { toSqlPreview } from './_sql-stmast.js';
 import { parseLoaderFilename } from './_product-loader-filename.js';
 import { fetchProductLookupMap, findProductBySku } from './_sku-match.js';

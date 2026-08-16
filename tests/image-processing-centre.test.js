@@ -197,6 +197,23 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(adminSource).toContain('titleOnly');
   });
 
+  it('keeps Image Processing Centre refreshable and deep-linkable', () => {
+    expect(adminSource).toContain("from '../lib/adminSectionRoute'");
+    expect(adminSource).toContain('initialAdminSectionFromSearch({');
+    expect(adminSource).toContain('normalizeRequestedAdminSection(');
+    expect(adminSource).toContain('adminSectionUrl({');
+    expect(adminSource).toContain("replaceAdminSectionUrl(activeSection);");
+    expect(adminSource).not.toContain("window.history.replaceState({}, '', window.location.pathname);");
+  });
+
+  it('explains slow Image Processing Centre loads instead of looking blank', () => {
+    expect(adminSource).toContain('Loading Image Processing Centre queue and image tools');
+    expect(centreSource).toContain('Loading private image queue');
+    expect(centreSource).toContain('Nothing is applied to Product Manager during this load.');
+    expect(centreSource).toContain('Retry');
+    expect(centreSource).toContain('The image service could not be reached.');
+  });
+
   it('hands off selected Nutstore paths and selected upload files', () => {
     expect(nutstoreSource).toContain('onProcessSelected(selectedPaths.map');
     expect(nutstoreSource).toContain('Improve selected');

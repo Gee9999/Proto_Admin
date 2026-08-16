@@ -66,6 +66,7 @@ describe('live-shoppers handler', () => {
     const before = Date.now();
 
     const res = await runHandler(supabase);
+    const after = Date.now();
 
     expect(res.statusCode).toBe(200);
     expect(res.payload).toMatchObject({ available: true, count: 7 });
@@ -76,9 +77,10 @@ describe('live-shoppers handler', () => {
     const gte = supabase.calls.find((c) => c.gte).gte;
     expect(gte.column).toBe('last_seen_at');
     const cutoff = Date.parse(gte.value);
-    // The cutoff is one window back from now, give or take test execution time.
-    expect(before - cutoff).toBeGreaterThanOrEqual(FRESHNESS_SECONDS * 1000 - 50);
-    expect(before - cutoff).toBeLessThan(FRESHNESS_SECONDS * 1000 + 5000);
+    const windowMs = FRESHNESS_SECONDS * 1000;
+    // The cutoff is one window back from the handler's own clock tick.
+    expect(cutoff).toBeGreaterThanOrEqual(before - windowMs - 50);
+    expect(cutoff).toBeLessThanOrEqual(after - windowMs + 50);
   });
 
   it('reports zero rather than null when nobody is browsing', async () => {
