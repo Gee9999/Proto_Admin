@@ -757,6 +757,17 @@ export default function ImageProcessingCentre({
       setWorkerUnavailable(false);
       onShowToast?.(`Cleared ${job.filename} from the processing queue`, 'success');
     } catch (err) {
+      // Preview deployments can retain queue rows from an older ephemeral
+      // store. If the API confirms the row no longer exists, remove the stale
+      // client entry so a clean test run is still possible.
+      if (err?.status === 404) {
+        setJobs((current) => current.filter((row) => row.id !== job.id));
+        setSelectedJobId('');
+        clearExecutionMarker(job.id);
+        setWorkerUnavailable(false);
+        onShowToast?.(`Removed stale ${job.filename} from the preview queue`, 'success');
+        return;
+      }
       setWorkerUnavailable(true);
       setError(err.message || 'Could not clear this image from the queue');
     } finally {
