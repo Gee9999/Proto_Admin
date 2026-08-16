@@ -548,12 +548,16 @@ export default function ImageProcessingCentre({
     setError('');
     try {
       const created = await createNutstoreImageJobs(nutstoreSelection, processingOptions);
+      if (!created.length) throw new Error('Nutstore returned no image queue items. Please try Add selected again.');
       markQueueMutation();
       authorizeExecution(created);
       mergeJobs(created);
+      setQueueView('queue');
+      setSelectedJobId(created[0].id);
       setWorkerUnavailable(false);
       onNutstoreSelectionConsumed?.();
       onShowToast?.(`Added ${created.length} exact SKU review item${created.length === 1 ? '' : 's'} from Nutstore`, 'success');
+      await loadJobs({ quiet: true });
     } catch (err) {
       setWorkerUnavailable(true);
       setError(err.message || 'Could not queue the Nutstore images');

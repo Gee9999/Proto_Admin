@@ -128,6 +128,13 @@ describe('Product Loader handoff and owner visibility', () => {
     expect(centreSource).toContain('onOpenNutstore');
   });
 
+  it('shows newly added Nutstore images in the processing queue immediately', () => {
+    expect(centreSource).toContain("if (!created.length) throw new Error('Nutstore returned no image queue items. Please try Add selected again.')");
+    expect(centreSource).toContain("setQueueView('queue');");
+    expect(centreSource).toContain('setSelectedJobId(created[0].id);');
+    expect(centreSource).toContain('await loadJobs({ quiet: true });');
+  });
+
   it('offers a separate discard action for approved staged images', () => {
     expect(centreSource).toContain("'approved', 'failed'");
     expect(centreSource).toContain('Discard staged image');
