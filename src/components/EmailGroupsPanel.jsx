@@ -11,7 +11,7 @@ import {
   Download, Loader2, Mail, Plus, RefreshCw, Trash2, Upload, Users, X,
 } from 'lucide-react';
 import { parseGroupRows, sampleGroupCsv } from '../../lib/email-groups.mjs';
-import { parseCustomerFile } from '../lib/customerCsvImport';
+import { readFileTable } from '../lib/customerCsvImport';
 
 function whenLabel(value) {
   if (!value) return '';
@@ -72,7 +72,10 @@ export default function EmailGroupsPanel({ onShowToast, onEmailGroup }) {
     if (!file) return;
     setFileName(file.name);
     try {
-      const table = await parseCustomerFile(file);
+      // readFileTable, not parseCustomerFile — the latter returns shaped
+      // customer records, and handing those to parseGroupRows produced zero
+      // members with no explanation.
+      const table = await readFileTable(file);
       const result = parseGroupRows(table);
       if (result.error) { setParsed(null); toast(result.error, 'error'); return; }
       if (!result.members.length) { setParsed(null); toast('No valid email addresses found in that file', 'error'); return; }
@@ -196,6 +199,9 @@ export default function EmailGroupsPanel({ onShowToast, onEmailGroup }) {
             <span className="eg-drop__hint">
               One row per contact. An <strong>email</strong> column is all that is required —
               add <strong>name</strong> and <strong>business_name</strong> to personalise the mail.
+            </span>
+            <span className="eg-drop__hint eg-drop__hint--warn">
+              Apple Numbers files are not CSVs. In Numbers use <strong>File → Export To → CSV…</strong> first.
             </span>
           </label>
         ) : (

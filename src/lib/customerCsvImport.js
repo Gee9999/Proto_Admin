@@ -91,15 +91,48 @@ export function parseCustomerCsv(text) {
   return parseCustomerTable(parseCsvText(text));
 }
 
-/** Parse a customer file — .csv or .xlsx — into { rows, errors }. */
-export async function parseCustomerFile(file) {
+/**
+ * Formats that look like spreadsheets to a person but are not readable here.
+ * Apple's are the common trap: Numbers saves a .numbers package (a zip of
+ * proprietary binaries) even when the document is called "… CSV", and the
+ * file picker's accept list is only a hint, so one reaches this code easily.
+ */
+const UNSUPPORTED_FORMATS = [
+  { test: /\.numbers$/i, name: 'Apple Numbers', how: 'In Numbers: File → Export To → CSV…' },
+  { test: /\.pages$/i, name: 'Apple Pages', how: 'Export the table to CSV first.' },
+  { test: /\.key$/i, name: 'Apple Keynote', how: 'Keynote files hold no table data.' },
+  { test: /\.pdf$/i, name: 'PDF', how: 'Export the source spreadsheet to CSV instead.' },
+  { test: /\.(docx?|rtf|txt)$/i, name: 'a document', how: 'Save it as CSV first.' },
+];
+
+export function unsupportedFileMessage(filename) {
+  const match = UNSUPPORTED_FORMATS.find((f) => f.test.test(String(filename || '')));
+  if (!match) return '';
+  return `That is ${match.name === 'a document' ? match.name : `an ${match.name} file`}, not a CSV. ${match.how}`;
+}
+
+/**
+ * Read a .csv or .xlsx into a raw array-of-arrays, headers included.
+ *
+ * Shared so every importer reads files the same way. parseCustomerFile layers
+ * customer-specific shaping on top; the group importer wants the raw table and
+ * does its own — passing it the shaped result silently yielded zero rows.
+ */
+export async function readFileTable(file) {
+  const unsupported = unsupportedFileMessage(file?.name);
+  if (unsupported) throw new Error(unsupported);
+
   if (/\.xlsx?$/i.test(file.name || '')) {
     const XLSX = await import('xlsx');
     const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
     const sheet = wb.Sheets[wb.SheetNames[0]];
-    if (!sheet) return { rows: [], errors: ['Workbook has no sheets'] };
-    const table = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
-    return parseCustomerTable(table);
+    if (!sheet) throw new Error('That workbook has no sheets.');
+    return XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' });
   }
-  return parseCustomerCsv(await file.text());
+  return parseCsvText(await file.text());
+}
+
+/** Parse a customer file — .csv or .xlsx — into { rows, errors }. */
+export async function parseCustomerFile(file) {
+  return parseCustomerTable(await readFileTable(file));
 }
