@@ -8,6 +8,7 @@ import { isOrderNotifyComplete } from './_order-notify-core.js';
 import { ordersHasConfirmationSentAt } from './_order-confirmation-sent.js';
 import { parseOrderTab, parsePositiveInt } from './_admin-query-params.js';
 import { isOrderTrashEnabled, normalizeOrderTrashReason } from '../lib/order-trash.mjs';
+import { countOrderTabs, normalizeOrderTabCounts } from '../lib/order-tab-counts.mjs';
 
 function getAdminClient() {
   return createClient(
@@ -121,41 +122,22 @@ function isRangeNotSatisfiable(error) {
 
 async function computeTabCounts(supabase, useDbColumn, legacyIds) {
   if (useDbColumn) {
-    const [all, newC, handed, progress, sentC, paidStatus, paidSent, everPaid] = await Promise.all([
-      supabase.from('orders').select('*', { count: 'exact', head: true }),
-      supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-      supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'handed over'),
-      supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'order in progress'),
-      supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'order sent').is('confirmation_sent_at', null),
-      supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'payment received'),
-      supabase.from('orders').select('*', { count: 'exact', head: true }).eq('status', 'order sent').not('confirmation_sent_at', 'is', null),
-      supabase.from('orders').select('*', { count: 'exact', head: true }).in('status', ['payment received', 'paid']),
-    ]);
-    const err = [all, newC, handed, progress, sentC, paidStatus, paidSent, everPaid].find((r) => r.error);
-    if (err?.error) throw err.error;
-    return {
-      all: all.count || 0,
-      new: newC.count || 0,
-      handed: handed.count || 0,
-      progress: progress.count || 0,
-      sent: sentC.count || 0,
-      paid: (paidStatus.count || 0) + (paidSent.count || 0),
-      // Orders not yet marked as paid — drives the sidebar notification badge.
-      unpaid: Math.max(0, (all.count || 0) - (everPaid.count || 0)),
-    };
+    const { data, error } = await supabase.rpc('get_order_tab_counts');
+    if (!error) return normalizeOrderTabCounts(Array.isArray(data) ? data[0] : data);
+
+    // Keep deploy ordering safe: if the API reaches Vercel before the migration
+    // reaches Supabase, fall back to one row scan instead of the former eight
+    // independent count scans.
+    const { data: orders, error: fallbackError } = await supabase
+      .from('orders')
+      .select('status, confirmation_sent_at');
+    if (fallbackError) throw fallbackError;
+    return countOrderTabs(orders);
   }
 
   const { data, error } = await supabase.from('orders').select('id, status');
   if (error) throw error;
-  const counts = { all: 0, new: 0, handed: 0, progress: 0, sent: 0, paid: 0, unpaid: 0 };
-  for (const order of data || []) {
-    counts.all += 1;
-    if (normalizeOrderStatus(order.status) !== 'payment received') counts.unpaid += 1;
-    for (const tab of ['new', 'handed', 'progress', 'sent', 'paid']) {
-      if (orderMatchesTab(order, tab, legacyIds)) counts[tab] += 1;
-    }
-  }
-  return counts;
+  return countOrderTabs(data, { isConfirmationSent: (order) => isConfirmationSent(order, legacyIds) });
 }
 
 async function fetchAdminOrdersPage(supabase, {
