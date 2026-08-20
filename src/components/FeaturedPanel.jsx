@@ -7,6 +7,8 @@ import {
 } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  ArrowLeft,
+  ArrowRight,
   Grip,
   Loader2,
   Search,
@@ -79,11 +81,22 @@ function StockStatusBadge({ product }) {
   );
 }
 
-function reorderFlatList(list, dragId, overId) {
+export function reorderFlatList(list, dragId, overId) {
   if (!dragId || !overId || dragId === overId) return list;
   const from = list.findIndex((p) => p.id === dragId);
   const to = list.findIndex((p) => p.id === overId);
   if (from < 0 || to < 0) return list;
+  const next = [...list];
+  const [item] = next.splice(from, 1);
+  next.splice(to, 0, item);
+  return next;
+}
+
+export function moveFlatListItem(list, productId, delta) {
+  const from = list.findIndex((product) => product.id === productId);
+  if (from < 0) return list;
+  const to = Math.max(0, Math.min(list.length - 1, from + delta));
+  if (from === to) return list;
   const next = [...list];
   const [item] = next.splice(from, 1);
   next.splice(to, 0, item);
@@ -102,6 +115,14 @@ function FeaturedOrderList({ products, onReorder, onRemove, saving }) {
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
 
+  const clearDrag = useCallback(() => {
+    dragIdRef.current = null;
+    overIdRef.current = null;
+    setDragId(null);
+    setOverId(null);
+    document.body.classList.remove('adm-is-reorder-dragging');
+  }, []);
+
   useEffect(() => {
     const onPointerMove = (e) => {
       const el = document.elementFromPoint(e.clientX, e.clientY);
@@ -112,29 +133,34 @@ function FeaturedOrderList({ products, onReorder, onRemove, saving }) {
         setOverId(nextOver);
       }
     };
-    const endDrag = () => {
+    const endDrag = (event) => {
       const hadDrag = !!dragIdRef.current;
       const dropTarget = overIdRef.current;
-      if (hadDrag && dropTarget && dragIdRef.current !== dropTarget) {
+      if (event?.type !== 'pointercancel' && hadDrag && dropTarget && dragIdRef.current !== dropTarget) {
         onReorderRef.current(reorderFlatList(productsRef.current, dragIdRef.current, dropTarget));
       }
-      dragIdRef.current = null;
-      overIdRef.current = null;
-      setDragId(null);
-      setOverId(null);
-      document.body.classList.remove('adm-is-reorder-dragging');
+      clearDrag();
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', endDrag);
+      window.removeEventListener('pointercancel', endDrag);
+    };
+    const cancelWithKeyboard = (event) => {
+      if (event.key !== 'Escape' || !dragIdRef.current) return;
+      endDrag({ type: 'pointercancel' });
     };
     onPointerMoveRef.current = onPointerMove;
     endDragRef.current = endDrag;
+    window.addEventListener('keydown', cancelWithKeyboard);
     return () => {
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', endDrag);
+      window.removeEventListener('pointercancel', endDrag);
+      window.removeEventListener('keydown', cancelWithKeyboard);
+      document.body.classList.remove('adm-is-reorder-dragging');
       onPointerMoveRef.current = null;
       endDragRef.current = null;
     };
-  }, []);
+  }, [clearDrag]);
 
   const startDrag = useCallback((productId, e) => {
     if (saving) return;
@@ -146,8 +172,31 @@ function FeaturedOrderList({ products, onReorder, onRemove, saving }) {
     const end = endDragRef.current;
     if (move) window.addEventListener('pointermove', move);
     if (end) window.addEventListener('pointerup', end);
+    if (end) window.addEventListener('pointercancel', end);
     e.currentTarget.setPointerCapture?.(e.pointerId);
   }, [saving]);
+
+  const moveBy = useCallback((productId, delta) => {
+    if (saving) return;
+    onReorder(moveFlatListItem(products, productId, delta));
+  }, [onReorder, products, saving]);
+
+  const handleGripKeyDown = useCallback((productId, event) => {
+    const columnCount = Number.parseInt(
+      getComputedStyle(event.currentTarget.closest('.featured-order-grid'))
+        .getPropertyValue('--featured-grid-columns'),
+      10,
+    ) || 1;
+    const delta = {
+      ArrowLeft: -1,
+      ArrowRight: 1,
+      ArrowUp: -columnCount,
+      ArrowDown: columnCount,
+    }[event.key];
+    if (!delta) return;
+    event.preventDefault();
+    moveBy(productId, delta);
+  }, [moveBy]);
 
   if (!products.length) {
     return (
@@ -158,18 +207,22 @@ function FeaturedOrderList({ products, onReorder, onRemove, saving }) {
   }
 
   return (
-    <div className="featured-order-list">
-      {products.map((product) => (
+    <div className="featured-order-grid" role="list" aria-label="Featured products in storefront order">
+      {products.map((product, index) => (
         <div
           key={product.id}
           data-featured-id={product.id}
+          role="listitem"
+          aria-label={`${index + 1}. ${product.name}`}
           className={`featured-order-row${dragId === product.id ? ' featured-order-row--dragging' : ''}${overId === product.id && dragId !== product.id ? ' featured-order-row--over' : ''}`}
         >
+          <span className="featured-order-position" aria-hidden="true">{index + 1}</span>
           <button
             type="button"
             className="featured-order-grip"
-            aria-label={`Drag ${product.name}`}
+            aria-label={`Move ${product.name}. Position ${index + 1} of ${products.length}. Use arrow keys or drag.`}
             onPointerDown={(e) => startDrag(product.id, e)}
+            onKeyDown={(e) => handleGripKeyDown(product.id, e)}
             disabled={saving}
           >
             <Grip size={14} />
@@ -187,15 +240,38 @@ function FeaturedOrderList({ products, onReorder, onRemove, saving }) {
             </div>
             <StockStatusBadge product={product} />
           </div>
-          <button
-            type="button"
-            className="adm-btn-ghost adm-btn--sm"
-            title="Remove from featured"
-            onClick={() => onRemove(product.sku)}
-            disabled={saving}
-          >
-            <X size={14} />
-          </button>
+          <div className="featured-order-actions">
+            <button
+              type="button"
+              className="featured-order-nudge"
+              aria-label={`Move ${product.name} one position earlier`}
+              title="Move earlier"
+              onClick={() => moveBy(product.id, -1)}
+              disabled={saving || index === 0}
+            >
+              <ArrowLeft size={13} />
+            </button>
+            <button
+              type="button"
+              className="featured-order-nudge"
+              aria-label={`Move ${product.name} one position later`}
+              title="Move later"
+              onClick={() => moveBy(product.id, 1)}
+              disabled={saving || index === products.length - 1}
+            >
+              <ArrowRight size={13} />
+            </button>
+            <button
+              type="button"
+              className="featured-order-remove"
+              title="Remove from featured"
+              aria-label={`Remove ${product.name} from featured products`}
+              onClick={() => onRemove(product.sku)}
+              disabled={saving}
+            >
+              <X size={14} />
+            </button>
+          </div>
         </div>
       ))}
     </div>
@@ -210,6 +286,7 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
   const [categoryId, setCategoryId] = useState('');
   const [page, setPage] = useState(1);
   const [saveMeta, setSaveMeta] = useState({ updatedAt: null });
+  const [saveState, setSaveState] = useState('saved');
   const pickSaveTimerRef = useRef(null);
   const orderSaveTimerRef = useRef(null);
   const pendingItemsRef = useRef(null);
@@ -224,7 +301,7 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
     queryFn: fetchFeaturedProducts,
     staleTime: 0,
     refetchOnMount: 'always',
-    refetchOnWindowFocus: true,
+    refetchOnWindowFocus: saveState === 'saved' || saveState === 'error',
   });
 
   const featuredItems = featuredQuery.data?.items || [];
@@ -313,8 +390,10 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
       if (data.seq !== editSeqRef.current) return;
       queryClient.setQueryData(queryKeys.featuredProducts(), { items: data.items, updatedAt: data.updatedAt });
       setSaveMeta({ updatedAt: data.updatedAt });
+      setSaveState('saved');
     },
     onError: (err) => {
+      setSaveState('error');
       onShowToast?.(err.message || 'Failed to save featured list', 'error');
       // The optimistic list may no longer reflect the server — resync.
       queryClient.invalidateQueries({ queryKey: queryKeys.featuredProducts() });
@@ -332,6 +411,7 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
 
   const queueSave = useCallback((items, delayMs) => {
     cancelQueuedSaves();
+    setSaveState('pending');
     const seq = (editSeqRef.current += 1);
     pendingItemsRef.current = items;
     const timerRef = delayMs === PICK_SAVE_MS ? pickSaveTimerRef : orderSaveTimerRef;
@@ -385,6 +465,7 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
       items: next,
       updatedAt: prev?.updatedAt || null,
     }));
+    setSaveState('saving');
     saveMutation.mutate({ items: next, seq });
   }, [cancelQueuedSaves, featuredItems, queryClient, saveMutation]);
 
@@ -398,6 +479,10 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
   const slotsRemaining = Math.max(0, FEATURED_SOFT_CAP - featuredItems.length);
   const overSoftCap = featuredItems.length > FEATURED_SOFT_CAP;
   const saving = saveMutation.isPending;
+
+  useEffect(() => {
+    if (saving) setSaveState('saving');
+  }, [saving]);
 
   const mainCategories = useMemo(
     () => (taxonomyTree || []).filter((c) => c.id !== 'mottaro'),
@@ -417,15 +502,18 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-          {saveMeta.updatedAt && formatSortSavedAt(saveMeta.updatedAt) && (
-            <span className="adm-pill" style={{ fontSize: 12 }}>
-              Order saved · {formatSortSavedAt(saveMeta.updatedAt)}
+          {saveState === 'error' ? (
+            <span className="adm-pill" role="status" style={{ fontSize: 12, color: '#b91c1c', borderColor: '#fecaca' }}>
+              Save failed — list refreshed
             </span>
-          )}
-          {saving && (
-            <span className="adm-pill" style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          ) : saveState === 'saving' || saveState === 'pending' ? (
+            <span className="adm-pill" role="status" style={{ fontSize: 12, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               <Loader2 size={12} className="spin" />
-              Saving…
+              {saveState === 'pending' ? 'Changes queued…' : 'Saving order…'}
+            </span>
+          ) : saveMeta.updatedAt && formatSortSavedAt(saveMeta.updatedAt) && (
+            <span className="adm-pill" role="status" style={{ fontSize: 12 }}>
+              Live order saved · {formatSortSavedAt(saveMeta.updatedAt)}
             </span>
           )}
         </div>
@@ -459,6 +547,10 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
 
       {view === 'arrange' && (
         <>
+          <div className="featured-order-guide" role="note">
+            <Grip size={15} />
+            <span>Drag any handle to set the live storefront sequence. Use arrow keys or the tile controls for precise moves.</span>
+          </div>
           {featuredQuery.isLoading ? (
             <p className="adm-section-note"><Loader2 size={14} className="spin" /> Loading featured products…</p>
           ) : featuredQuery.isError ? (
@@ -536,6 +628,7 @@ function FeaturedPanelInner({ taxonomyTree = [], onShowToast }) {
                       <input
                         type="checkbox"
                         checked={checked}
+                        disabled={saving}
                         onChange={(e) => toggleFeatured(product.sku, e.target.checked)}
                       />
                       <div className="adm-product-thumb featured-pick-thumb">

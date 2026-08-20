@@ -95,3 +95,18 @@ owner. Team phone numbers are stripped from `fulfillment-users` for link callers
 See `.cursor/skills/protoportal-admin/SKILL.md` for full architecture.
 
 **Never** implement admin features in protoportal-main's deprecated embedded AdminPage.
+
+## Mandatory change journal
+
+Every change to code, configuration, dependencies, database migrations, automation,
+or deployment behaviour must be recorded in `md/changes/YYYY-MM-DD.md` before the
+work is considered complete.
+
+- Use the actual calendar date and append to that day's file; do not overwrite
+  earlier entries.
+- Each entry must include: time, summary, files or systems affected, verification
+  performed, deployment status, and commit or PR reference when available.
+- Record database and Vercel changes as well as repository edits.
+- Never place passwords, API keys, tokens, customer personal data, or other secrets
+  in the journal.
+- Documentation-only journal updates do not require a second journal entry.
