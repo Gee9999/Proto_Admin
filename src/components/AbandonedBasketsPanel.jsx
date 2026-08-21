@@ -329,7 +329,7 @@ export default function AbandonedBasketsPanel() {
           </div>
           <div className="oa-stat-card">
             <div className="oa-stat-val">{summary.staleCount}</div>
-            <div className="oa-stat-label">Gone Cold (14+ Days)</div>
+            <div className="oa-stat-label">Gone Cold (30+ Days)</div>
           </div>
           <div className="oa-stat-card">
             <div className="oa-stat-val">{summary.totalUnits}</div>
@@ -345,7 +345,7 @@ export default function AbandonedBasketsPanel() {
             <p className="oa-note ab-subtitle">
               Customers holding a basket they have not checked out. A basket is emptied
               automatically when the order is submitted, so everything below is still outstanding.
-              All signed-in customer baskets are saved indefinitely; “gone cold” only means no activity for fourteen days.
+              All signed-in customer baskets are saved indefinitely; “gone cold” only means more than thirty days without activity.
             </p>
           </div>
           <div className="oa-panel-actions">

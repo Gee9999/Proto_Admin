@@ -116,7 +116,7 @@ describe('stalenessBucket', () => {
     expect(stalenessBucket(2)).toBe('active');
     expect(stalenessBucket(3)).toBe('cooling');
     expect(stalenessBucket(7)).toBe('cooling');
-    expect(stalenessBucket(15)).toBe('stale');
+    expect(stalenessBucket(31)).toBe('stale');
     expect(stalenessBucket(null)).toBe('unknown');
   });
 });
@@ -168,7 +168,7 @@ describe('buildAbandonedBaskets', () => {
       carts: [
         cart({ customer_id: 'a', activity_at: NOW - DAY }),
         cart({ customer_id: 'b', activity_at: NOW - 5 * DAY }),
-        cart({ customer_id: 'c', activity_at: NOW - 30 * DAY }),
+        cart({ customer_id: 'c', activity_at: NOW - 31 * DAY }),
       ],
       customers: [],
       now: NOW,
@@ -176,9 +176,9 @@ describe('buildAbandonedBaskets', () => {
     expect(rows.map((r) => r.staleness)).toEqual(['active', 'cooling', 'stale']);
   });
 
-  it('keeps a basket cooling through day fourteen', () => {
-    expect(stalenessBucket(14)).toBe('cooling');
-    expect(stalenessBucket(14.01)).toBe('stale');
+  it('keeps a basket cooling through day thirty', () => {
+    expect(stalenessBucket(30)).toBe('cooling');
+    expect(stalenessBucket(30.01)).toBe('stale');
   });
 });
 
@@ -186,7 +186,7 @@ describe('summariseBaskets', () => {
   const rows = buildAbandonedBaskets({
     carts: [
       cart({ customer_id: 'a', activity_at: NOW - DAY }),
-      cart({ customer_id: 'b', items: [line({ qty: 10 })], activity_at: NOW - 30 * DAY }),
+      cart({ customer_id: 'b', items: [line({ qty: 10 })], activity_at: NOW - 31 * DAY }),
     ],
     customers: [customer({ id: 'a' }), customer({ id: 'b', email: '' })],
     now: NOW,
@@ -222,7 +222,7 @@ describe('summariseBaskets', () => {
 describe('sortBaskets and filterBaskets', () => {
   const rows = buildAbandonedBaskets({
     carts: [
-      cart({ customer_id: 'a', items: [line({ qty: 1 })], activity_at: NOW - 20 * DAY }),
+      cart({ customer_id: 'a', items: [line({ qty: 1 })], activity_at: NOW - 31 * DAY }),
       cart({ customer_id: 'b', items: [line({ qty: 10 })], activity_at: NOW - DAY }),
     ],
     customers: [customer({ id: 'a', name: 'Zara' }), customer({ id: 'b', name: 'Andile' })],
@@ -280,7 +280,7 @@ describe('basket retention controls', () => {
 
   it('makes the unlimited retention policy explicit', () => {
     expect(panelSource).toContain('All signed-in customer baskets are saved indefinitely');
-    expect(panelSource).toContain('Gone Cold (14+ Days)');
+    expect(panelSource).toContain('Gone Cold (30+ Days)');
     expect(panelSource).toContain('Saved indefinitely until the customer clears or submits it');
   });
 });
