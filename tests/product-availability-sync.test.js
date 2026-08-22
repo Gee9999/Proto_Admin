@@ -43,4 +43,19 @@ describe('product availability contract', () => {
     expect(actions).toMatch(/action === 'setToOrder'/);
     expect(actions).toMatch(/action === 'setProductAvailability'/);
   });
+
+  it('exposes Stock available as a quantity-free Product Manager toggle', async () => {
+    const [manager, mutations, catalog, adapt] = await Promise.all([
+      readSource('src/components/ProductManagerEngine.jsx'),
+      readSource('src/hooks/useCatalogMutations.js'),
+      readSource('api/catalog.js'),
+      readSource('api/_catalog-adapt.js'),
+    ]);
+    expect(manager).toMatch(/Stock available/);
+    expect(manager).toMatch(/const stockAvailable = !item\.stockAvailable/);
+    expect(manager).not.toMatch(/window\.prompt|How many units/);
+    expect(mutations).toMatch(/incomingQty: stockAvailable \? 0\.001 : 0/);
+    expect(catalog).toMatch(/enrichRowsWithIncomingAvailability/);
+    expect(adapt).toMatch(/stockAvailable:/);
+  });
 });

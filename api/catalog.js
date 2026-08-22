@@ -64,6 +64,26 @@ const SKU_FETCH_CHUNK = 200;
 // logs) so the move to a server-side paginated strategy happens before scans
 // start timing out — without altering results, count, or pagination today.
 const FULL_SCAN_WARN_ROWS = 15000;
+
+function availabilityTableMissing(error) {
+  const text = `${error?.code || ''} ${error?.message || ''}`;
+  return /PGRST205|42P01|website_product_availability/i.test(text);
+}
+
+/** Attach the private, non-ERP arrival state to rows shown in Product Manager. */
+async function enrichRowsWithIncomingAvailability(sb, rows) {
+  const skus = [...new Set((rows || []).map((row) => String(row?.sku || '').trim()).filter(Boolean))];
+  if (!skus.length) return rows;
+  const { data, error } = await sb
+    .from('website_product_availability')
+    .select('sku, incoming_status, incoming_qty, incoming_eta, allow_preorder')
+    .in('sku', skus);
+  if (error && availabilityTableMissing(error)) return rows;
+  if (error) throw error;
+  const bySku = new Map((data || []).map((availability) => [availability.sku, availability]));
+  return rows.map((row) => ({ ...row, _incomingAvailability: bySku.get(row.sku) || null }));
+}
+
 function warnIfFullScanLarge(count, label) {
   if (count > FULL_SCAN_WARN_ROWS) {
     console.warn(`catalog full-scan large: ${count} rows loaded for ${label} (threshold ${FULL_SCAN_WARN_ROWS}) — consider a server-side paginated path.`);
@@ -473,6 +493,9 @@ export default async function handler(req, res) {
     let enriched = result.rows;
     if (needsStock && enriched.length && !stockAlreadyEnriched) {
       enriched = await enrichRowsWithProductStock(sb, enriched, { includePrice: status === 'new-items' });
+    }
+    if (status === 'live' && enriched.length) {
+      enriched = await enrichRowsWithIncomingAvailability(sb, enriched);
     }
 
     const adapted = enriched.map((r) => {
