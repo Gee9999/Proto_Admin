@@ -11,6 +11,7 @@ import {
   Grip,
   Layers,
   Loader2,
+  PackageCheck,
   PackagePlus,
   Pencil,
   Plus,
@@ -270,6 +271,8 @@ function PmMobileProductCard({
   onShowToast,
   onToggleToOrder,
   toOrderPendingSku,
+  onToggleStockAvailable,
+  stockAvailablePendingSku,
   tree,
 }) {
   return (
@@ -301,6 +304,9 @@ function PmMobileProductCard({
           )}
           {item.toOrder && (
             <span className="pm-mobile-card-badge" style={{ background: '#b45309', color: '#fff' }}>To order</span>
+          )}
+          {item.stockAvailable && (
+            <span className="pm-mobile-card-badge" style={{ background: '#0369a1', color: '#fff' }}>Stock available</span>
           )}
           {item.variantGroup?.isPrimary && (
             <span className="pm-mobile-card-badge" style={{ background: '#6d28d9', color: '#fff' }}>
@@ -346,6 +352,17 @@ function PmMobileProductCard({
             >
               {toOrderPendingSku === item.sku ? <Loader2 size={14} className="spin" /> : <PackagePlus size={14} />}
               To order
+            </button>
+            <button
+              type="button"
+              className={`adm-btn-ghost adm-btn--sm${item.stockAvailable ? ' pm-stockavailable-btn--on' : ''}`}
+              aria-pressed={!!item.stockAvailable}
+              disabled={stockAvailablePendingSku === item.sku}
+              title={item.stockAvailable ? 'Stock available — click to turn off' : "Mark recently arrived stock as available"}
+              onClick={() => onToggleStockAvailable?.(item)}
+            >
+              {stockAvailablePendingSku === item.sku ? <Loader2 size={14} className="spin" /> : <PackageCheck size={14} />}
+              Stock available
             </button>
             <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={() => mutations.archive.mutate(item.sku, { onSuccess: () => onRefreshStats?.(), onError: (err) => onShowToast?.(err.message || 'Archive failed', 'error') })}>Archive</button>
             <button type="button" className="adm-btn-red adm-btn--sm" title="Move to recycle bin" aria-label="Move to recycle bin" onClick={() => recycleSku(item.sku, false)}><Trash2 size={14} /></button>
@@ -523,6 +540,7 @@ export default function ProductManagerEngine({
   const [toOrderOnly, setToOrderOnly] = useState(() => Boolean(initialToOrderOnly));
   // SKU whose per-row "To order" toggle is mid-flight (for spinner + disable).
   const [toOrderPendingSku, setToOrderPendingSku] = useState(null);
+  const [stockAvailablePendingSku, setStockAvailablePendingSku] = useState(null);
   // Only the debounced term lives here; the raw input value is owned by
   // PmSearchField so keystrokes don't re-render this component + its rows.
   const [debouncedSearch, setDebouncedSearch] = useState('');
@@ -1165,6 +1183,20 @@ export default function ProductManagerEngine({
       },
     );
   }, [mutations, onShowToast, toOrderPendingSku]);
+
+  const toggleStockAvailable = useCallback((item) => {
+    if (!item?.sku || stockAvailablePendingSku) return;
+    const stockAvailable = !item.stockAvailable;
+    setStockAvailablePendingSku(item.sku);
+    mutations.setStockAvailable.mutate(
+      { sku: item.sku, stockAvailable },
+      {
+        onSuccess: () => onShowToast?.(stockAvailable ? 'Marked “Stock available”' : 'Stock available cleared', 'success'),
+        onError: (err) => onShowToast?.(err.message || 'Could not update stock availability', 'error'),
+        onSettled: () => setStockAvailablePendingSku(null),
+      },
+    );
+  }, [mutations, onShowToast, stockAvailablePendingSku]);
 
   const toggleSelect = (id, item, opts = {}) => {
     handleProductSelect(id, item, opts.index ?? null, {
@@ -1850,6 +1882,8 @@ export default function ProductManagerEngine({
                         onShowToast={onShowToast}
                         onToggleToOrder={toggleToOrder}
                         toOrderPendingSku={toOrderPendingSku}
+                        onToggleStockAvailable={toggleStockAvailable}
+                        stockAvailablePendingSku={stockAvailablePendingSku}
                         tree={tree}
                       />
                     ))}
@@ -1923,6 +1957,9 @@ export default function ProductManagerEngine({
                           {item.toOrder && (
                             <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#b45309', borderRadius: 4, padding: '1px 5px' }}>To order</span>
                           )}
+                          {item.stockAvailable && (
+                            <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#0369a1', borderRadius: 4, padding: '1px 5px' }}>Stock available</span>
+                          )}
                           {item.variantGroup?.isPrimary && (
                             <span style={{ fontSize: 10, fontWeight: 700, color: '#fff', background: '#6d28d9', borderRadius: 4, padding: '1px 5px' }} title="Variant group — shows as one card on the site">
                               {item.variantGroup.variantCount ? `${item.variantGroup.variantCount} variants` : 'Group'}
@@ -1991,6 +2028,17 @@ export default function ProductManagerEngine({
                             >
                               {toOrderPendingSku === item.sku ? <Loader2 size={14} className="spin" /> : <PackagePlus size={14} />}
                               To order
+                            </button>
+                            <button
+                              type="button"
+                              className={`adm-btn-ghost adm-btn--sm${item.stockAvailable ? ' pm-stockavailable-btn--on' : ''}`}
+                              aria-pressed={!!item.stockAvailable}
+                              disabled={stockAvailablePendingSku === item.sku}
+                              title={item.stockAvailable ? 'Stock available — click to turn off' : "Mark recently arrived stock as available"}
+                              onClick={() => toggleStockAvailable(item)}
+                            >
+                              {stockAvailablePendingSku === item.sku ? <Loader2 size={14} className="spin" /> : <PackageCheck size={14} />}
+                              Stock available
                             </button>
                             <button type="button" className="adm-btn-ghost adm-btn--sm" onClick={() => mutations.archive.mutate(item.sku, { onSuccess: () => onRefreshStats?.(), onError: (err) => onShowToast?.(err.message || 'Archive failed', 'error') })}>Archive</button>
                             <button type="button" className="adm-btn-red adm-btn--sm" title="Move to recycle bin" aria-label="Move to recycle bin" onClick={() => recycleSku(item.sku, false)}><Trash2 size={14} /></button>

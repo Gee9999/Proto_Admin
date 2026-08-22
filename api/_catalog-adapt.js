@@ -118,6 +118,8 @@ export function adaptCatalogRow(row, tree, { archived = false, placementPaths = 
   const stockNum = soh !== null && soh !== undefined && soh !== ''
     ? Number(soh)
     : 0;
+  const incomingStatus = String(row?._incomingAvailability?.incoming_status || 'none');
+  const incomingQty = Number(row?._incomingAvailability?.incoming_qty || 0);
   const base = {
     id: row.sku,
     sku: row.sku,
@@ -146,6 +148,9 @@ export function adaptCatalogRow(row, tree, { archived = false, placementPaths = 
     categoryPath,
     subcategoryLabels: subLabels,
     toOrder: !!row.to_order,
+    incomingStatus,
+    incomingQty: Number.isFinite(incomingQty) && incomingQty > 0 ? incomingQty : 0,
+    stockAvailable: ['landed_awaiting_grv', 'partially_received'].includes(incomingStatus) && incomingQty > 0,
     isNew: !!row.is_new_arrival,
     isArchived: archived,
     archivedBy: row.archived_by || null,
