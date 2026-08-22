@@ -7910,6 +7910,13 @@ html, body { background: #f5f5f5; color: #111827; }
   border-color: #b45309;
   color: #fff;
 }
+/* Recently arrived but not yet in recorded stock — blue distinguishes it from To order. */
+.pm-stockavailable-btn--on,
+.pm-stockavailable-btn--on:hover {
+  background: #0369a1;
+  border-color: #0369a1;
+  color: #fff;
+}
 .pm-bulk-bar__count { white-space: nowrap; color: #0f172a; font-size: 14px; font-weight: 800; }
 .pm-bulk-bar__count-sub { color: #64748b; font-weight: 500; }
 .pm-bulk-group { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

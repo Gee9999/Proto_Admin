@@ -79,6 +79,21 @@ export function useCatalogMutations() {
     onSettled: () => invalidateCatalogAndStats(queryClient, ['live', 'archived']),
   });
 
+  const setStockAvailable = useMutation({
+    mutationFn: ({ sku, stockAvailable }) => stockMutate({
+      action: 'setProductAvailability',
+      sku,
+      incomingStatus: stockAvailable ? 'landed_awaiting_grv' : 'none',
+      // This private marker makes the control a simple on/off toggle. The
+      // existing GRV reconciliation clears it on the next positive stock move.
+      incomingQty: stockAvailable ? 0.001 : 0,
+      incomingEta: '',
+      shipmentRef: '',
+      allowPreorder: false,
+    }),
+    onSettled: () => invalidateCatalogAndStats(queryClient, ['live']),
+  });
+
   const bulkArchive = useMutation({
     mutationFn: (skus) => bulkArchiveProducts(skus),
     onSettled: () => invalidateCatalogAndStats(queryClient, ['live', 'archived']),
@@ -118,5 +133,6 @@ export function useCatalogMutations() {
     permanentDelete,
     setNewArrival,
     setToOrder,
+    setStockAvailable,
   };
 }
